@@ -1,3 +1,4 @@
+
 "use client";
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -6,15 +7,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle, XCircle, ShieldCheck, UserCircle, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next'; // Metadata should be handled by generateMetadata or a parent layout
 
-// Note: Metadata export from client components is not directly supported.
-// If metadata is needed, it should be defined in a parent Server Component or layout,
-// or by exporting a generateMetadata function if this page were a Server Component.
-// For now, we'll comment it out or you can move it if this page has a specific layout.
-// export const metadata: Metadata = {
-//   title: 'Driver Approvals',
-// };
+// Import the server action
+import { handleDriverApproval } from "@/actions/carpool";
+
 
 const mockDrivers = [
   { id: "driver1", name: "John Smith", avatar: "https://placehold.co/100x100.png?text=JS", rating: 4.8, ridesCompleted: 120, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "man portrait" },
@@ -23,22 +19,15 @@ const mockDrivers = [
   { id: "driver4", name: "Sarah Miller", avatar: "https://placehold.co/100x100.png?text=SM", rating: 4.7, ridesCompleted: 95, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "woman professional" },
 ];
 
-// Placeholder action function (would be a server action in real app)
-// This Server Action can be called from this Client Component.
-const handleApproval = async (driverId: string, newStatus: "approved" | "rejected") => {
-  "use server";
-  console.log(`Driver ${driverId} status changed to ${newStatus}`);
-  // Here you would update the database
-  // For demo, we'd need a way to re-render or update state if this were interactive
-  // Consider using useTransition or revalidating path/tags for UI updates.
-};
-
 
 export default function ParentApprovalsPage() {
   // In a real app, you'd fetch drivers and their approval status for the logged-in parent's children
   // This data fetching would ideally happen in a parent Server Component and be passed down,
   // or use a client-side fetching hook (e.g., SWR, React Query) if this component handles its own data.
   // For this example, mockDrivers is used directly.
+
+  // The inline handleApproval function that was causing the error has been REMOVED from here.
+  // It's now imported from "@/actions/carpool".
 
   return (
     <>
@@ -80,7 +69,7 @@ export default function ParentApprovalsPage() {
                     <Button
                       onClick={async () => {
                         alert(`Approving ${driver.name}. (Dev note: This calls a server action)`);
-                        await handleApproval(driver.id, "approved");
+                        await handleDriverApproval(driver.id, "approved");
                         // Add logic here to update UI optimistically or re-fetch data
                       }}
                       className="bg-green-500 hover:bg-green-600 text-white"
@@ -91,7 +80,7 @@ export default function ParentApprovalsPage() {
                       variant="destructive"
                       onClick={async () => {
                         alert(`Rejecting ${driver.name}. (Dev note: This calls a server action)`);
-                        await handleApproval(driver.id, "rejected");
+                        await handleDriverApproval(driver.id, "rejected");
                         // Add logic here to update UI optimistically or re-fetch data
                       }}
                     >
