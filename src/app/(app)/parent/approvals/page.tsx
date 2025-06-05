@@ -1,14 +1,20 @@
+"use client";
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle, XCircle, ShieldCheck, UserCircle, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next';
+import type { Metadata } from 'next'; // Metadata should be handled by generateMetadata or a parent layout
 
-export const metadata: Metadata = {
-  title: 'Driver Approvals',
-};
+// Note: Metadata export from client components is not directly supported.
+// If metadata is needed, it should be defined in a parent Server Component or layout,
+// or by exporting a generateMetadata function if this page were a Server Component.
+// For now, we'll comment it out or you can move it if this page has a specific layout.
+// export const metadata: Metadata = {
+//   title: 'Driver Approvals',
+// };
 
 const mockDrivers = [
   { id: "driver1", name: "John Smith", avatar: "https://placehold.co/100x100.png?text=JS", rating: 4.8, ridesCompleted: 120, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "man portrait" },
@@ -18,16 +24,22 @@ const mockDrivers = [
 ];
 
 // Placeholder action function (would be a server action in real app)
+// This Server Action can be called from this Client Component.
 const handleApproval = async (driverId: string, newStatus: "approved" | "rejected") => {
-  "use server"; // This is a conceptual server action
+  "use server";
   console.log(`Driver ${driverId} status changed to ${newStatus}`);
   // Here you would update the database
   // For demo, we'd need a way to re-render or update state if this were interactive
+  // Consider using useTransition or revalidating path/tags for UI updates.
 };
 
 
 export default function ParentApprovalsPage() {
   // In a real app, you'd fetch drivers and their approval status for the logged-in parent's children
+  // This data fetching would ideally happen in a parent Server Component and be passed down,
+  // or use a client-side fetching hook (e.g., SWR, React Query) if this component handles its own data.
+  // For this example, mockDrivers is used directly.
+
   return (
     <>
       <PageHeader
@@ -63,25 +75,24 @@ export default function ParentApprovalsPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   This driver has requested to be part of carpools involving your child. Please review their profile and approve or reject.
                 </p>
-                {/* In a real app, status would come from DB and actions would update it */}
                 {driver.status === "pending" && (
                   <div className="flex gap-4">
-                    <Button 
-                      onClick={async () => { 
-                        // This is a conceptual client-side call to a server action
-                        // In a real app, you'd handle state updates based on the action's success
-                        alert(`Approving ${driver.name}. (Dev note: This would call a server action)`);
-                        // await handleApproval(driver.id, "approved");
+                    <Button
+                      onClick={async () => {
+                        alert(`Approving ${driver.name}. (Dev note: This calls a server action)`);
+                        await handleApproval(driver.id, "approved");
+                        // Add logic here to update UI optimistically or re-fetch data
                       }}
                       className="bg-green-500 hover:bg-green-600 text-white"
                     >
                       <CheckCircle className="mr-2 h-4 w-4" /> Approve
                     </Button>
-                    <Button 
+                    <Button
                       variant="destructive"
-                      onClick={async () => { 
-                        alert(`Rejecting ${driver.name}. (Dev note: This would call a server action)`);
-                        // await handleApproval(driver.id, "rejected");
+                      onClick={async () => {
+                        alert(`Rejecting ${driver.name}. (Dev note: This calls a server action)`);
+                        await handleApproval(driver.id, "rejected");
+                        // Add logic here to update UI optimistically or re-fetch data
                       }}
                     >
                       <XCircle className="mr-2 h-4 w-4" /> Reject
