@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +9,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon } from "lucide-react";
 import Link from "next/link";
-import { UserRole } from '@/types'; // Assuming UserRole enum is defined here
+import { UserRole } from '@/types';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Mock user data - replace with actual data fetching
 const mockUser = {
@@ -35,7 +37,13 @@ const mockUser = {
 };
 
 export default function ProfilePage() {
-  // In a real app, fetch user data here or pass as props
+  const [canDrive, setCanDrive] = useState(false);
+  const [driverDetails, setDriverDetails] = useState({
+    ageRange: "",
+    drivingExperience: "",
+    primaryVehicle: "",
+    passengerCapacity: "",
+  });
 
   return (
     <>
@@ -139,6 +147,89 @@ export default function ProfilePage() {
                   <Input id="pickupRadius" value={mockUser.preferences.preferredPickupRadius} readOnly className="mt-1 bg-muted/50" />
                 </div>
               </div>
+
+              <Separator className="my-6" />
+
+              <div>
+                <div className="flex items-center space-x-2 mb-4">
+                  <Checkbox
+                    id="canDrive"
+                    checked={canDrive}
+                    onCheckedChange={(checked) => setCanDrive(Boolean(checked))}
+                  />
+                  <Label htmlFor="canDrive" className="text-base font-medium cursor-pointer">
+                    I can drive
+                  </Label>
+                </div>
+
+                {canDrive && (
+                  <div className="space-y-6 pl-4 border-l-2 border-primary/20 ml-2 pt-2 pb-4 animate-accordion-down">
+                    <div className="flex items-center gap-2 text-primary mb-2">
+                        <CarIcon className="h-5 w-5" />
+                        <h4 className="font-semibold">Driver Information</h4>
+                    </div>
+                    <div>
+                      <Label htmlFor="ageRange">Age Range</Label>
+                      <Select
+                        value={driverDetails.ageRange}
+                        onValueChange={(value) => setDriverDetails(prev => ({ ...prev, ageRange: value }))}
+                      >
+                        <SelectTrigger id="ageRange" className="mt-1">
+                          <SelectValue placeholder="Select your age range" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="16-18">16-18</SelectItem>
+                          <SelectItem value="19-23">19-23</SelectItem>
+                          <SelectItem value="24+">24+</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="drivingExperience">Driving Experience</Label>
+                      <Select
+                        value={driverDetails.drivingExperience}
+                        onValueChange={(value) => setDriverDetails(prev => ({ ...prev, drivingExperience: value }))}
+                      >
+                        <SelectTrigger id="drivingExperience" className="mt-1">
+                          <SelectValue placeholder="Select your driving experience" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0-6m">0-6 months</SelectItem>
+                          <SelectItem value="6m-1y">6 months - 1 year</SelectItem>
+                          <SelectItem value="1-3y">1-3 years</SelectItem>
+                          <SelectItem value="3-5y">3-5 years</SelectItem>
+                          <SelectItem value="5y+">5+ years</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="primaryVehicle">Primary Vehicle</Label>
+                      <Input
+                        id="primaryVehicle"
+                        value={driverDetails.primaryVehicle}
+                        onChange={(e) => setDriverDetails(prev => ({ ...prev, primaryVehicle: e.target.value }))}
+                        placeholder="e.g., Toyota Camry 2020, Blue"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="passengerCapacity">Passenger Capacity (excluding driver)</Label>
+                      <Input
+                        id="passengerCapacity"
+                        type="number"
+                        value={driverDetails.passengerCapacity}
+                        onChange={(e) => setDriverDetails(prev => ({ ...prev, passengerCapacity: e.target.value }))}
+                        placeholder="e.g., 4"
+                        min="1"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -146,3 +237,5 @@ export default function ProfilePage() {
     </>
   );
 }
+
+    
