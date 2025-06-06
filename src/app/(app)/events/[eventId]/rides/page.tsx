@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, User, Car, PlusCircle, AlertTriangle } from "lucide-react";
+import { CalendarDays, MapPin, User, Car, PlusCircle, AlertTriangle, SteeringWheel } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -50,13 +50,20 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
     <>
       <PageHeader
         title={`Rides for: ${eventDetails.name}`}
-        description={`View available rides or request a new one for this event at ${eventDetails.location}.`}
+        description={`View available rides, request a new one, or offer to drive for this event at ${eventDetails.location}.`}
         actions={
-          <Button asChild>
-            <Link href={`/rides/request?eventId=${eventId}`}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Request Ride for this Event
-            </Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button asChild>
+              <Link href={`/rides/request?eventId=${eventId}`}>
+                <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/events/${eventId}/offer-drive`}>
+                <SteeringWheel className="mr-2 h-4 w-4" /> I can drive
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -109,13 +116,20 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are currently no rides listed for {eventDetails.name}. Be the first to request one!
+              There are currently no rides listed for {eventDetails.name}. Be the first to request one or offer to drive!
             </CardDescription>
-            <Button asChild>
-              <Link href={`/rides/request?eventId=${eventId}`}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
-              </Link>
-            </Button>
+            <div className="flex justify-center gap-4">
+                <Button asChild>
+                <Link href={`/rides/request?eventId=${eventId}`}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+                </Link>
+                </Button>
+                <Button variant="outline" asChild>
+                <Link href={`/events/${eventId}/offer-drive`}>
+                    <SteeringWheel className="mr-2 h-4 w-4" /> I can drive
+                </Link>
+                </Button>
+            </div>
           </CardContent>
         </Card>
       )}
