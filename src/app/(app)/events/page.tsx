@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink } from "lucide-react";
+import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink, Car } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
