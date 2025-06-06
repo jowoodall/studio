@@ -262,19 +262,24 @@ export default function ProfilePage() {
                         <Users className="h-5 w-5" />
                         <h4 className="font-semibold">Manage My Students</h4>
                     </div>
-                    <p className="text-xs text-muted-foreground">Add students you are responsible for to manage their carpool approvals.</p>
-                    <div className="flex gap-2">
+                    <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals.</p>
+                    <div className="flex flex-col gap-2">
+                        <Label htmlFor="studentIdentifier" className="sr-only">Student Identifier</Label>
                         <Input
-                        placeholder="Enter student's name or ID"
+                        id="studentIdentifier"
+                        placeholder="Enter Student's User ID or Email"
                         value={studentNameInput}
                         onChange={(e) => setStudentNameInput(e.target.value)}
                         className="mt-1"
                         />
-                        <Button onClick={handleAddStudent} variant="outline" className="mt-1">Add Student</Button>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            In a live system, you would search for and select an existing student user.
+                        </p>
+                        <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student</Button>
                     </div>
                     {managedStudents.length > 0 ? (
                         <div>
-                        <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students:</h5>
+                        <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User Identifiers):</h5>
                         <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
                             {managedStudents.map((student, index) => (
                             <li key={index} className="text-sm">{student}</li>
@@ -282,7 +287,7 @@ export default function ProfilePage() {
                         </ul>
                         </div>
                     ) : (
-                        <p className="text-sm text-muted-foreground mt-2">No students added yet.</p>
+                        <p className="text-sm text-muted-foreground mt-2">No students linked yet. Enter a student's User ID or Email to link them.</p>
                     )}
                   </div>
                 )}
