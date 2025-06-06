@@ -237,7 +237,7 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">Manage My Parents/Guardians</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ride approvals.</p>
+                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals.</p> {/* Changed ride to ryd */}
                   <div className="flex flex-col gap-2">
                       <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Identifier</Label>
                       <Input

@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 };
 
 const mockNotifications = [
-  { id: "1", title: "New Ride Request", message: "John Doe requested a ride to Northwood High.", date: "2024-11-15 09:30 AM", type: "info", read: false, icon: Info, iconColor: "text-blue-500" },
-  { id: "2", title: "Ride Confirmed", message: "Your ride with Jane Smith for the School Annual Day is confirmed.", date: "2024-11-14 05:00 PM", type: "success", read: true, icon: CheckCheck, iconColor: "text-green-500" },
+  { id: "1", title: "New Ryd Request", message: "John Doe requested a ryd to Northwood High.", date: "2024-11-15 09:30 AM", type: "info", read: false, icon: Info, iconColor: "text-blue-500" }, // Changed Ride to Ryd, ride to ryd
+  { id: "2", title: "Ryd Confirmed", message: "Your ryd with Jane Smith for the School Annual Day is confirmed.", date: "2024-11-14 05:00 PM", type: "success", read: true, icon: CheckCheck, iconColor: "text-green-500" }, // Changed Ride to Ryd, ride to ryd
   { id: "3", title: "Driver Approved", message: "You approved Alex Johnson to drive your child.", date: "2024-11-14 02:10 PM", type: "success", read: true, icon: CheckCheck, iconColor: "text-green-500"},
   { id: "4", title: "Event Reminder", message: "Community Soccer Match starts in 2 hours.", date: "2024-11-13 12:00 PM", type: "warning", read: false, icon: AlertTriangle, iconColor: "text-yellow-500" },
 ];
@@ -71,3 +71,4 @@ export default function NotificationsPage() {
     </>
   );
 }
+

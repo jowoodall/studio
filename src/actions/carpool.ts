@@ -48,3 +48,4 @@ export async function handleDriverApproval(driverId: string, newStatus: "approve
   // Returning a simple object for now, can be expanded to return success/error details.
   return { success: true, driverId, newStatus };
 }
+

@@ -1,3 +1,4 @@
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 export default function DashboardPage() {
   // This would be dynamic based on user role and data
   const stats = [
-    { title: "Upcoming Rides", value: "3", icon: Car, color: "text-blue-500", href: "/rides/upcoming" },
+    { title: "Upcoming Rydz", value: "3", icon: Car, color: "text-blue-500", href: "/rydz/upcoming" },
     { title: "Active Groups", value: "5", icon: Users, color: "text-green-500", href: "/groups" },
     { title: "Pending Approvals", value: "2", icon: CalendarDays, color: "text-yellow-500", href: "/parent/approvals" }, // Example for parent
   ];
@@ -22,11 +23,11 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Welcome to RydzConnect!"
-        description="Manage your rides, groups, and events all in one place."
+        description="Manage your rydz, groups, and events all in one place."
         actions={
           <Button asChild>
-            <Link href="/rides/request">
-              <PlusCircle className="mr-2 h-4 w-4" /> Request a New Ride
+            <Link href="/rydz/request">
+              <PlusCircle className="mr-2 h-4 w-4" /> Request a New Ryd
             </Link>
           </Button>
         }
@@ -59,7 +60,7 @@ export default function DashboardPage() {
             <ul className="space-y-3">
               <li className="flex items-center gap-3">
                 <div className="p-2 bg-accent/20 rounded-full"><Car className="h-4 w-4 text-accent" /></div>
-                <p className="text-sm">Ride to "School Event" confirmed for tomorrow.</p>
+                <p className="text-sm">Ryd to "School Event" confirmed for tomorrow.</p>
               </li>
               <li className="flex items-center gap-3">
                 <div className="p-2 bg-green-500/20 rounded-full"><Users className="h-4 w-4 text-green-500" /></div>
@@ -89,7 +90,7 @@ export default function DashboardPage() {
       <Card className="mt-8 shadow-lg">
         <CardHeader>
             <CardTitle>Community Map Overview</CardTitle>
-            <CardDescription>Visualize rides and events in your area.</CardDescription>
+            <CardDescription>Visualize rydz and events in your area.</CardDescription>
         </CardHeader>
         <CardContent>
             <div className="aspect-video bg-muted rounded-md flex items-center justify-center">
@@ -103,3 +104,4 @@ export default function DashboardPage() {
     </>
   );
 }
+

@@ -13,10 +13,10 @@ import { handleDriverApproval } from "@/actions/carpool";
 
 
 const mockDrivers = [
-  { id: "driver1", name: "John Smith", avatar: "https://placehold.co/100x100.png?text=JS", rating: 4.8, ridesCompleted: 120, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "man portrait" },
-  { id: "driver2", name: "Maria Garcia", avatar: "https://placehold.co/100x100.png?text=MG", rating: 4.5, ridesCompleted: 85, status: "approved" as "pending" | "approved" | "rejected", dataAiHint: "woman portrait" },
-  { id: "driver3", name: "David Lee", avatar: "https://placehold.co/100x100.png?text=DL", rating: 4.9, ridesCompleted: 200, status: "rejected" as "pending" | "approved" | "rejected", dataAiHint: "man smiling" },
-  { id: "driver4", name: "Sarah Miller", avatar: "https://placehold.co/100x100.png?text=SM", rating: 4.7, ridesCompleted: 95, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "woman professional" },
+  { id: "driver1", name: "John Smith", avatar: "https://placehold.co/100x100.png?text=JS", rating: 4.8, rydzCompleted: 120, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "man portrait" }, // Changed ridesCompleted to rydzCompleted
+  { id: "driver2", name: "Maria Garcia", avatar: "https://placehold.co/100x100.png?text=MG", rating: 4.5, rydzCompleted: 85, status: "approved" as "pending" | "approved" | "rejected", dataAiHint: "woman portrait" }, // Changed ridesCompleted to rydzCompleted
+  { id: "driver3", name: "David Lee", avatar: "https://placehold.co/100x100.png?text=DL", rating: 4.9, rydzCompleted: 200, status: "rejected" as "pending" | "approved" | "rejected", dataAiHint: "man smiling" }, // Changed ridesCompleted to rydzCompleted
+  { id: "driver4", name: "Sarah Miller", avatar: "https://placehold.co/100x100.png?text=SM", rating: 4.7, rydzCompleted: 95, status: "pending" as "pending" | "approved" | "rejected", dataAiHint: "woman professional" }, // Changed ridesCompleted to rydzCompleted
 ];
 
 
@@ -33,7 +33,7 @@ export default function ParentApprovalsPage() {
     <>
       <PageHeader
         title="Driver Approvals"
-        description="Review and approve drivers for your child's rides."
+        description="Review and approve drivers for your child's rydz." // Changed rides to rydz
       />
 
       {mockDrivers.length > 0 ? (
@@ -48,7 +48,7 @@ export default function ParentApprovalsPage() {
                 <div className="flex-1">
                   <CardTitle className="font-headline text-xl">{driver.name}</CardTitle>
                   <CardDescription>
-                    Rating: {driver.rating}/5 ({driver.ridesCompleted} rides)
+                    Rating: {driver.rating}/5 ({driver.rydzCompleted} rydz) {/* Changed ridesCompleted, rides to rydzCompleted, rydz */}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
@@ -118,3 +118,4 @@ export default function ParentApprovalsPage() {
     </>
   );
 }
+

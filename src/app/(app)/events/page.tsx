@@ -1,3 +1,4 @@
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,8 +55,8 @@ export default function EventsPage() {
               </CardContent>
               <CardFooter className="border-t pt-4">
                 <Button variant="default" className="w-full" asChild>
-                  <Link href={`/events/${event.id}/rides`}>
-                    <Car className="mr-2 h-4 w-4" /> View/Request Rides
+                  <Link href={`/events/${event.id}/rydz`}> {/* Changed rides to rydz */}
+                    <Car className="mr-2 h-4 w-4" /> View/Request Rydz {/* Changed Rides to Rydz */}
                   </Link>
                 </Button>
               </CardFooter>
@@ -83,3 +84,4 @@ export default function EventsPage() {
     </>
   );
 }
+

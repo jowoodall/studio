@@ -20,7 +20,7 @@ import type { NavItem } from '@/types';
 
 export const siteConfig = {
   name: 'RydzConnect',
-  description: 'Connecting communities for shared rides. Simplify your carpooling needs with RydzConnect.',
+  description: 'Connecting communities for shared rydz. Simplify your carpooling needs with RydzConnect.',
   url: 'https://rydzconnect.example.com',
   ogImage: 'https://rydzconnect.example.com/og.png',
   links: {
@@ -43,14 +43,14 @@ export const navMenuItems: NavItem[] = [
     label: 'AI Powered',
   },
   {
-    title: 'My Rides',
+    title: 'My Rydz',
     icon: Car,
-    href: '/rides', // A general rides page, could be a parent item
+    href: '/rydz', // A general rydz page, could be a parent item
     collapsible: true,
     items: [
-      { title: 'Request Ride', href: '/rides/request', icon: Car },
-      { title: 'Upcoming Rides', href: '/rides/upcoming', icon: CalendarDays },
-      { title: 'Ride History', href: '/rides/history', icon: Users }, // Re-using icon, can be more specific
+      { title: 'Request Ryd', href: '/rydz/request', icon: Car },
+      { title: 'Upcoming Rydz', href: '/rydz/upcoming', icon: CalendarDays },
+      { title: 'Ryd History', href: '/rydz/history', icon: Users }, // Re-using icon, can be more specific
     ],
   },
   {

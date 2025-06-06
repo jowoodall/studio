@@ -1,3 +1,4 @@
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
@@ -90,7 +91,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-headline text-xl font-semibold mb-2">Real-Time Tracking</h3>
                 <p className="text-foreground/70">
-                  Stay updated with live ride tracking and notifications for a seamless experience.
+                  Stay updated with live ryd tracking and notifications for a seamless experience. {/* Changed ride to ryd */}
                 </p>
               </div>
             </div>
@@ -106,3 +107,4 @@ export default function LandingPage() {
     </div>
   );
 }
+

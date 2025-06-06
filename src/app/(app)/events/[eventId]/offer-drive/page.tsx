@@ -64,9 +64,10 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
       </Card>
        <div className="text-center mt-6">
         <Button variant="link" asChild>
-            <Link href={`/events/${eventId}/rides`}>Back to Event Rides</Link>
+            <Link href={`/events/${eventId}/rydz`}>Back to Event Rydz</Link> {/* Changed rides to rydz */}
         </Button>
       </div>
     </>
   );
 }
+

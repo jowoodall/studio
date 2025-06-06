@@ -1,3 +1,4 @@
+
 // src/ai/flows/carpool-matching.ts
 'use server';
 
@@ -19,7 +20,7 @@ const CarpoolMatchingInputSchema = z.object({
   eventDateTime: z.string().describe('The date and time of the event (ISO format).'),
   userLocation: z
     .string()
-    .describe('The full address of the user requesting the ride.'),
+    .describe('The full address of the user requesting the ryd.'),
   trafficConditions: z
     .string()
     .describe('Current and forecasted traffic conditions in the area.'),
@@ -45,7 +46,7 @@ const prompt = ai.definePrompt({
   name: 'carpoolMatchingPrompt',
   input: {schema: CarpoolMatchingInputSchema},
   output: {schema: CarpoolMatchingOutputSchema},
-  prompt: `You are an AI carpool assistant. A student is requesting a ride to an event.
+  prompt: `You are an AI carpool assistant. A student is requesting a ryd to an event.
   Suggest the closest possible carpools to the destination, considering traffic patterns.
 
   Event Location: {{{eventLocation}}}
@@ -70,3 +71,4 @@ const carpoolMatchingFlow = ai.defineFlow(
     return output!;
   }
 );
+

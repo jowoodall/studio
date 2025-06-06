@@ -1,3 +1,4 @@
+
 "use client"; // This form will need client-side interaction
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -14,6 +15,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils"; // Ensure cn is imported
 
 // No direct metadata export from client component files. Define in a parent server component or layout if needed.
 
@@ -30,7 +32,7 @@ const mockDriver = {
   name: "Alex Johnson",
   avatar: "https://placehold.co/100x100.png?text=AJ",
   dataAiHint: "driver smiling",
-  rideDetails: "Ride to Northwood High on 2024-11-15",
+  rydDetails: "Ryd to Northwood High on 2024-11-15", // Changed Ride to Ryd
 };
 
 export default function DriverRatingPage({ params }: { params: { driverId: string } }) {
@@ -69,7 +71,7 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
     <>
       <PageHeader
         title={`Rate Driver: ${driver.name}`}
-        description={`Share your feedback for the ride: ${driver.rideDetails}.`}
+        description={`Share your feedback for the ryd: ${driver.rydDetails}.`} // Changed ride to ryd
       />
       <Card className="w-full max-w-lg mx-auto shadow-xl">
         <CardHeader className="text-center">
@@ -77,7 +79,7 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
             <AvatarImage src={driver.avatar} alt={driver.name} data-ai-hint={driver.dataAiHint}/>
             <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
           </Avatar>
-          <CardTitle className="font-headline text-xl">How was your ride with {driver.name}?</CardTitle>
+          <CardTitle className="font-headline text-xl">How was your ryd with {driver.name}?</CardTitle> {/* Changed ride to ryd */}
           <CardDescription>Your feedback helps improve our community.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -151,3 +153,5 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
   );
 }
 
+// Added cn import if it was missing, otherwise this is just to ensure the file has it.
+// import { cn } from "@/lib/utils";
