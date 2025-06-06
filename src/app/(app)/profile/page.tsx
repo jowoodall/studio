@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users } from "lucide-react";
 import Link from "next/link";
 import { UserRole } from '@/types';
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,6 +44,17 @@ export default function ProfilePage() {
     primaryVehicle: "",
     passengerCapacity: "",
   });
+
+  const [isParent, setIsParent] = useState(false);
+  const [studentNameInput, setStudentNameInput] = useState("");
+  const [managedStudents, setManagedStudents] = useState<string[]>([]);
+
+  const handleAddStudent = () => {
+    if (studentNameInput.trim() !== "") {
+      setManagedStudents(prev => [...prev, studentNameInput.trim()]);
+      setStudentNameInput("");
+    }
+  };
 
   return (
     <>
@@ -230,6 +241,53 @@ export default function ProfilePage() {
                   </div>
                 )}
               </div>
+
+              <Separator className="my-6" />
+
+              <div>
+                <div className="flex items-center space-x-2 mb-4">
+                  <Checkbox
+                    id="isParent"
+                    checked={isParent}
+                    onCheckedChange={(checked) => setIsParent(Boolean(checked))}
+                  />
+                  <Label htmlFor="isParent" className="text-base font-medium cursor-pointer">
+                    I'm a parent
+                  </Label>
+                </div>
+
+                {isParent && (
+                  <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-2 pb-4 animate-accordion-down">
+                    <div className="flex items-center gap-2 text-accent mb-2">
+                        <Users className="h-5 w-5" />
+                        <h4 className="font-semibold">Manage My Students</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Add students you are responsible for to manage their carpool approvals.</p>
+                    <div className="flex gap-2">
+                        <Input
+                        placeholder="Enter student's name or ID"
+                        value={studentNameInput}
+                        onChange={(e) => setStudentNameInput(e.target.value)}
+                        className="mt-1"
+                        />
+                        <Button onClick={handleAddStudent} variant="outline" className="mt-1">Add Student</Button>
+                    </div>
+                    {managedStudents.length > 0 ? (
+                        <div>
+                        <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students:</h5>
+                        <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
+                            {managedStudents.map((student, index) => (
+                            <li key={index} className="text-sm">{student}</li>
+                            ))}
+                        </ul>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground mt-2">No students added yet.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </CardContent>
           </Card>
         </div>
@@ -237,5 +295,3 @@ export default function ProfilePage() {
     </>
   );
 }
-
-    
