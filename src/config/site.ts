@@ -1,3 +1,4 @@
+
 import {
   LayoutDashboard,
   Users,
@@ -12,7 +13,8 @@ import {
   GitFork,
   MapPin,
   DollarSign,
-  MessageSquare
+  MessageSquare,
+  ClipboardList, // Added for My Students
 } from 'lucide-react';
 import type { NavItem } from '@/types';
 
@@ -102,6 +104,12 @@ export const userAccountMenu: NavItem[] = [
     icon: UserCircle,
   },
   {
+    title: 'My Students',
+    href: '/parent/my-students',
+    icon: ClipboardList, // Using ClipboardList as it can represent managing a list of students
+    roles: ['parent'], // Only show for parents
+  },
+  {
     title: 'Settings',
     href: '/settings',
     icon: Settings,
@@ -112,3 +120,4 @@ export const userAccountMenu: NavItem[] = [
     icon: LogOut,
   },
 ];
+
