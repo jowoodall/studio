@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, User, Car, PlusCircle, AlertTriangle, SteeringWheel } from "lucide-react";
+import { CalendarDays, MapPin, User, Car, PlusCircle, AlertTriangle, Command } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -60,7 +60,7 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
             </Button>
             <Button variant="outline" asChild>
               <Link href={`/events/${eventId}/offer-drive`}>
-                <SteeringWheel className="mr-2 h-4 w-4" /> I can drive
+                <Command className="mr-2 h-4 w-4" /> I can drive
               </Link>
             </Button>
           </div>
@@ -75,8 +75,8 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                 <Image 
                   src={ride.image} 
                   alt={`Ride for ${ride.passengerName}`} 
-                  layout="fill" 
-                  objectFit="cover" 
+                  fill 
+                  style={{objectFit: 'cover'}}
                   className="rounded-t-lg"
                   data-ai-hint={ride.dataAiHint}
                 />
@@ -126,7 +126,7 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                 </Button>
                 <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/offer-drive`}>
-                    <SteeringWheel className="mr-2 h-4 w-4" /> I can drive
+                    <Command className="mr-2 h-4 w-4" /> I can drive
                 </Link>
                 </Button>
             </div>

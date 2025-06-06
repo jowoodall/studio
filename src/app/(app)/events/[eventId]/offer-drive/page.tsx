@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, SteeringWheel } from "lucide-react";
+import { AlertTriangle, Command } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
 
@@ -46,7 +46,7 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
       <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader>
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
-            <SteeringWheel className="h-6 w-6 text-primary" />
+            <Command className="h-6 w-6 text-primary" />
           </div>
           <CardTitle className="text-center font-headline text-xl">Offer Your Driving Services</CardTitle>
           <CardDescription className="text-center">
