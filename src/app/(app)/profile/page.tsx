@@ -95,7 +95,7 @@ export default function ProfilePage() {
                 <AvatarFallback>{mockUser.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
               </Avatar>
               <CardTitle className="font-headline text-2xl">{mockUser.fullName}</CardTitle>
-              <CardDescription className="capitalize">{currentDisplayRole}</CardDescription>
+              <CardDescription className="capitalize">{currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole}</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground px-4">{mockUser.bio}</p>
@@ -190,7 +190,7 @@ export default function ProfilePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
-                    <SelectItem value={UserRole.PARENT}>Parent</SelectItem>
+                    <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
                     <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
                     {/* <SelectItem value={UserRole.DRIVER}>Driver</SelectItem> */} {/* Could add Driver if needed here */}
                   </SelectContent>
