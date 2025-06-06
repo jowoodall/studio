@@ -15,12 +15,13 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2 } from "lucide-react";
+import { CalendarIcon, PlusCircle, Loader2, LinkIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 // No direct metadata export from client component files
 
 const eventFormSchema = z.object({
+  importSource: z.string().optional(),
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
@@ -38,6 +39,7 @@ export default function CreateEventPage() {
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
+      importSource: "manual",
       eventTime: "10:00", // Default time
       eventType: "",
     },
@@ -52,11 +54,35 @@ export default function CreateEventPage() {
         title: "Event Created!",
         description: `The event "${data.eventName}" has been successfully created.`,
       });
+      if (data.importSource && data.importSource !== "manual") {
+        toast({
+            title: "Import Note",
+            description: `Ideally, event details from ${data.importSource} would have been pre-filled. (This is a placeholder).`,
+            variant: "default",
+            duration: 4000,
+        });
+      }
       setIsSubmitting(false);
-      form.reset();
+      form.reset({ importSource: "manual", eventTime: "10:00", eventType: "" });
       // router.push('/events'); // Optional: Redirect after creation
     }, 1500);
   }
+
+  const selectedImportSource = form.watch("importSource");
+
+  React.useEffect(() => {
+    if (selectedImportSource && selectedImportSource !== "manual") {
+        // In a real app, you might trigger an API call here or show a modal to connect to the service.
+        // For now, we can just inform the user or pre-fill some mock data.
+        toast({
+            title: `Importing from ${selectedImportSource}`,
+            description: "If this were fully integrated, event fields might be auto-populated now.",
+            duration: 3000,
+        });
+        // Example: form.setValue("eventName", "Imported Event Name");
+    }
+  }, [selectedImportSource, toast, form]);
+
 
   return (
     <>
@@ -72,6 +98,37 @@ export default function CreateEventPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="importSource"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center">
+                      <LinkIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                      Import from Calendar/App (Optional)
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a source to import from" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="manual">Manual Entry</SelectItem>
+                        <SelectItem value="google">Google Calendar</SelectItem>
+                        <SelectItem value="outlook">Outlook Calendar</SelectItem>
+                        <SelectItem value="teamsnap">TeamSnap</SelectItem>
+                        <SelectItem value="band">BAND App</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Selecting a source would (ideally) pre-fill event details. This is a conceptual feature for now.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="eventName"
@@ -213,3 +270,4 @@ export default function CreateEventPage() {
     </>
   );
 }
+
