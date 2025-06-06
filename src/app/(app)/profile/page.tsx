@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { UserRole } from '@/types';
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,6 +35,13 @@ const mockUser = {
     zip: "90210"
   }
 };
+
+const exampleLinkedApps = [
+  { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
+  { id: 'band', name: 'BAND', description: 'Connect with your group calendars.', connected: true, dataAiHint: 'community app logo' },
+  { id: 'googlecalendar', name: 'Google Calendar', description: 'Integrate your personal calendar.', connected: false, dataAiHint: 'calendar logo' },
+  { id: 'outlookcalendar', name: 'Outlook Calendar', description: 'Link your work or personal calendar.', connected: true, dataAiHint: 'office app logo' },
+];
 
 export default function ProfilePage() {
   const [canDrive, setCanDrive] = useState(false);
@@ -192,7 +199,6 @@ export default function ProfilePage() {
                     <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
                     <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
                     <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
-                    {/* <SelectItem value={UserRole.DRIVER}>Driver</SelectItem> */} {/* Could add Driver if needed here */}
                   </SelectContent>
                 </Select>
               </div>
@@ -237,7 +243,7 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">Manage My Parents/Guardians</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals.</p> {/* Changed ride to ryd */}
+                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals.</p>
                   <div className="flex flex-col gap-2">
                       <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Identifier</Label>
                       <Input
@@ -274,10 +280,8 @@ export default function ProfilePage() {
                   <p className="text-sm text-muted-foreground">
                     Administrative functions and system management tools would be accessible here.
                   </p>
-                  {/* Placeholder for admin specific controls */}
                 </div>
               )}
-
 
               <Separator className="my-6" />
               
@@ -362,6 +366,29 @@ export default function ProfilePage() {
                 )}
               </div>
 
+              <Separator className="my-6" />
+
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-4">
+                  <LinkIcon className="h-5 w-5" />
+                  <h4 className="text-base font-medium">Linked Apps</h4>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Connect RydzConnect with other apps you use.</p>
+                <div className="space-y-4">
+                  {exampleLinkedApps.map((app) => (
+                    <div key={app.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-md">
+                      <div>
+                        <p className="font-medium">{app.name}</p>
+                        <p className="text-xs text-muted-foreground">{app.description}</p>
+                      </div>
+                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled>
+                        {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </CardContent>
           </Card>
         </div>
@@ -370,3 +397,5 @@ export default function ProfilePage() {
   );
 }
 
+
+    
