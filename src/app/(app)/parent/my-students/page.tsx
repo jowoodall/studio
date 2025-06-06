@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Users, CalendarClock, History, ShieldAlert, ExternalLink } from "lucide-react";
+import { User, Mail, Users, CalendarClock, History, ShieldAlert, ExternalLink, Car } from "lucide-react"; // Added Car here
 import Link from "next/link";
 import type { Metadata } from 'next';
 
@@ -196,3 +196,4 @@ export default function MyStudentsPage() {
     </>
   );
 }
+
