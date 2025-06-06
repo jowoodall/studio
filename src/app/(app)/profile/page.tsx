@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog } from "lucide-react";
 import Link from "next/link";
 import { UserRole } from '@/types';
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +20,7 @@ const mockUser = {
   fullName: "Alex Johnson",
   email: "alex.johnson@example.com",
   phone: "555-123-4567",
-  role: UserRole.STUDENT, // Or UserRole.PARENT, UserRole.DRIVER
+  role: UserRole.STUDENT, // Default role
   avatarUrl: "https://placehold.co/128x128.png?text=AJ",
   dataAiHint: "professional portrait",
   bio: "Loves carpooling and making new friends on the go. Enjoys coding and soccer.",
@@ -45,16 +45,32 @@ export default function ProfilePage() {
     passengerCapacity: "",
   });
 
-  const [isParent, setIsParent] = useState(false);
-  const [studentNameInput, setStudentNameInput] = useState("");
+  // Role selection and parent/student management state
+  const [selectedRole, setSelectedRole] = useState<UserRole>(mockUser.role);
+  
+  const [studentIdentifierInput, setStudentIdentifierInput] = useState("");
   const [managedStudents, setManagedStudents] = useState<string[]>([]);
 
+  const [parentIdentifierInput, setParentIdentifierInput] = useState("");
+  const [associatedParents, setAssociatedParents] = useState<string[]>([]);
+
+
   const handleAddStudent = () => {
-    if (studentNameInput.trim() !== "") {
-      setManagedStudents(prev => [...prev, studentNameInput.trim()]);
-      setStudentNameInput("");
+    if (studentIdentifierInput.trim() !== "") {
+      setManagedStudents(prev => [...prev, studentIdentifierInput.trim()]);
+      setStudentIdentifierInput("");
     }
   };
+
+  const handleAddParent = () => {
+    if (parentIdentifierInput.trim() !== "") {
+      setAssociatedParents(prev => [...prev, parentIdentifierInput.trim()]);
+      setParentIdentifierInput("");
+    }
+  };
+  
+  const currentDisplayRole = selectedRole || mockUser.role;
+
 
   return (
     <>
@@ -79,7 +95,7 @@ export default function ProfilePage() {
                 <AvatarFallback>{mockUser.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
               </Avatar>
               <CardTitle className="font-headline text-2xl">{mockUser.fullName}</CardTitle>
-              <CardDescription className="capitalize">{mockUser.role}</CardDescription>
+              <CardDescription className="capitalize">{currentDisplayRole}</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground px-4">{mockUser.bio}</p>
@@ -104,9 +120,11 @@ export default function ProfilePage() {
                 <Button variant="outline" className="w-full justify-start" asChild>
                     <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> Account Settings</Link>
                 </Button>
-                <Button variant="outline" className="w-full justify-start" asChild>
-                    <Link href="/parent/approvals"><Shield className="mr-2 h-4 w-4" /> Driver Approvals</Link>
-                </Button>
+                { (selectedRole === UserRole.PARENT || mockUser.role === UserRole.PARENT) &&
+                    <Button variant="outline" className="w-full justify-start" asChild>
+                        <Link href="/parent/approvals"><Shield className="mr-2 h-4 w-4" /> Driver Approvals</Link>
+                    </Button>
+                }
                 <Button variant="destructive" className="w-full justify-start" asChild>
                      <Link href="/logout">
                         <LogOut className="mr-2 h-4 w-4" /> Log Out
@@ -161,6 +179,108 @@ export default function ProfilePage() {
 
               <Separator className="my-6" />
 
+              <div>
+                <Label htmlFor="roleSelect" className="text-base font-medium">My Primary Role</Label>
+                <Select
+                  value={selectedRole}
+                  onValueChange={(value) => setSelectedRole(value as UserRole)}
+                >
+                  <SelectTrigger id="roleSelect" className="mt-1">
+                    <SelectValue placeholder="Select your primary role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
+                    <SelectItem value={UserRole.PARENT}>Parent</SelectItem>
+                    <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                    {/* <SelectItem value={UserRole.DRIVER}>Driver</SelectItem> */} {/* Could add Driver if needed here */}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedRole === UserRole.PARENT && (
+                <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-4 pb-4 animate-accordion-down">
+                  <div className="flex items-center gap-2 text-accent mb-2">
+                      <Users className="h-5 w-5" />
+                      <h4 className="font-semibold">Manage My Students</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals.</p>
+                  <div className="flex flex-col gap-2">
+                      <Label htmlFor="studentIdentifier" className="sr-only">Student Identifier</Label>
+                      <Input
+                      id="studentIdentifier"
+                      placeholder="Enter Student's User ID or Email"
+                      value={studentIdentifierInput}
+                      onChange={(e) => setStudentIdentifierInput(e.target.value)}
+                      className="mt-1"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                          In a live system, you would search for and select an existing student user.
+                      </p>
+                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student</Button>
+                  </div>
+                  {managedStudents.length > 0 && (
+                      <div>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User Identifiers):</h5>
+                      <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
+                          {managedStudents.map((student, index) => (
+                          <li key={index} className="text-sm">{student}</li>
+                          ))}
+                      </ul>
+                      </div>
+                  )}
+                </div>
+              )}
+
+              {selectedRole === UserRole.STUDENT && (
+                <div className="space-y-6 pl-4 border-l-2 border-blue-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
+                  <div className="flex items-center gap-2 text-blue-600 mb-2">
+                      <Users className="h-5 w-5" />
+                      <h4 className="font-semibold">Manage My Parents/Guardians</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ride approvals.</p>
+                  <div className="flex flex-col gap-2">
+                      <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Identifier</Label>
+                      <Input
+                      id="parentIdentifier"
+                      placeholder="Enter Parent/Guardian's User ID or Email"
+                      value={parentIdentifierInput}
+                      onChange={(e) => setParentIdentifierInput(e.target.value)}
+                      className="mt-1"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                          In a live system, you would search for and select an existing parent/guardian user.
+                      </p>
+                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian</Button>
+                  </div>
+                  {associatedParents.length > 0 && (
+                      <div>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Parents/Guardians (User Identifiers):</h5>
+                      <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
+                          {associatedParents.map((parent, index) => (
+                          <li key={index} className="text-sm">{parent}</li>
+                          ))}
+                      </ul>
+                      </div>
+                  )}
+                </div>
+              )}
+
+              {selectedRole === UserRole.ADMIN && (
+                <div className="space-y-6 pl-4 border-l-2 border-red-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
+                  <div className="flex items-center gap-2 text-red-600 mb-2">
+                      <UserCog className="h-5 w-5" />
+                      <h4 className="font-semibold">Administrator Controls Area</h4>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Administrative functions and system management tools would be accessible here.
+                  </p>
+                  {/* Placeholder for admin specific controls */}
+                </div>
+              )}
+
+
+              <Separator className="my-6" />
+              
               <div>
                 <div className="flex items-center space-x-2 mb-4">
                   <Checkbox
@@ -242,57 +362,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <Separator className="my-6" />
-
-              <div>
-                <div className="flex items-center space-x-2 mb-4">
-                  <Checkbox
-                    id="isParent"
-                    checked={isParent}
-                    onCheckedChange={(checked) => setIsParent(Boolean(checked))}
-                  />
-                  <Label htmlFor="isParent" className="text-base font-medium cursor-pointer">
-                    I'm a parent
-                  </Label>
-                </div>
-
-                {isParent && (
-                  <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-2 pb-4 animate-accordion-down">
-                    <div className="flex items-center gap-2 text-accent mb-2">
-                        <Users className="h-5 w-5" />
-                        <h4 className="font-semibold">Manage My Students</h4>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals.</p>
-                    <div className="flex flex-col gap-2">
-                        <Label htmlFor="studentIdentifier" className="sr-only">Student Identifier</Label>
-                        <Input
-                        id="studentIdentifier"
-                        placeholder="Enter Student's User ID or Email"
-                        value={studentNameInput}
-                        onChange={(e) => setStudentNameInput(e.target.value)}
-                        className="mt-1"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                            In a live system, you would search for and select an existing student user.
-                        </p>
-                        <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student</Button>
-                    </div>
-                    {managedStudents.length > 0 ? (
-                        <div>
-                        <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User Identifiers):</h5>
-                        <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
-                            {managedStudents.map((student, index) => (
-                            <li key={index} className="text-sm">{student}</li>
-                            ))}
-                        </ul>
-                        </div>
-                    ) : (
-                        <p className="text-sm text-muted-foreground mt-2">No students linked yet. Enter a student's User ID or Email to link them.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
             </CardContent>
           </Card>
         </div>
@@ -300,3 +369,4 @@ export default function ProfilePage() {
     </>
   );
 }
+
