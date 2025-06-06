@@ -1,5 +1,6 @@
 "use client"; // This form will need client-side interaction
 
+import React from "react"; // Added React import
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
