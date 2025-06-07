@@ -25,7 +25,7 @@ interface InteractiveMapProps {
 const USA_CENTER_LAT = 39.8283;
 const USA_CENTER_LNG = -98.5795;
 const INITIAL_ZOOM = 4;
-const USER_LOCATION_ZOOM = 12; // Slightly zoomed out from 14 to better see surrounding markers
+const USER_LOCATION_ZOOM = 12;
 
 export function InteractiveMap({
   className,
@@ -73,7 +73,7 @@ export function InteractiveMap({
       fetchUserLocation();
       setGeolocationAttempted(true);
     }
-  }, [geolocationAttempted]);
+  }, [geolocationAttempted, mapInstance]); // Added mapInstance dependency
 
 
   if (!apiKey) {
@@ -106,7 +106,7 @@ export function InteractiveMap({
             center={currentCenter}
             zoom={currentZoom}
             gestureHandling={'greedy'}
-            disableDefaultUI={true}
+            disableDefaultUI={false} // Changed from true to false
             mapId="rydzconnect_map"
             className="w-full h-full"
             onLoad={(map) => setMapInstance(map.map!)}
