@@ -97,11 +97,11 @@ export default function DashboardPage() {
             <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
                 <Image 
                     src="https://placehold.co/800x450.png" 
-                    alt="Community Map Placeholder" 
+                    alt="Preview of your default map view" 
                     width={800} 
                     height={450} 
                     className="rounded-md object-cover" 
-                    data-ai-hint="map community events" 
+                    data-ai-hint="user location map" 
                 />
             </div>
           </Link>
