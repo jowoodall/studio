@@ -2,29 +2,37 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { APIProvider, Map } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, MapPin, LocateFixed } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+
+interface MapMarker {
+  id: string;
+  position: { lat: number; lng: number };
+  title?: string;
+}
 
 interface InteractiveMapProps {
   className?: string;
   defaultCenterLat?: number;
   defaultCenterLng?: number;
   defaultZoom?: number;
+  markers?: MapMarker[];
 }
 
 const USA_CENTER_LAT = 39.8283;
 const USA_CENTER_LNG = -98.5795;
 const INITIAL_ZOOM = 4;
-const USER_LOCATION_ZOOM = 14;
+const USER_LOCATION_ZOOM = 12; // Slightly zoomed out from 14 to better see surrounding markers
 
 export function InteractiveMap({
   className,
   defaultCenterLat = USA_CENTER_LAT,
   defaultCenterLng = USA_CENTER_LNG,
   defaultZoom = INITIAL_ZOOM,
+  markers = [],
 }: InteractiveMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -103,7 +111,12 @@ export function InteractiveMap({
             className="w-full h-full"
             onLoad={(map) => setMapInstance(map.map!)}
           >
-            {/* Markers and other map elements will go here later */}
+            {markers.map(marker => (
+              <AdvancedMarker key={marker.id} position={marker.position} title={marker.title}>
+                 {/* You can customize the marker icon here, e.g., using an img or a div */}
+                 <span className="text-2xl">📍</span>
+              </AdvancedMarker>
+            ))}
           </Map>
         </div>
         <Button

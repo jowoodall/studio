@@ -5,11 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PlusCircle, Users, CalendarDays, Car } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
-import Image from 'next/image';
+import { InteractiveMap } from "@/components/map/interactive-map"; // Import the InteractiveMap
 
 export const metadata: Metadata = {
   title: 'Dashboard',
 };
+
+// Mock upcoming events with geographic coordinates
+const mockUpcomingEventsForMap = [
+  { id: "eventMap1", title: "School Annual Day", lat: 34.052235, lng: -118.243683, description: "Northwood High Auditorium" }, // Example: Los Angeles
+  { id: "eventMap2", title: "Community Soccer Match", lat: 34.058000, lng: -118.250000, description: "City Sports Complex" }, // Example: Near LA
+  { id: "eventMap3", title: "Tech Conference", lat: 37.774929, lng: -122.419418, description: "Downtown Convention Center" }, // Example: San Francisco
+];
 
 export default function DashboardPage() {
   // This would be dynamic based on user role and data
@@ -18,6 +25,12 @@ export default function DashboardPage() {
     { title: "Active Groups", value: "5", icon: Users, color: "text-green-500", href: "/groups" },
     { title: "Pending Approvals", value: "2", icon: CalendarDays, color: "text-yellow-500", href: "/parent/approvals" }, // Example for parent
   ];
+
+  const mapMarkers = mockUpcomingEventsForMap.map(event => ({
+    id: event.id,
+    position: { lat: event.lat, lng: event.lng },
+    title: `${event.title} - ${event.description}`,
+  }));
 
   return (
     <>
@@ -90,21 +103,17 @@ export default function DashboardPage() {
       <Card className="mt-8 shadow-lg">
         <CardHeader>
             <CardTitle>Community Map Overview</CardTitle>
-            <CardDescription>Visualize rydz and events in your area.</CardDescription>
+            <CardDescription>Visualize rydz and events in your area. Markers indicate upcoming event locations.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Link href="/map" aria-label="View interactive map">
-            <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
-                <Image 
-                    src="https://placehold.co/800x450.png" 
-                    alt="Preview of your default map view" 
-                    width={800} 
-                    height={450} 
-                    className="rounded-md object-cover" 
-                    data-ai-hint="user location map" 
-                />
-            </div>
-          </Link>
+          {/* Replace static image with InteractiveMap */}
+          <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden">
+            <InteractiveMap 
+                className="w-full h-full" 
+                defaultZoom={4} // You might want a different default zoom for the dashboard preview
+                markers={mapMarkers} 
+            />
+          </div>
         </CardContent>
       </Card>
     </>
