@@ -106,7 +106,7 @@ export function InteractiveMap({
             center={currentCenter}
             zoom={currentZoom}
             gestureHandling={'greedy'}
-            disableDefaultUI={false} // Changed from true to false
+            disableDefaultUI={true}
             mapId="rydzconnect_map"
             className="w-full h-full"
             onLoad={(map) => setMapInstance(map.map!)}
