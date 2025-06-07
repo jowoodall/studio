@@ -86,7 +86,7 @@ export function InteractiveMap({
       fetchUserLocation();
       setGeolocationAttempted(true);
     }
-  }, [geolocationAttempted, mapInstance, defaultCenterLat, defaultCenterLng, defaultZoom]); // Added dependencies
+  }, [geolocationAttempted, mapInstance, defaultCenterLat, defaultCenterLng, defaultZoom]);
 
 
   if (!apiKey) {
@@ -119,10 +119,12 @@ export function InteractiveMap({
             center={currentCenter}
             zoom={currentZoom}
             gestureHandling={'greedy'}
-            disableDefaultUI={true} // Reverted to true as per previous request
+            disableDefaultUI={true} 
             mapId="rydzconnect_map"
             className="w-full h-full"
             onLoad={(map) => setMapInstance(map.map!)}
+            scrollwheel={true} // Explicitly enable scroll wheel zoom
+            zoomControl={true} // Ensure zoom control buttons are enabled
           >
             {markers.map(marker => (
               <AdvancedMarker key={marker.id} position={marker.position} title={marker.title}>
