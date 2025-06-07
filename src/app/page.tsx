@@ -52,8 +52,8 @@ export default function LandingPage() {
               <Image
                 src="https://placehold.co/1200x675.png"
                 alt="RydzConnect in action"
-                layout="fill"
-                objectFit="cover"
+                fill
+                className="object-cover"
                 data-ai-hint="community carpooling app"
               />
             </div>
@@ -91,7 +91,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-headline text-xl font-semibold mb-2">Real-Time Tracking</h3>
                 <p className="text-foreground/70">
-                  Stay updated with live ryd tracking and notifications for a seamless experience. {/* Changed ride to ryd */}
+                  Stay updated with live ryd tracking and notifications for a seamless experience.
                 </p>
               </div>
             </div>
@@ -107,4 +107,3 @@ export default function LandingPage() {
     </div>
   );
 }
-

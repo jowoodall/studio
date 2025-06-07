@@ -8,13 +8,13 @@ import Image from "next/image";
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Upcoming Rydz', // Changed Rides to Rydz
+  title: 'Upcoming Rydz', 
 };
 
 // Mock data for upcoming rydz
-const mockUpcomingRydz = [ // Changed mockUpcomingRides to mockUpcomingRydz
+const mockUpcomingRydz = [ 
   { 
-    id: "ryd1", // Changed ride1 to ryd1
+    id: "ryd1", 
     eventName: "School Annual Day Rehearsal", 
     date: "2024-12-10", 
     time: "03:00 PM", 
@@ -25,7 +25,7 @@ const mockUpcomingRydz = [ // Changed mockUpcomingRides to mockUpcomingRydz
     dataAiHint: "school kids play" 
   },
   { 
-    id: "ryd2", // Changed ride2 to ryd2
+    id: "ryd2", 
     eventName: "Weekend Soccer Practice", 
     date: "2024-11-25", 
     time: "09:00 AM", 
@@ -36,7 +36,7 @@ const mockUpcomingRydz = [ // Changed mockUpcomingRides to mockUpcomingRydz
     dataAiHint: "soccer kids" 
   },
   { 
-    id: "ryd3", // Changed ride3 to ryd3
+    id: "ryd3", 
     eventName: "Study Group Session", 
     date: "2024-11-28", 
     time: "06:00 PM", 
@@ -48,25 +48,24 @@ const mockUpcomingRydz = [ // Changed mockUpcomingRides to mockUpcomingRydz
   },
 ];
 
-export default function UpcomingRydzPage() { // Changed UpcomingRidesPage to UpcomingRydzPage
+export default function UpcomingRydzPage() { 
   return (
     <>
       <PageHeader
-        title="Upcoming Rydz" // Changed Rides to Rydz
-        description="Here are your scheduled and requested rydz." // Changed rides to rydz
+        title="Upcoming Rydz" 
+        description="Here are your scheduled and requested rydz." 
       />
 
-      {mockUpcomingRydz.length > 0 ? ( // Changed mockUpcomingRides
+      {mockUpcomingRydz.length > 0 ? ( 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {mockUpcomingRydz.map((ryd) => ( // Changed ride to ryd
+          {mockUpcomingRydz.map((ryd) => ( 
             <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="relative h-40">
                 <Image 
                   src={ryd.image} 
                   alt={ryd.eventName} 
-                  layout="fill" 
-                  objectFit="cover" 
-                  className="rounded-t-lg" 
+                  fill 
+                  className="rounded-t-lg object-cover" 
                   data-ai-hint={ryd.dataAiHint}
                 />
                  <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm">
@@ -90,7 +89,7 @@ export default function UpcomingRydzPage() { // Changed UpcomingRidesPage to Upc
               </CardContent>
               <CardFooter className="border-t pt-4">
                 <Button variant="default" className="w-full" asChild>
-                  <Link href={`/rydz/tracking/${ryd.id}`}> {/* Changed rides to rydz */}
+                  <Link href={`/rydz/tracking/${ryd.id}`}> 
                     <Eye className="mr-2 h-4 w-4" /> View Details / Track
                   </Link>
                 </Button>
@@ -102,15 +101,15 @@ export default function UpcomingRydzPage() { // Changed UpcomingRidesPage to Upc
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <AlertTriangle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Upcoming Rydz</CardTitle> {/* Changed Rides to Rydz */}
+            <CardTitle className="font-headline text-2xl">No Upcoming Rydz</CardTitle> 
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              You have no rydz scheduled. Request one to get started! {/* Changed rides to rydz */}
+              You have no rydz scheduled. Request one to get started! 
             </CardDescription>
             <Button asChild>
-              <Link href="/rydz/request"> {/* Changed rides to rydz */}
-                Request a Ryd {/* Changed Ride to Ryd */}
+              <Link href="/rydz/request"> 
+                Request a Ryd 
               </Link>
             </Button>
           </CardContent>
@@ -119,4 +118,3 @@ export default function UpcomingRydzPage() { // Changed UpcomingRidesPage to Upc
     </>
   );
 }
-

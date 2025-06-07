@@ -1,3 +1,4 @@
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 const mockGroups = [
   { id: "1", name: "Morning School Run", members: 5, description: "Daily carpool to Northwood High.", image: "https://placehold.co/400x200.png?text=School+Run", dataAiHint: "school children" },
   { id: "2", name: "Soccer Practice Crew", members: 3, description: "Carpool for weekend soccer practice.", image: "https://placehold.co/400x200.png?text=Soccer+Practice", dataAiHint: "soccer team" },
-  { id: "3", name: "Work Commute (Downtown)", members: 2, description: "Shared rides to downtown offices.", image: "https://placehold.co/400x200.png?text=Work+Commute", dataAiHint: "city traffic" },
+  { id: "3", name: "Work Commute (Downtown)", members: 2, description: "Shared rydz to downtown offices.", image: "https://placehold.co/400x200.png?text=Work+Commute", dataAiHint: "city traffic" },
 ];
 
 export default function GroupsPage() {
@@ -37,7 +38,7 @@ export default function GroupsPage() {
           {mockGroups.map((group) => (
             <Card key={group.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="relative h-40">
-                 <Image src={group.image} alt={group.name} layout="fill" objectFit="cover" className="rounded-t-lg" data-ai-hint={group.dataAiHint} />
+                 <Image src={group.image} alt={group.name} fill className="rounded-t-lg object-cover" data-ai-hint={group.dataAiHint} />
               </CardHeader>
               <CardContent className="flex-grow pt-4">
                 <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>

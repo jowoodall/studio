@@ -37,7 +37,7 @@ export default function EventsPage() {
           {mockEvents.map((event) => (
             <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">
-                 <Image src={event.image} alt={event.name} layout="fill" objectFit="cover" className="rounded-t-lg" data-ai-hint={event.dataAiHint} />
+                 <Image src={event.image} alt={event.name} fill className="rounded-t-lg object-cover" data-ai-hint={event.dataAiHint} />
                  {event.external && (
                     <div className="absolute top-2 right-2 bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full flex items-center">
                         <ExternalLink className="h-3 w-3 mr-1" /> External
@@ -55,8 +55,8 @@ export default function EventsPage() {
               </CardContent>
               <CardFooter className="border-t pt-4">
                 <Button variant="default" className="w-full" asChild>
-                  <Link href={`/events/${event.id}/rydz`}> {/* Changed rides to rydz */}
-                    <Car className="mr-2 h-4 w-4" /> View/Request Rydz {/* Changed Rides to Rydz */}
+                  <Link href={`/events/${event.id}/rydz`}>
+                    <Car className="mr-2 h-4 w-4" /> View/Request Rydz
                   </Link>
                 </Button>
               </CardFooter>
@@ -84,4 +84,3 @@ export default function EventsPage() {
     </>
   );
 }
-
