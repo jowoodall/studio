@@ -93,15 +93,20 @@ export default function DashboardPage() {
             <CardDescription>Visualize rydz and events in your area.</CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="aspect-video bg-muted rounded-md flex items-center justify-center">
-                <Image src="https://placehold.co/800x450.png" alt="Community Map Placeholder" width={800} height={450} className="rounded-md" data-ai-hint="map community events" />
+          <Link href="/map" aria-label="View interactive map">
+            <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
+                <Image 
+                    src="https://placehold.co/800x450.png" 
+                    alt="Community Map Placeholder" 
+                    width={800} 
+                    height={450} 
+                    className="rounded-md object-cover" 
+                    data-ai-hint="map community events" 
+                />
             </div>
-            <Button variant="link" className="mt-2 px-0" asChild>
-                <Link href="/map">Go to Interactive Map</Link>
-            </Button>
+          </Link>
         </CardContent>
       </Card>
     </>
   );
 }
-
