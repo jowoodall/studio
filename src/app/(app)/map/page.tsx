@@ -5,16 +5,16 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Map View',
-  description: 'View events, rydz, and live tracking on an interactive map.', // Changed rides to rydz
+  description: 'View events, rydz, and live tracking on an interactive map.',
 };
 
-// Mock upcoming events with geographic coordinates for the main map page
+// Mock upcoming events around Chattanooga, TN (approx. 35.0456° N, 85.3097° W)
 const mockUpcomingEventsForMapPage = [
-  { id: "mapEvent1", title: "Grand City Marathon", lat: 34.0522, lng: -118.2437, description: "Starts at City Hall" },
-  { id: "mapEvent2", title: "Tech Innovators Summit", lat: 37.7749, lng: -122.4194, description: "Moscone Center" },
-  { id: "mapEvent3", title: "Lakeside Music Festival", lat: 41.8781, lng: -87.6298, description: "Millennium Park, Chicago" },
-  { id: "mapEvent4", title: "Local Farmers Market", lat: 34.0600, lng: -118.2500, description: "Community Square, Los Angeles" },
-  { id: "mapEvent5", title: "Art Fair Downtown", lat: 40.7128, lng: -74.0060, description: "SoHo District, New York" },
+  { id: "mapEvent1", title: "Tennessee Aquarium Visit", lat: 35.0541, lng: -85.3105, description: "1 Broad St, Chattanooga" },
+  { id: "mapEvent2", title: "Rock City Gardens Tour", lat: 34.9710, lng: -85.3500, description: "Lookout Mountain, GA side" },
+  { id: "mapEvent3", title: "Chattanooga Choo Choo Event", lat: 35.0380, lng: -85.3150, description: "Terminal Station" },
+  { id: "mapEvent4", title: "Walnut Street Bridge Stroll", lat: 35.0560, lng: -85.3080, description: "Pedestrian Bridge" },
+  { id: "mapEvent5", title: "Signal Mountain Farmers Market", lat: 35.1600, lng: -85.3400, description: "Pruett's Market Area" },
 ];
 
 export default function MapPage() {
@@ -28,13 +28,15 @@ export default function MapPage() {
     <>
       <PageHeader
         title="Interactive Map View"
-        description="Visualize event locations, carpool routes, and active rydz in real-time. Markers indicate upcoming event locations." // Changed rides to rydz
+        description="Visualize event locations, carpool routes, and active rydz in real-time. Markers indicate upcoming event locations."
       />
       <InteractiveMap 
         className="w-full h-[calc(100vh-200px)]" 
         markers={mapPageMarkers} 
+        defaultCenterLat={35.0456} // Explicitly set Chattanooga as center
+        defaultCenterLng={-85.3097}
+        defaultZoom={9} // Set appropriate zoom for the region
       /> {/* Adjust height as needed */}
     </>
   );
 }
-

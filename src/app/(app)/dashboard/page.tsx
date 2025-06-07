@@ -11,11 +11,11 @@ export const metadata: Metadata = {
   title: 'Dashboard',
 };
 
-// Mock upcoming events with geographic coordinates
+// Mock upcoming events around Chattanooga, TN (approx. 35.0456° N, 85.3097° W)
 const mockUpcomingEventsForMap = [
-  { id: "eventMap1", title: "School Annual Day", lat: 34.052235, lng: -118.243683, description: "Northwood High Auditorium" }, // Example: Los Angeles
-  { id: "eventMap2", title: "Community Soccer Match", lat: 34.058000, lng: -118.250000, description: "City Sports Complex" }, // Example: Near LA
-  { id: "eventMap3", title: "Tech Conference", lat: 37.774929, lng: -122.419418, description: "Downtown Convention Center" }, // Example: San Francisco
+  { id: "eventMap1", title: "Riverbend Festival Prep", lat: 35.0500, lng: -85.3000, description: "Downtown Chattanooga" },
+  { id: "eventMap2", title: "Lookout Mountain Hike Meetup", lat: 34.9950, lng: -85.3450, description: "Lookout Mountain Trailhead" },
+  { id: "eventMap3", title: "Tech Meetup @ The Edney", lat: 35.0460, lng: -85.3090, description: "Edney Innovation Center" },
 ];
 
 export default function DashboardPage() {
@@ -106,11 +106,12 @@ export default function DashboardPage() {
             <CardDescription>Visualize rydz and events in your area. Markers indicate upcoming event locations.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Replace static image with InteractiveMap */}
           <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden">
             <InteractiveMap 
                 className="w-full h-full" 
-                defaultZoom={4} // You might want a different default zoom for the dashboard preview
+                defaultCenterLat={35.0456} // Center on Chattanooga
+                defaultCenterLng={-85.3097}
+                defaultZoom={9} // Zoom level for ~25-mile radius view
                 markers={mapMarkers} 
             />
           </div>

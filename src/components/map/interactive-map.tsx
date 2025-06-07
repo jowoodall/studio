@@ -22,16 +22,16 @@ interface InteractiveMapProps {
   markers?: MapMarker[];
 }
 
-const USA_CENTER_LAT = 39.8283;
-const USA_CENTER_LNG = -98.5795;
-const INITIAL_ZOOM = 4;
+const CHATTANOOGA_CENTER_LAT = 35.0456;
+const CHATTANOOGA_CENTER_LNG = -85.3097;
+const AREA_ZOOM = 9; // Zoom level for a 25-mile radius overview
 const USER_LOCATION_ZOOM = 12;
 
 export function InteractiveMap({
   className,
-  defaultCenterLat = USA_CENTER_LAT,
-  defaultCenterLng = USA_CENTER_LNG,
-  defaultZoom = INITIAL_ZOOM,
+  defaultCenterLat = CHATTANOOGA_CENTER_LAT,
+  defaultCenterLng = CHATTANOOGA_CENTER_LNG,
+  defaultZoom = AREA_ZOOM,
   markers = [],
 }: InteractiveMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -60,11 +60,24 @@ export function InteractiveMap({
         (error) => {
           console.error("Error getting user location:", error.message);
           // Fallback to default, which is already set
+          // If defaulting, ensure the map focuses on the default area
+          setCurrentCenter({ lat: defaultCenterLat, lng: defaultCenterLng });
+          setCurrentZoom(defaultZoom);
+          if (mapInstance) {
+            mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
+            mapInstance.setZoom(defaultZoom);
+          }
         }
       );
     } else {
       console.log("Geolocation is not supported by this browser.");
       // Fallback to default
+      setCurrentCenter({ lat: defaultCenterLat, lng: defaultCenterLng });
+      setCurrentZoom(defaultZoom);
+      if (mapInstance) {
+        mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
+        mapInstance.setZoom(defaultZoom);
+      }
     }
   };
 
@@ -73,7 +86,7 @@ export function InteractiveMap({
       fetchUserLocation();
       setGeolocationAttempted(true);
     }
-  }, [geolocationAttempted, mapInstance]); // Added mapInstance dependency
+  }, [geolocationAttempted, mapInstance, defaultCenterLat, defaultCenterLng, defaultZoom]); // Added dependencies
 
 
   if (!apiKey) {
@@ -106,7 +119,7 @@ export function InteractiveMap({
             center={currentCenter}
             zoom={currentZoom}
             gestureHandling={'greedy'}
-            disableDefaultUI={true}
+            disableDefaultUI={true} // Reverted to true as per previous request
             mapId="rydzconnect_map"
             className="w-full h-full"
             onLoad={(map) => setMapInstance(map.map!)}
