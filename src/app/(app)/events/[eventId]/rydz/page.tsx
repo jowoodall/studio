@@ -5,7 +5,8 @@ import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Car, PlusCircle, AlertTriangle, Users, Check, X, Info } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Send } from "lucide-react"; // Added UserCircle2, Send
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -22,8 +23,6 @@ const mockEventRydz = [
   { id: "rydO", eventId: "2", passengerName: "Edward Scissorhands", pickupTime: "01:30 PM", driverName: "Fiona Gallagher", status: "Confirmed", image: "https://placehold.co/400x200.png?text=Event+Ryd+3", dataAiHint: "sports gear car" },
 ];
 
-// Mock event details (in a real app, fetch based on eventId)
-// Added associatedGroupIds to mock data
 const mockEventsData: { [key: string]: { name: string; location: string; associatedGroupIds: string[] } } = {
   "1": { name: "School Annual Day", location: "Northwood High Auditorium", associatedGroupIds: ["group1"] },
   "2": { name: "Community Soccer Match", location: "City Sports Complex", associatedGroupIds: ["group2", "group3"] },
@@ -39,6 +38,38 @@ const mockAvailableGroups = [
   { id: "group6", name: "Debate Team Transport" },
 ];
 
+interface GroupMember {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  dataAiHint: string;
+  canDrive: boolean;
+}
+
+const mockGroupMembersDataForEventPage: { [groupId: string]: GroupMember[] } = {
+  "group1": [
+    { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true },
+    { id: "user2", name: "Bob The Builder", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true },
+    { id: "user3", name: "Charlie Brown", avatarUrl: "https://placehold.co/100x100.png?text=CB", dataAiHint: "boy cartoon", canDrive: false },
+  ],
+  "group2": [
+    { id: "user4", name: "Diana Prince", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true },
+    { id: "user5", name: "Edward Scissorhands", avatarUrl: "https://placehold.co/100x100.png?text=ES", dataAiHint: "man pale", canDrive: false },
+    { id: "user6", name: "Fiona Gallagher", avatarUrl: "https://placehold.co/100x100.png?text=FG", dataAiHint: "woman determined", canDrive: true },
+  ],
+  "group3": [
+     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true }, // Alice is in another group too
+     { id: "user7", name: "Gus Fring", avatarUrl: "https://placehold.co/100x100.png?text=GF", dataAiHint: "man serious", canDrive: true },
+  ],
+  "group4": [
+    { id: "user8", name: "Hank Hill", avatarUrl: "https://placehold.co/100x100.png?text=HH", dataAiHint: "man cartoon", canDrive: false },
+  ],
+  "group5": [], // No members or no drivers
+  "group6": [
+    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true },
+  ]
+};
+
 
 export default function EventRydzPage({ params }: { params: { eventId: string } }) {
   const { toast } = useToast();
@@ -49,12 +80,33 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
+  const [potentialDrivers, setPotentialDrivers] = useState<GroupMember[]>([]);
 
   useEffect(() => {
     if (eventDetails) {
       setCurrentAssociatedGroups(eventDetails.associatedGroupIds || []);
     }
   }, [eventDetails]);
+
+  useEffect(() => {
+    if (currentAssociatedGroups.length > 0) {
+      const drivers: GroupMember[] = [];
+      const driverIds = new Set<string>();
+
+      currentAssociatedGroups.forEach(groupId => {
+        const members = mockGroupMembersDataForEventPage[groupId] || [];
+        members.forEach(member => {
+          if (member.canDrive && !driverIds.has(member.id)) {
+            drivers.push(member);
+            driverIds.add(member.id);
+          }
+        });
+      });
+      setPotentialDrivers(drivers);
+    } else {
+      setPotentialDrivers([]);
+    }
+  }, [currentAssociatedGroups]);
 
   const handleGroupSelection = (groupId: string) => {
     const newSelectedGroups = currentAssociatedGroups.includes(groupId)
@@ -72,6 +124,14 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
   const filteredGroupsForPopover = mockAvailableGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
+
+  const handleInviteDriver = (driverName: string) => {
+    toast({
+        title: "Driver Invited (Mock)",
+        description: `An invitation has been sent to ${driverName}.`,
+    });
+    // Placeholder for actual invite logic
+  };
 
   if (!eventDetails) {
     return (
@@ -162,8 +222,6 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
                           value={group.id}
                           onSelect={() => {
                             handleGroupSelection(group.id);
-                            // Keep popover open for multi-select, or close if preferred:
-                            // setGroupPopoverOpen(false); 
                           }}
                         >
                           <Check
@@ -183,6 +241,46 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
               </Command>
             </PopoverContent>
           </Popover>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6 shadow-lg">
+        <CardHeader>
+            <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
+            <CardDescription>Drivers from the groups above who might be available for this event.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            {potentialDrivers.length > 0 ? (
+                <ul className="space-y-3">
+                    {potentialDrivers.map(driver => (
+                        <li key={driver.id} className="flex flex-col sm:flex-row items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3 sm:gap-2">
+                            <div className="flex items-center gap-3 flex-grow">
+                                <Avatar className="h-10 w-10">
+                                    <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
+                                    <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium">{driver.name}</span>
+                            </div>
+                            <div className="flex gap-2 w-full sm:w-auto justify-end">
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/profile/view/${driver.id}`}> {/* Placeholder profile link */}
+                                        <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
+                                    </Link>
+                                </Button>
+                                <Button size="sm" onClick={() => handleInviteDriver(driver.name)}>
+                                    <Send className="mr-1.5 h-4 w-4" /> Invite Driver
+                                </Button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                    <Info className="mx-auto h-8 w-8 mb-2" />
+                    <p>No potential drivers found in the currently associated groups.</p>
+                    <p className="text-xs mt-1">Try associating more groups or ensure members are marked as 'can drive'.</p>
+                </div>
+            )}
         </CardContent>
       </Card>
 
@@ -236,7 +334,7 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are currently no rydz listed for {eventDetails.name}. Be the first to request one or offer to drive!
+              There are currently no rydz listed for {eventDetails.name}. Be the first to request one or consider inviting a driver from the associated groups.
             </CardDescription>
             <div className="flex justify-center gap-4">
                 <Button asChild>
@@ -253,3 +351,5 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
     </>
   );
 }
+
+    
