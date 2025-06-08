@@ -83,12 +83,12 @@ export function AppSidebar() {
 
       return (
         <메뉴아이템Component key={itemKey}>
-          <Link href={item.href} asChild>
-            <메뉴버튼Component
-              isActive={isActive}
-              tooltip={sidebarState === "collapsed" ? item.title : undefined}
-              onClick={handleItemClick}
-            >
+          <메뉴버튼Component 
+            asChild
+            isActive={isActive}
+            tooltip={sidebarState === "collapsed" ? item.title : undefined}
+          >
+            <Link href={item.href} onClick={handleItemClick}>
               {item.icon && <item.icon className="shrink-0" />}
               <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
               {item.label && sidebarState === "expanded" && (
@@ -96,8 +96,8 @@ export function AppSidebar() {
                   {item.label}
                 </span>
               )}
-            </메뉴버튼Component>
-          </Link>
+            </Link>
+          </메뉴버튼Component>
         </메뉴아이템Component>
       );
     });
@@ -124,4 +124,3 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
-
