@@ -220,10 +220,6 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                     fill
                     className="object-cover"
                     data-ai-hint={groupDetails?.dataAiHint || "group image"}
-                    onError={() => {
-                      // console.warn("Failed to load image preview for URL:", imagePreview);
-                      // setImagePreview(""); // Example: clear preview on error
-                    }}
                   />
                 </div>
               )}
