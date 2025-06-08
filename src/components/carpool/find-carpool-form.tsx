@@ -17,12 +17,14 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Loader2, AlertTriangle } from "lucide-react";
+import { CalendarIcon, Loader2, AlertTriangle, Users, Check, X } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -35,7 +37,7 @@ const findCarpoolFormSchema = z.object({
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Invalid time format (HH:MM)."}),
   userLocation: z.string().min(5, { message: "Your location must be at least 5 characters." }),
   trafficConditions: z.string().min(3, { message: "Traffic conditions must be at least 3 characters (e.g., light, moderate, heavy)." }),
-  knownCarpools: z.string().optional(),
+  associatedGroupIds: z.array(z.string()).optional(), // Changed from knownCarpools
 });
 
 type FindCarpoolFormValues = z.infer<typeof findCarpoolFormSchema>;
@@ -44,49 +46,75 @@ interface FindCarpoolFormProps {
   initialEventLocation?: string;
   initialEventDate?: Date;
   initialEventTime?: string;
+  initialAssociatedGroupIds?: string[]; // Added prop
 }
 
 const defaultFormValues = {
   eventLocation: "",
-  eventTime: "17:00", // Default to 5 PM
+  eventTime: "17:00", 
   userLocation: "",
   trafficConditions: "moderate",
-  knownCarpools: "none",
-  // eventDate will be undefined initially or set by prop
+  associatedGroupIds: [], 
 };
+
+const mockAvailableGroups = [ // Mock data for group selection
+  { id: "group1", name: "Morning School Run" },
+  { id: "group2", name: "Soccer Practice Crew" },
+  { id: "group3", name: "Work Commute (Downtown)" },
+  { id: "group4", name: "Weekend Study Buddies" },
+];
 
 export function FindCarpoolForm({
   initialEventLocation,
   initialEventDate,
   initialEventTime,
+  initialAssociatedGroupIds, // Destructure new prop
 }: FindCarpoolFormProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [results, setResults] = useState<CarpoolMatchingOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
+  const [groupSearchTerm, setGroupSearchTerm] = useState("");
 
   const form = useForm<FindCarpoolFormValues>({
     resolver: zodResolver(findCarpoolFormSchema),
     defaultValues: {
       ...defaultFormValues,
       eventLocation: initialEventLocation || defaultFormValues.eventLocation,
-      eventDate: initialEventDate, // Can be undefined
+      eventDate: initialEventDate,
       eventTime: initialEventTime || defaultFormValues.eventTime,
+      associatedGroupIds: initialAssociatedGroupIds || defaultFormValues.associatedGroupIds,
     },
   });
 
+  const isEventPreFilled = !!initialEventLocation;
+
   useEffect(() => {
-    // Reset form fields when initial props change (e.g., selecting a different event or "manual")
     form.reset({
-      ...defaultFormValues, // Start with base defaults
-      userLocation: form.getValues("userLocation") || defaultFormValues.userLocation, // Preserve user-specific fields if already entered
+      ...defaultFormValues,
+      userLocation: form.getValues("userLocation") || defaultFormValues.userLocation,
       trafficConditions: form.getValues("trafficConditions") || defaultFormValues.trafficConditions,
-      knownCarpools: form.getValues("knownCarpools") || defaultFormValues.knownCarpools,
       eventLocation: initialEventLocation || defaultFormValues.eventLocation,
-      eventDate: initialEventDate, // This can be undefined if "manual" is selected
+      eventDate: initialEventDate,
       eventTime: initialEventTime || defaultFormValues.eventTime,
+      associatedGroupIds: initialAssociatedGroupIds || [], // Reset associated groups based on prop
     });
-  }, [initialEventLocation, initialEventDate, initialEventTime, form]);
+  }, [initialEventLocation, initialEventDate, initialEventTime, initialAssociatedGroupIds, form]);
+
+
+  const handleGroupSelection = (groupId: string) => {
+    const currentSelectedGroups = form.getValues("associatedGroupIds") || [];
+    const newSelectedGroups = currentSelectedGroups.includes(groupId)
+      ? currentSelectedGroups.filter(id => id !== groupId)
+      : [...currentSelectedGroups, groupId];
+    form.setValue("associatedGroupIds", newSelectedGroups, { shouldValidate: true });
+  };
+
+  const filteredGroups = mockAvailableGroups.filter(group =>
+    group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
+  );
+  const currentSelectedGroups = form.watch("associatedGroupIds") || [];
 
 
   function onSubmit(data: FindCarpoolFormValues) {
@@ -94,7 +122,7 @@ export function FindCarpoolForm({
     setResults(null);
 
     startTransition(async () => {
-      const eventDateTime = new Date(data.eventDate); // data.eventDate should be valid due to schema
+      const eventDateTime = new Date(data.eventDate);
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       eventDateTime.setHours(hours, minutes);
 
@@ -103,7 +131,8 @@ export function FindCarpoolForm({
         eventDateTime: eventDateTime.toISOString(),
         userLocation: data.userLocation,
         trafficConditions: data.trafficConditions,
-        knownCarpools: data.knownCarpools || "none",
+        // The AI flow expects `associatedGroups` which is an array of strings (group names or IDs)
+        associatedGroups: data.associatedGroupIds?.map(id => mockAvailableGroups.find(g => g.id === id)?.name || id) || [],
       };
 
       const response = await findMatchingCarpoolsAction(inputForAI);
@@ -137,7 +166,6 @@ export function FindCarpoolForm({
     });
   }
 
-  const isEventPreFilled = !!initialEventLocation;
 
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-xl">
@@ -261,23 +289,117 @@ export function FindCarpoolForm({
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
-              name="knownCarpools"
+              name="associatedGroupIds"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Known Carpools (Optional)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="List any carpools you are aware of, including driver, riders, and route if known. e.g., 'Jane Doe's carpool, usually picks up from North Street.'"
-                      {...field}
-                    />
-                  </FormControl>
-                   <FormDescription>If none, you can leave it as 'none' or empty.</FormDescription>
+                <FormItem className="flex flex-col">
+                  <FormLabel className="text-base flex items-center">
+                    <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+                    Associate Groups
+                  </FormLabel>
+                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 ? (
+                    <>
+                      <div className="pt-2 space-x-1 space-y-1">
+                        {initialAssociatedGroupIds.map(groupId => {
+                            const group = mockAvailableGroups.find(g => g.id === groupId);
+                            return group ? (
+                                <Badge key={groupId} variant="secondary" className="mr-1">
+                                    {group.name}
+                                </Badge>
+                            ) : null;
+                        })}
+                      </div>
+                      <FormDescription>Groups pre-filled from selected event. These will be considered by the AI.</FormDescription>
+                    </>
+                  ) : !isEventPreFilled ? (
+                    <>
+                      <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={groupPopoverOpen}
+                            className="w-full justify-between"
+                          >
+                            {currentSelectedGroups.length > 0
+                              ? `${currentSelectedGroups.length} group(s) selected`
+                              : "Select groups..."}
+                            <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <Command>
+                            <CommandInput
+                              placeholder="Search groups..."
+                              value={groupSearchTerm}
+                              onValueChange={setGroupSearchTerm}
+                            />
+                            <CommandList>
+                              <CommandEmpty>No groups found.</CommandEmpty>
+                              <ScrollArea className="h-48">
+                                <CommandGroup>
+                                  {filteredGroups.map((group) => (
+                                    <CommandItem
+                                      key={group.id}
+                                      value={group.id}
+                                      onSelect={() => {
+                                        handleGroupSelection(group.id);
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          currentSelectedGroups.includes(group.id)
+                                            ? "opacity-100"
+                                            : "opacity-0"
+                                        )}
+                                      />
+                                      {group.name}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </ScrollArea>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormDescription>
+                        Select carpool groups to associate with this carpool request.
+                      </FormDescription>
+                      {currentSelectedGroups.length > 0 && (
+                          <div className="pt-2 space-x-1 space-y-1">
+                              {currentSelectedGroups.map(groupId => {
+                                  const group = mockAvailableGroups.find(g => g.id === groupId);
+                                  return group ? (
+                                      <Badge
+                                          key={groupId}
+                                          variant="secondary"
+                                          className="mr-1"
+                                      >
+                                          {group.name}
+                                          <button
+                                              type="button"
+                                              className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                              onClick={() => handleGroupSelection(groupId)}
+                                          >
+                                              <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                          </button>
+                                      </Badge>
+                                  ) : null;
+                              })}
+                          </div>
+                      )}
+                    </>
+                  ) : (
+                    <FormDescription>No groups associated with the pre-selected event, or manually add groups below.</FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
+
             <Button type="submit" className="w-full" disabled={isPending}>
               {isPending ? (
                 <>

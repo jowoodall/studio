@@ -8,30 +8,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
-// Client components cannot export metadata. Remove or move to a server component parent.
-// export const metadata: Metadata = {
-//   title: 'Find a Carpool',
-//   description: 'Use AI to find carpool matches for your events and commutes.',
-// };
-
 interface MockEvent {
   id: string;
   name: string;
   location: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
+  associatedGroupIds: string[]; // Added
 }
 
+// Added associatedGroupIds to mock events
 const mockEvents: MockEvent[] = [
-  { id: "event1", name: "School Annual Day", location: "Northwood High Auditorium", date: "2024-12-15", time: "10:00" },
-  { id: "event2", name: "Community Soccer Match", location: "City Sports Complex", date: "2024-11-30", time: "14:00" },
-  { id: "event3", name: "Tech Conference 2024", location: "Downtown Convention Center", date: "2025-01-20", time: "09:00" },
+  { id: "event1", name: "School Annual Day", location: "Northwood High Auditorium", date: "2024-12-15", time: "10:00", associatedGroupIds: ["group1"] },
+  { id: "event2", name: "Community Soccer Match", location: "City Sports Complex", date: "2024-11-30", time: "14:00", associatedGroupIds: ["group2", "group3"] },
+  { id: "event3", name: "Tech Conference 2024", location: "Downtown Convention Center", date: "2025-01-20", time: "09:00", associatedGroupIds: [] },
 ];
 
 interface SelectedEventDetails {
   location: string;
   date: Date;
   time: string;
+  associatedGroupIds: string[]; // Added
 }
 
 export default function FindCarpoolPage() {
@@ -44,14 +41,14 @@ export default function FindCarpoolPage() {
     }
     const event = mockEvents.find(e => e.id === eventId);
     if (event) {
-      // Convert date string to Date object, adjust for local timezone by splitting
       const [year, month, day] = event.date.split('-').map(Number);
-      const eventDate = new Date(year, month - 1, day); // Month is 0-indexed
+      const eventDate = new Date(year, month - 1, day);
 
       setSelectedEventDetails({
         location: event.location,
         date: eventDate,
         time: event.time,
+        associatedGroupIds: event.associatedGroupIds, // Pass associated group IDs
       });
     } else {
       setSelectedEventDetails(null);
@@ -67,7 +64,7 @@ export default function FindCarpoolPage() {
       <Card className="mb-6 shadow-md">
         <CardHeader>
           <CardTitle className="text-lg">Select an Event (Optional)</CardTitle>
-          <CardDescription>Choosing an event will pre-fill some details below.</CardDescription>
+          <CardDescription>Choosing an event will pre-fill some details and associated groups below.</CardDescription>
         </CardHeader>
         <CardContent>
           <Label htmlFor="event-select" className="sr-only">Select Event</Label>
@@ -90,6 +87,7 @@ export default function FindCarpoolPage() {
         initialEventLocation={selectedEventDetails?.location}
         initialEventDate={selectedEventDetails?.date}
         initialEventTime={selectedEventDetails?.time}
+        initialAssociatedGroupIds={selectedEventDetails?.associatedGroupIds} // Pass selected groups
       />
     </>
   );

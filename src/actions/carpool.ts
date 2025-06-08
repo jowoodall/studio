@@ -5,33 +5,30 @@
 import { carpoolMatching, type CarpoolMatchingInput, type CarpoolMatchingOutput } from '@/ai/flows/carpool-matching';
 import { z } from 'zod';
 
-// Re-define or import the schema for validation if needed on the action side too.
-// For now, assuming CarpoolMatchingInput is correctly typed from the flow.
+// The CarpoolMatchingInput type is imported directly from the flow, so no need to redefine schema here.
 
 export async function findMatchingCarpoolsAction(
-  input: CarpoolMatchingInput
+  input: CarpoolMatchingInput 
 ): Promise<CarpoolMatchingOutput | { error: string; issues?: z.ZodIssue[] }> {
-  // Optional: Validate input again here if necessary, though the AI flow itself has schema validation.
-  // const CarpoolMatchingInputSchema = z.object({ ... }); // If you need to re-validate
-  // const validationResult = CarpoolMatchingInputSchema.safeParse(input);
-  // if (!validationResult.success) {
-  //   return { error: "Invalid input.", issues: validationResult.error.issues };
-  // }
-
   try {
-    const result = await carpoolMatching(input);
+    // The AI flow itself handles input validation based on its schema.
+    // If additional pre-validation or transformation is needed in the action, it can be done here.
+    const result = await carpoolMatching(input); 
     if (!result) {
-        // This case might happen if the AI flow returns undefined or null unexpectedly.
         return { error: "AI service did not return a valid response." };
     }
     return result;
   } catch (error) {
     console.error("Error in findMatchingCarpoolsAction:", error);
-    // Check if the error is a ZodError from the AI flow's output validation
     if (error instanceof z.ZodError) {
-        return { error: "AI service returned an invalid data structure.", issues: error.issues };
+        return { error: "AI service returned an invalid data structure or input was invalid.", issues: error.issues };
     }
-    return { error: "An unexpected error occurred while finding carpools. Please try again." };
+    // It's good practice to check if error is an instance of Error to access message property safely
+    let errorMessage = "An unexpected error occurred while finding carpools. Please try again.";
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    return { error: errorMessage };
   }
 }
 
@@ -48,4 +45,3 @@ export async function handleDriverApproval(driverId: string, newStatus: "approve
   // Returning a simple object for now, can be expanded to return success/error details.
   return { success: true, driverId, newStatus };
 }
-
