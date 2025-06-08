@@ -1,11 +1,12 @@
 
 import { PageHeader } from "@/components/shared/page-header";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlusCircle, Users, Edit, Trash2, UserPlus } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: 'Manage Groups',
@@ -54,9 +55,13 @@ export default function GroupsPage() {
                   </Link>
                 </Button>
                 <div className="space-x-1">
-                   <Button variant="outline" size="icon" aria-label="Edit group" asChild>
-                    <Link href={`/groups/${group.id}/edit`}><Edit className="h-4 w-4" /></Link>
-                  </Button>
+                  <Link
+                    href={`/groups/${group.id}/edit`}
+                    className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
+                    aria-label="Edit group"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Link>
                   <Button variant="destructive" size="icon" aria-label="Delete group">
                     <Trash2 className="h-4 w-4" />
                   </Button>
