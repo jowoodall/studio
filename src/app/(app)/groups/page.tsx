@@ -54,7 +54,7 @@ export default function GroupsPage() {
                   </Link>
                 </Button>
                 <div className="space-x-1">
-                   <Button variant="outline" size="icon" aria-label="Edit group">
+                   <Button variant="outline" size="icon" aria-label="Edit group" asChild>
                     <Link href={`/groups/${group.id}/edit`}><Edit className="h-4 w-4" /></Link>
                   </Button>
                   <Button variant="destructive" size="icon" aria-label="Delete group">
