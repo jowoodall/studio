@@ -16,7 +16,7 @@ import * as z from "zod";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label"; // Added import for Label
+import { Label } from "@/components/ui/label";
 
 // Mock group data - in a real app, you'd fetch this
 // Added description and imageUrl to mock data
@@ -40,36 +40,43 @@ interface ResolvedPageParams {
 }
 
 export default function EditGroupPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
-  const params = use(paramsPromise); // Unwrap the promise to get the actual params object
-  const { groupId } = params || {}; // Destructure groupId from the resolved params, provide default if params is undefined
+  const params = use(paramsPromise); 
+  const { groupId } = params || {}; 
 
 
   const { toast } = useToast();
-  const [groupDetails, setGroupDetails] = useState(mockGroupsData[groupId || ""]);
+  // Initialize groupDetails after groupId is resolved, or use null/undefined initially
+  const [groupDetails, setGroupDetails] = useState(() => groupId ? mockGroupsData[groupId] : null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState(groupDetails?.imageUrl || "");
 
   const form = useForm<GroupEditFormValues>({
     resolver: zodResolver(groupEditFormSchema),
     defaultValues: {
-      groupName: "",
-      description: "",
-      imageUrl: "",
+      groupName: groupDetails?.name || "",
+      description: groupDetails?.description || "",
+      imageUrl: groupDetails?.imageUrl || "",
     },
   });
 
   useEffect(() => {
-    // Ensure groupId is resolved before using it
+    // This effect runs when groupId changes (after promise resolves)
+    // or if form instance itself changes (less likely here)
     if (groupId) {
         const currentGroup = mockGroupsData[groupId];
         if (currentGroup) {
-        setGroupDetails(currentGroup);
-        form.reset({
-            groupName: currentGroup.name,
-            description: currentGroup.description,
-            imageUrl: currentGroup.imageUrl,
-        });
-        setImagePreview(currentGroup.imageUrl);
+          setGroupDetails(currentGroup);
+          form.reset({
+              groupName: currentGroup.name,
+              description: currentGroup.description,
+              imageUrl: currentGroup.imageUrl,
+          });
+          setImagePreview(currentGroup.imageUrl);
+        } else {
+          // Group ID resolved, but no data found for it
+          setGroupDetails(null); 
+          form.reset({ groupName: "", description: "", imageUrl: "" });
+          setImagePreview("");
         }
     }
   }, [groupId, form]);
@@ -77,6 +84,7 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'imageUrl') {
+        // Ensure value.imageUrl is not undefined before setting
         setImagePreview(value.imageUrl || "");
       }
     });
@@ -94,34 +102,36 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
     );
   }
   
-  // After groupId is resolved, check if groupDetails exist
-  if (!groupDetails) {
-    const currentGroup = mockGroupsData[groupId];
-    if (!currentGroup && !isSubmitting) { // Ensure we don't show "not found" during submission simulation
-        return (
-        <div className="flex flex-col items-center justify-center h-full text-center py-10">
-            <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-            <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
-            <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
-            <Button asChild className="mt-4">
-            <Link href="/groups">Back to Groups</Link>
-            </Button>
-        </div>
-        );
-    }
+  // After groupId is resolved, check if groupDetails exist for that ID
+  // This check relies on groupDetails state being updated by the useEffect above
+  if (!groupDetails && groupId) { 
+    // This means groupId is valid, but mockGroupsData[groupId] was undefined,
+    // and setGroupDetails(null) has likely run.
+    return (
+    <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
+        <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
+        <Button asChild className="mt-4">
+        <Link href="/groups">Back to Groups</Link>
+        </Button>
+    </div>
+    );
   }
 
 
   function onSubmit(data: GroupEditFormValues) {
+    if (!groupId) { // Should not happen if loading state is correct
+        toast({ title: "Error", description: "Group ID is missing.", variant: "destructive"});
+        return;
+    }
     setIsSubmitting(true);
     console.log("Updated Group Data:", { groupId, ...data });
     // Simulate API call
     setTimeout(() => {
-      // Update mock data (in real app, this would be a backend update and re-fetch or cache invalidation)
-      if (groupId) { // Ensure groupId is available
-        mockGroupsData[groupId] = { ...mockGroupsData[groupId], ...data, dataAiHint: mockGroupsData[groupId]?.dataAiHint };
-        setGroupDetails(mockGroupsData[groupId]); // Update local state to reflect change if needed
-      }
+      // Update mock data 
+      mockGroupsData[groupId] = { ...mockGroupsData[groupId], ...data, dataAiHint: mockGroupsData[groupId]?.dataAiHint };
+      setGroupDetails(mockGroupsData[groupId]); 
 
       toast({
         title: "Group Updated!",
@@ -202,7 +212,7 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
 
               {imagePreview && (
                 <div className="space-y-2">
-                  <Label>Image Preview</Label>
+                  <Label><span>Image Preview</span></Label>
                   <div className="relative w-full aspect-video max-w-sm mx-auto rounded-md overflow-hidden border bg-muted">
                     <Image
                       src={imagePreview}
@@ -212,7 +222,6 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                       data-ai-hint={groupDetails?.dataAiHint || "group image"}
                       onError={() => {
                         // console.warn("Failed to load image preview for URL:", imagePreview);
-                        // Optionally set a fallback or clear preview
                         // setImagePreview(""); // Example: clear preview on error
                       }}
                     />
