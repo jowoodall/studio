@@ -55,16 +55,16 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
               <Link href={`/rydz/request?eventId=${eventId}`}> {/* Changed rides to rydz */}
-                <>
+                <span className="flex items-center">
                   <PlusCircle className="mr-2 h-4 w-4" /> Request Ryd {/* Changed Ride to Ryd */}
-                </>
+                </span>
               </Link>
             </Button>
             <Button variant="outline" asChild>
               <Link href={`/events/${eventId}/offer-drive`}>
-                <>
+                <span className="flex items-center">
                   <Command className="mr-2 h-4 w-4" /> I can drive
-                </>
+                </span>
               </Link>
             </Button>
           </div>
@@ -125,16 +125,16 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
             <div className="flex justify-center gap-4">
                 <Button asChild>
                 <Link href={`/rydz/request?eventId=${eventId}`}> {/* Changed rides to rydz */}
-                    <>
+                    <span className="flex items-center">
                       <PlusCircle className="mr-2 h-4 w-4" /> Request Ryd {/* Changed Ride to Ryd */}
-                    </>
+                    </span>
                 </Link>
                 </Button>
                 <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/offer-drive`}>
-                    <>
+                    <span className="flex items-center">
                       <Command className="mr-2 h-4 w-4" /> I can drive
-                    </>
+                    </span>
                 </Link>
                 </Button>
             </div>
@@ -144,4 +144,3 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
     </>
   );
 }
-
