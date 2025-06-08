@@ -45,7 +45,7 @@ export function AppSidebar() {
 
       const isActive = item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href));
       const 메뉴버튼Component = isSubmenu ? SidebarMenuSubButton : SidebarMenuButton;
-      const 메뉴아이템Component = isSubmenu ? SidebarMenuItem : SidebarMenuItem; // Technically SidebarMenuSubItem is for sub-items. For simplicity, using MenuItem.
+      const 메뉴아이템Component = isSubmenu ? SidebarMenuItem : SidebarMenuItem; 
 
       const handleItemClick = () => {
         if (isMobile) {
@@ -85,20 +85,17 @@ export function AppSidebar() {
         <메뉴아이템Component key={itemKey}>
           <Link href={item.href} asChild>
             <메뉴버튼Component
-              asChild
               isActive={isActive}
               tooltip={sidebarState === "collapsed" ? item.title : undefined}
               onClick={handleItemClick}
             >
-              <a>
-                {item.icon && <item.icon className="shrink-0" />}
-                <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
-                {item.label && sidebarState === "expanded" && (
-                  <span className="ml-auto text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-sm">
-                    {item.label}
-                  </span>
-                )}
-              </a>
+              {item.icon && <item.icon className="shrink-0" />}
+              <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
+              {item.label && sidebarState === "expanded" && (
+                <span className="ml-auto text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-sm">
+                  {item.label}
+                </span>
+              )}
             </메뉴버튼Component>
           </Link>
         </메뉴아이템Component>
@@ -127,3 +124,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
