@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox"; // Added Checkbox import
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2, LinkIcon } from "lucide-react";
+import { CalendarIcon, PlusCircle, Loader2, LinkIcon, Users } from "lucide-react"; // Added Users icon
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 // No direct metadata export from client component files
@@ -28,9 +29,18 @@ const eventFormSchema = z.object({
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
+  selectedGroups: z.array(z.string()).optional(), // New field for selected group IDs
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
+
+// Mock available groups - in a real app, fetch this data
+const mockAvailableGroups = [
+  { id: "group1", name: "Morning School Run" },
+  { id: "group2", name: "Soccer Practice Crew" },
+  { id: "group3", name: "Work Commute (Downtown)" },
+  { id: "group4", name: "Weekend Study Buddies" },
+];
 
 export default function CreateEventPage() {
   const { toast } = useToast();
@@ -42,6 +52,7 @@ export default function CreateEventPage() {
       importSource: "manual",
       eventTime: "10:00", // Default time
       eventType: "",
+      selectedGroups: [], // Default to no groups selected
     },
   });
 
@@ -52,7 +63,7 @@ export default function CreateEventPage() {
     setTimeout(() => {
       toast({
         title: "Event Created!",
-        description: `The event "${data.eventName}" has been successfully created.`,
+        description: `The event "${data.eventName}" has been successfully created. ${data.selectedGroups && data.selectedGroups.length > 0 ? `Associated with ${data.selectedGroups.length} group(s).` : ''}`,
       });
       if (data.importSource && data.importSource !== "manual") {
         toast({
@@ -63,7 +74,7 @@ export default function CreateEventPage() {
         });
       }
       setIsSubmitting(false);
-      form.reset({ importSource: "manual", eventTime: "10:00", eventType: "" });
+      form.reset({ importSource: "manual", eventTime: "10:00", eventType: "", selectedGroups: [] });
       // router.push('/events'); // Optional: Redirect after creation
     }, 1500);
   }
@@ -255,6 +266,61 @@ export default function CreateEventPage() {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="selectedGroups"
+                render={() => (
+                  <FormItem>
+                    <div className="mb-4">
+                      <FormLabel className="text-base flex items-center">
+                        <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+                        Associate Groups (Optional)
+                      </FormLabel>
+                      <FormDescription>
+                        Select carpool groups to associate with this event.
+                      </FormDescription>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                      {mockAvailableGroups.map((group) => (
+                        <FormField
+                          key={group.id}
+                          control={form.control}
+                          name="selectedGroups"
+                          render={({ field }) => {
+                            return (
+                              <FormItem
+                                key={group.id}
+                                className="flex flex-row items-center space-x-3 space-y-0 p-2 bg-muted/30 rounded-md"
+                              >
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value?.includes(group.id)}
+                                    onCheckedChange={(checked) => {
+                                      return checked
+                                        ? field.onChange([...(field.value || []), group.id])
+                                        : field.onChange(
+                                            (field.value || []).filter(
+                                              (value) => value !== group.id
+                                            )
+                                          );
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormLabel className="font-normal text-sm hover:cursor-pointer">
+                                  {group.name}
+                                </FormLabel>
+                              </FormItem>
+                            );
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
 
               <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? (
