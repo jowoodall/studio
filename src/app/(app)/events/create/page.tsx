@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -11,15 +11,16 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox"; // Added Checkbox import
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2, LinkIcon, Users } from "lucide-react"; // Added Users icon
+import { CalendarIcon, PlusCircle, Loader2, LinkIcon, Users, Check, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-// No direct metadata export from client component files
 
 const eventFormSchema = z.object({
   importSource: z.string().optional(),
@@ -29,37 +30,39 @@ const eventFormSchema = z.object({
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
-  selectedGroups: z.array(z.string()).optional(), // New field for selected group IDs
+  selectedGroups: z.array(z.string()).optional(),
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
-// Mock available groups - in a real app, fetch this data
 const mockAvailableGroups = [
   { id: "group1", name: "Morning School Run" },
   { id: "group2", name: "Soccer Practice Crew" },
   { id: "group3", name: "Work Commute (Downtown)" },
   { id: "group4", name: "Weekend Study Buddies" },
+  { id: "group5", name: "Art Club Carpool" },
+  { id: "group6", name: "Debate Team Transport" },
 ];
 
 export default function CreateEventPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
       importSource: "manual",
-      eventTime: "10:00", // Default time
+      eventTime: "10:00",
       eventType: "",
-      selectedGroups: [], // Default to no groups selected
+      selectedGroups: [],
     },
   });
 
   function onSubmit(data: EventFormValues) {
     setIsSubmitting(true);
     console.log("Create Event Data:", data);
-    // Simulate API call
     setTimeout(() => {
       toast({
         title: "Event Created!",
@@ -75,7 +78,7 @@ export default function CreateEventPage() {
       }
       setIsSubmitting(false);
       form.reset({ importSource: "manual", eventTime: "10:00", eventType: "", selectedGroups: [] });
-      // router.push('/events'); // Optional: Redirect after creation
+      setSearchTerm("");
     }, 1500);
   }
 
@@ -83,16 +86,27 @@ export default function CreateEventPage() {
 
   React.useEffect(() => {
     if (selectedImportSource && selectedImportSource !== "manual") {
-        // In a real app, you might trigger an API call here or show a modal to connect to the service.
-        // For now, we can just inform the user or pre-fill some mock data.
         toast({
             title: `Importing from ${selectedImportSource}`,
             description: "If this were fully integrated, event fields might be auto-populated now.",
             duration: 3000,
         });
-        // Example: form.setValue("eventName", "Imported Event Name");
     }
   }, [selectedImportSource, toast, form]);
+
+  const handleGroupSelection = (groupId: string) => {
+    const currentSelectedGroups = form.getValues("selectedGroups") || [];
+    const newSelectedGroups = currentSelectedGroups.includes(groupId)
+      ? currentSelectedGroups.filter(id => id !== groupId)
+      : [...currentSelectedGroups, groupId];
+    form.setValue("selectedGroups", newSelectedGroups, { shouldValidate: true });
+  };
+
+  const filteredGroups = mockAvailableGroups.filter(group =>
+    group.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const currentSelectedGroups = form.watch("selectedGroups") || [];
 
 
   return (
@@ -270,57 +284,94 @@ export default function CreateEventPage() {
               <FormField
                 control={form.control}
                 name="selectedGroups"
-                render={() => (
-                  <FormItem>
-                    <div className="mb-4">
-                      <FormLabel className="text-base flex items-center">
-                        <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-                        Associate Groups (Optional)
-                      </FormLabel>
-                      <FormDescription>
-                        Select carpool groups to associate with this event.
-                      </FormDescription>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                      {mockAvailableGroups.map((group) => (
-                        <FormField
-                          key={group.id}
-                          control={form.control}
-                          name="selectedGroups"
-                          render={({ field }) => {
-                            return (
-                              <FormItem
-                                key={group.id}
-                                className="flex flex-row items-center space-x-3 space-y-0 p-2 bg-muted/30 rounded-md"
-                              >
-                                <FormControl>
-                                  <Checkbox
-                                    checked={field.value?.includes(group.id)}
-                                    onCheckedChange={(checked) => {
-                                      return checked
-                                        ? field.onChange([...(field.value || []), group.id])
-                                        : field.onChange(
-                                            (field.value || []).filter(
-                                              (value) => value !== group.id
-                                            )
-                                          );
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel className="text-base flex items-center">
+                      <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+                      Associate Groups (Optional)
+                    </FormLabel>
+                    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={popoverOpen}
+                          className="w-full justify-between"
+                        >
+                          {currentSelectedGroups.length > 0
+                            ? `${currentSelectedGroups.length} group(s) selected`
+                            : "Select groups..."}
+                           <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <Command>
+                          <CommandInput
+                            placeholder="Search groups..."
+                            value={searchTerm}
+                            onValueChange={setSearchTerm}
+                          />
+                          <CommandList>
+                            <CommandEmpty>No groups found.</CommandEmpty>
+                            <ScrollArea className="h-48">
+                              <CommandGroup>
+                                {filteredGroups.map((group) => (
+                                  <CommandItem
+                                    key={group.id}
+                                    value={group.id}
+                                    onSelect={() => {
+                                      handleGroupSelection(group.id);
+                                      // Keep popover open for multi-select
+                                      // setPopoverOpen(false); 
                                     }}
-                                  />
-                                </FormControl>
-                                <FormLabel className="font-normal text-sm hover:cursor-pointer">
-                                  {group.name}
-                                </FormLabel>
-                              </FormItem>
-                            );
-                          }}
-                        />
-                      ))}
-                    </div>
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        currentSelectedGroups.includes(group.id)
+                                          ? "opacity-100"
+                                          : "opacity-0"
+                                      )}
+                                    />
+                                    {group.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </ScrollArea>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <FormDescription>
+                      Select carpool groups to associate with this event.
+                    </FormDescription>
+                    {currentSelectedGroups.length > 0 && (
+                        <div className="pt-2 space-x-1 space-y-1">
+                            {currentSelectedGroups.map(groupId => {
+                                const group = mockAvailableGroups.find(g => g.id === groupId);
+                                return group ? (
+                                    <Badge
+                                        key={groupId}
+                                        variant="secondary"
+                                        className="mr-1"
+                                    >
+                                        {group.name}
+                                        <button
+                                            type="button"
+                                            className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                            onClick={() => handleGroupSelection(groupId)}
+                                        >
+                                            <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                        </button>
+                                    </Badge>
+                                ) : null;
+                            })}
+                        </div>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
 
               <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? (
