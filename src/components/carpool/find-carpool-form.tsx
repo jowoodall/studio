@@ -1,9 +1,10 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +29,6 @@ import { useToast } from "@/hooks/use-toast";
 import type { CarpoolMatchingInput, CarpoolMatchingOutput } from "@/ai/flows/carpool-matching";
 import { findMatchingCarpoolsAction } from "@/actions/carpool";
 
-
 const findCarpoolFormSchema = z.object({
   eventLocation: z.string().min(5, { message: "Event location must be at least 5 characters." }),
   eventDate: z.date({ required_error: "Event date is required." }),
@@ -40,7 +40,26 @@ const findCarpoolFormSchema = z.object({
 
 type FindCarpoolFormValues = z.infer<typeof findCarpoolFormSchema>;
 
-export function FindCarpoolForm() {
+interface FindCarpoolFormProps {
+  initialEventLocation?: string;
+  initialEventDate?: Date;
+  initialEventTime?: string;
+}
+
+const defaultFormValues = {
+  eventLocation: "",
+  eventTime: "17:00", // Default to 5 PM
+  userLocation: "",
+  trafficConditions: "moderate",
+  knownCarpools: "none",
+  // eventDate will be undefined initially or set by prop
+};
+
+export function FindCarpoolForm({
+  initialEventLocation,
+  initialEventDate,
+  initialEventTime,
+}: FindCarpoolFormProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [results, setResults] = useState<CarpoolMatchingOutput | null>(null);
@@ -49,20 +68,33 @@ export function FindCarpoolForm() {
   const form = useForm<FindCarpoolFormValues>({
     resolver: zodResolver(findCarpoolFormSchema),
     defaultValues: {
-      eventLocation: "",
-      eventTime: "17:00", // Default to 5 PM
-      userLocation: "",
-      trafficConditions: "moderate",
-      knownCarpools: "none",
+      ...defaultFormValues,
+      eventLocation: initialEventLocation || defaultFormValues.eventLocation,
+      eventDate: initialEventDate, // Can be undefined
+      eventTime: initialEventTime || defaultFormValues.eventTime,
     },
   });
+
+  useEffect(() => {
+    // Reset form fields when initial props change (e.g., selecting a different event or "manual")
+    form.reset({
+      ...defaultFormValues, // Start with base defaults
+      userLocation: form.getValues("userLocation") || defaultFormValues.userLocation, // Preserve user-specific fields if already entered
+      trafficConditions: form.getValues("trafficConditions") || defaultFormValues.trafficConditions,
+      knownCarpools: form.getValues("knownCarpools") || defaultFormValues.knownCarpools,
+      eventLocation: initialEventLocation || defaultFormValues.eventLocation,
+      eventDate: initialEventDate, // This can be undefined if "manual" is selected
+      eventTime: initialEventTime || defaultFormValues.eventTime,
+    });
+  }, [initialEventLocation, initialEventDate, initialEventTime, form]);
+
 
   function onSubmit(data: FindCarpoolFormValues) {
     setError(null);
     setResults(null);
 
     startTransition(async () => {
-      const eventDateTime = new Date(data.eventDate);
+      const eventDateTime = new Date(data.eventDate); // data.eventDate should be valid due to schema
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       eventDateTime.setHours(hours, minutes);
 
@@ -87,7 +119,6 @@ export function FindCarpoolForm() {
             console.error("Validation issues:", response.issues);
         }
       } else {
-        // Type guard to ensure response is CarpoolMatchingOutput
         if ('suggestedCarpools' in response && 'reasoning' in response) {
             setResults(response);
             toast({
@@ -95,7 +126,6 @@ export function FindCarpoolForm() {
               description: "AI has suggested potential carpools.",
             });
         } else {
-            // This case should ideally not be reached if the action handles errors properly
             setError("Received an unexpected response format from the AI service.");
             toast({
               title: "Error",
@@ -107,12 +137,16 @@ export function FindCarpoolForm() {
     });
   }
 
+  const isEventPreFilled = !!initialEventLocation;
+
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-xl">
       <CardHeader>
-        <CardTitle className="font-headline text-2xl">Find a Carpool (AI Powered)</CardTitle>
+        <CardTitle className="font-headline text-2xl">Carpool Details</CardTitle>
         <CardDescription>
-          Let our AI assistant help you find the best carpool options. Fill in the details below.
+          {isEventPreFilled 
+            ? "Event details are pre-filled. Confirm your location and preferences." 
+            : "Fill in the details to find carpool options."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -125,8 +159,14 @@ export function FindCarpoolForm() {
                 <FormItem>
                   <FormLabel>Event Location</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., 123 Main St, Anytown, USA or School Auditorium" {...field} />
+                    <Input 
+                      placeholder="e.g., 123 Main St, Anytown, USA or School Auditorium" 
+                      {...field} 
+                      disabled={isEventPreFilled}
+                      className={isEventPreFilled ? "bg-muted/50" : ""}
+                    />
                   </FormControl>
+                  {isEventPreFilled && <FormDescription className="text-xs">Pre-filled from selected event.</FormDescription>}
                   <FormMessage />
                 </FormItem>
               )}
@@ -145,8 +185,10 @@ export function FindCarpoolForm() {
                             variant={"outline"}
                             className={cn(
                               "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
+                              !field.value && "text-muted-foreground",
+                              isEventPreFilled && "bg-muted/50"
                             )}
+                            disabled={isEventPreFilled}
                           >
                             {field.value ? (
                               format(field.value, "PPP")
@@ -162,11 +204,12 @@ export function FindCarpoolForm() {
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) } // Disable past dates
+                          disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) || isEventPreFilled }
                           initialFocus
                         />
                       </PopoverContent>
                     </Popover>
+                    {isEventPreFilled && <FormDescription className="text-xs">Pre-filled from selected event.</FormDescription>}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -178,8 +221,14 @@ export function FindCarpoolForm() {
                   <FormItem>
                     <FormLabel>Event Time (24h format)</FormLabel>
                     <FormControl>
-                      <Input type="time" {...field} />
+                      <Input 
+                        type="time" 
+                        {...field} 
+                        disabled={isEventPreFilled}
+                        className={isEventPreFilled ? "bg-muted/50" : ""}
+                      />
                     </FormControl>
+                    {isEventPreFilled && <FormDescription className="text-xs">Pre-filled from selected event.</FormDescription>}
                     <FormMessage />
                   </FormItem>
                 )}
