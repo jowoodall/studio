@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, UserPlus, Settings2 } from "lucide-react";
+import { PlusCircle, Users, Edit, Trash2, Settings2, Eye } from "lucide-react"; // Added Eye icon
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -38,32 +38,46 @@ export default function GroupsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {mockGroups.map((group) => (
             <Card key={group.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-              <CardHeader className="relative h-40">
-                 <Image src={group.image} alt={group.name} fill className="rounded-t-lg object-cover" data-ai-hint={group.dataAiHint} />
-              </CardHeader>
+              <Link href={`/groups/${group.id}`} className="block hover:opacity-90 transition-opacity">
+                <CardHeader className="relative h-40 p-0">
+                   <Image src={group.image} alt={group.name} fill className="rounded-t-lg object-cover" data-ai-hint={group.dataAiHint} />
+                </CardHeader>
+              </Link>
               <CardContent className="flex-grow pt-4">
-                <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>
+                <Link href={`/groups/${group.id}`} className="hover:underline">
+                    <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>
+                </Link>
                 <div className="flex items-center text-sm text-muted-foreground mb-2">
                   <Users className="mr-1.5 h-4 w-4" /> {group.members} members
                 </div>
-                <CardDescription className="text-sm">{group.description}</CardDescription>
+                <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
               </CardContent>
               <CardFooter className="border-t pt-4 flex flex-wrap justify-between items-center gap-2">
                 <Link
-                  href={`/groups/${group.id}/manage`}
-                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-grow sm:flex-grow-0")}
+                  href={`/groups/${group.id}`}
+                  className={cn(buttonVariants({ variant: "default", size: "sm" }), "flex-grow sm:flex-grow-0")}
                 >
-                  <Settings2 className="mr-2 h-4 w-4" /> Manage Members
+                  <Eye className="mr-2 h-4 w-4" /> View Group
                 </Link>
                 <div className="flex space-x-1">
-                  <Link
-                    href={`/groups/${group.id}/edit`}
-                    className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
-                    aria-label="Edit group"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Link>
-                  <Button variant="destructive" size="icon" aria-label="Delete group">
+                    <Link
+                        href={`/groups/${group.id}/manage`}
+                        className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
+                        aria-label="Manage group members"
+                        title="Manage Members"
+                    >
+                        <Settings2 className="h-4 w-4" />
+                    </Link>
+                    <Link
+                        href={`/groups/${group.id}/edit`}
+                        className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
+                        aria-label="Edit group"
+                        title="Edit Group"
+                    >
+                        <Edit className="h-4 w-4" />
+                    </Link>
+                  {/* Delete button remains a direct action for now */}
+                  <Button variant="destructive" size="icon" aria-label="Delete group" title="Delete Group">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -93,5 +107,3 @@ export default function GroupsPage() {
     </>
   );
 }
-
-    
