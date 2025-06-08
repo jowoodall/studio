@@ -211,21 +211,18 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
               />
 
               {imagePreview && (
-                <div className="space-y-2">
-                  <Label><span>Image Preview</span></Label>
-                  <div className="relative w-full aspect-video max-w-sm mx-auto rounded-md overflow-hidden border bg-muted">
-                    <Image
-                      src={imagePreview}
-                      alt="Group image preview"
-                      fill
-                      className="object-cover"
-                      data-ai-hint={groupDetails?.dataAiHint || "group image"}
-                      onError={() => {
-                        // console.warn("Failed to load image preview for URL:", imagePreview);
-                        // setImagePreview(""); // Example: clear preview on error
-                      }}
-                    />
-                  </div>
+                <div className="relative w-full aspect-video max-w-sm mx-auto rounded-md overflow-hidden border bg-muted">
+                  <Image
+                    src={imagePreview}
+                    alt="Group image preview"
+                    fill
+                    className="object-cover"
+                    data-ai-hint={groupDetails?.dataAiHint || "group image"}
+                    onError={() => {
+                      // console.warn("Failed to load image preview for URL:", imagePreview);
+                      // setImagePreview(""); // Example: clear preview on error
+                    }}
+                  />
                 </div>
               )}
 
