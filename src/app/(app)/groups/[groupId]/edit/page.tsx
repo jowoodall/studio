@@ -16,7 +16,7 @@ import * as z from "zod";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
+// Label import was confirmed to be present in previous steps, ensuring it's available.
 
 // Mock group data - in a real app, you'd fetch this
 // Added description and imageUrl to mock data
@@ -199,8 +199,10 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="flex items-center">
-                        <ImageIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-                        Group Picture/Icon URL (Optional)
+                      <span>
+                        <ImageIcon className="mr-2 h-4 w-4 text-muted-foreground inline-block" />
+                        {' Group Picture/Icon URL (Optional)'}
+                      </span>
                     </FormLabel>
                     <FormControl>
                       <Input type="url" placeholder="https://example.com/image.png" {...field} />
