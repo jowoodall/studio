@@ -55,12 +55,16 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
               <Link href={`/rides/request?eventId=${eventId}`}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+                <>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+                </>
               </Link>
             </Button>
             <Button variant="outline" asChild>
               <Link href={`/events/${eventId}/offer-drive`}>
-                <Command className="mr-2 h-4 w-4" /> I can drive
+                <>
+                  <Command className="mr-2 h-4 w-4" /> I can drive
+                </>
               </Link>
             </Button>
           </div>
@@ -121,12 +125,16 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
             <div className="flex justify-center gap-4">
                 <Button asChild>
                 <Link href={`/rides/request?eventId=${eventId}`}>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+                    <>
+                      <PlusCircle className="mr-2 h-4 w-4" /> Request Ride
+                    </>
                 </Link>
                 </Button>
                 <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/offer-drive`}>
-                    <Command className="mr-2 h-4 w-4" /> I can drive
+                    <>
+                      <Command className="mr-2 h-4 w-4" /> I can drive
+                    </>
                 </Link>
                 </Button>
             </div>
