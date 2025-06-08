@@ -10,12 +10,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Star, ThumbsUp, Loader2 } from "lucide-react";
+import { Star, ThumbsUp, Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import React from "react";
+import React, { use } from "react"; // Added use
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils"; // Ensure cn is imported
+import { cn } from "@/lib/utils"; 
+import Link from "next/link"; // Added Link
 
 // No direct metadata export from client component files. Define in a parent server component or layout if needed.
 
@@ -27,31 +28,46 @@ const driverRatingFormSchema = z.object({
 type DriverRatingFormValues = z.infer<typeof driverRatingFormSchema>;
 
 // Mock driver data (in real app, fetch this based on driverId)
-const mockDriver = {
-  id: "driver123",
-  name: "Alex Johnson",
-  avatar: "https://placehold.co/100x100.png?text=AJ",
-  dataAiHint: "driver smiling",
-  rydDetails: "Ryd to Northwood High on 2024-11-15", // Changed Ride to Ryd
+const mockDriverData: { [key: string]: { name: string; avatar: string; dataAiHint: string; rydDetails: string; } } = {
+  "driver123": { name: "Alex Johnson", avatar: "https://placehold.co/100x100.png?text=AJ", dataAiHint: "driver smiling", rydDetails: "Ryd to Northwood High on 2024-11-15" },
+  "driver456": { name: "Maria Garcia", avatar: "https://placehold.co/100x100.png?text=MG", dataAiHint: "driver portrait", rydDetails: "Ryd to City Sports Complex on 2024-11-18" },
+  "driver789": { name: "John Smith", avatar: "https://placehold.co/100x100.png?text=JS", dataAiHint: "man friendly", rydDetails: "Ryd to Community Library on 2024-11-20" },
 };
 
-export default function DriverRatingPage({ params }: { params: { driverId: string } }) {
+
+interface ResolvedPageParams {
+  driverId: string;
+}
+
+export default function DriverRatingPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+  const params = use(paramsPromise);
+  const { driverId } = params || {};
+
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  // In a real app, fetch driver details using params.driverId
-  const driver = { ...mockDriver, id: params.driverId };
-
+  
+  // In a real app, fetch driver details using driverId
+  // For mock, find the driver or use a default if not found initially
+  const driver = driverId ? mockDriverData[driverId] : null;
 
   const form = useForm<DriverRatingFormValues>({
     resolver: zodResolver(driverRatingFormSchema),
+    defaultValues: {
+        rating: "",
+        comments: "",
+    }
   });
 
   function onSubmit(data: DriverRatingFormValues) {
+    if (!driverId) {
+        toast({ title: "Error", description: "Driver ID is missing.", variant: "destructive"});
+        return;
+    }
     setIsSubmitting(true);
     const submissionData = {
       ...data,
       rating: parseInt(data.rating, 10), // Convert rating to number
-      driverId: driver.id,
+      driverId: driverId,
     };
     console.log("Driver Rating Data:", submissionData);
     
@@ -59,7 +75,7 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
     setTimeout(() => {
       toast({
         title: "Rating Submitted!",
-        description: `Thank you for rating ${driver.name}.`,
+        description: `Thank you for rating ${driver?.name || 'the driver'}.`,
       });
       setIsSubmitting(false);
       form.reset();
@@ -67,11 +83,34 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
     }, 1500);
   }
 
+  if (!driverId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
+        <p className="text-muted-foreground">Loading driver details...</p>
+      </div>
+    );
+  }
+
+  if (!driver) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold mb-2">Driver Not Found</h2>
+        <p className="text-muted-foreground">The driver with ID "{driverId}" could not be found.</p>
+        <Button asChild className="mt-4">
+          <Link href="/dashboard">Back to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+
+
   return (
     <>
       <PageHeader
         title={`Rate Driver: ${driver.name}`}
-        description={`Share your feedback for the ryd: ${driver.rydDetails}.`} // Changed ride to ryd
+        description={`Share your feedback for the ryd: ${driver.rydDetails}.`}
       />
       <Card className="w-full max-w-lg mx-auto shadow-xl">
         <CardHeader className="text-center">
@@ -79,7 +118,7 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
             <AvatarImage src={driver.avatar} alt={driver.name} data-ai-hint={driver.dataAiHint}/>
             <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
           </Avatar>
-          <CardTitle className="font-headline text-xl">How was your ryd with {driver.name}?</CardTitle> {/* Changed ride to ryd */}
+          <CardTitle className="font-headline text-xl">How was your ryd with {driver.name}?</CardTitle>
           <CardDescription>Your feedback helps improve our community.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -152,6 +191,3 @@ export default function DriverRatingPage({ params }: { params: { driverId: strin
     </>
   );
 }
-
-// Added cn import if it was missing, otherwise this is just to ensure the file has it.
-// import { cn } from "@/lib/utils";
