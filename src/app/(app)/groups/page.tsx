@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, UserPlus } from "lucide-react";
+import { PlusCircle, Users, Edit, Trash2, UserPlus, Settings2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -48,13 +48,14 @@ export default function GroupsPage() {
                 </div>
                 <CardDescription className="text-sm">{group.description}</CardDescription>
               </CardContent>
-              <CardFooter className="border-t pt-4 flex justify-between items-center">
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href={`/groups/${group.id}/manage`}>
-                    <UserPlus className="mr-2 h-4 w-4" /> Manage
-                  </Link>
-                </Button>
-                <div className="space-x-1">
+              <CardFooter className="border-t pt-4 flex flex-wrap justify-between items-center gap-2">
+                <Link
+                  href={`/groups/${group.id}/manage`}
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-grow sm:flex-grow-0")}
+                >
+                  <Settings2 className="mr-2 h-4 w-4" /> Manage Members
+                </Link>
+                <div className="flex space-x-1">
                   <Link
                     href={`/groups/${group.id}/edit`}
                     className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
@@ -92,3 +93,5 @@ export default function GroupsPage() {
     </>
   );
 }
+
+    
