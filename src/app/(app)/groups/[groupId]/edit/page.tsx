@@ -16,6 +16,7 @@ import * as z from "zod";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label"; // Added import for Label
 
 // Mock group data - in a real app, you'd fetch this
 // Added description and imageUrl to mock data
@@ -40,10 +41,11 @@ interface ResolvedPageParams {
 
 export default function EditGroupPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const params = use(paramsPromise); // Unwrap the promise to get the actual params object
-  const { groupId } = params; // Destructure groupId from the resolved params
+  const { groupId } = params || {}; // Destructure groupId from the resolved params, provide default if params is undefined
+
 
   const { toast } = useToast();
-  const [groupDetails, setGroupDetails] = useState(mockGroupsData[groupId]);
+  const [groupDetails, setGroupDetails] = useState(mockGroupsData[groupId || ""]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState(groupDetails?.imageUrl || "");
 
@@ -70,7 +72,7 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
         setImagePreview(currentGroup.imageUrl);
         }
     }
-  }, [groupId, form]); // Add groupId to dependency array
+  }, [groupId, form]);
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
@@ -82,11 +84,18 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
   }, [form]);
 
 
-  if (!groupDetails && groupId) { // Check if groupDetails is not yet set but groupId is available (after promise resolution)
-    // This block might be hit if the initial useState(mockGroupsData[groupId]) runs when groupId is briefly undefined
-    // or if mockGroupsData[groupId] is undefined. The useEffect above should handle setting it.
-    // For a better loading state, you might return a Skeleton/Loader here if !groupDetails after resolution.
-    // For now, if it's not found after resolution, we show the "Group Not Found" message.
+  if (!groupId) {
+    // groupId is not yet resolved from the promise (React.use() is suspending)
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-center py-10">
+            <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
+            <p className="text-muted-foreground">Loading group details...</p>
+        </div>
+    );
+  }
+  
+  // After groupId is resolved, check if groupDetails exist
+  if (!groupDetails) {
     const currentGroup = mockGroupsData[groupId];
     if (!currentGroup && !isSubmitting) { // Ensure we don't show "not found" during submission simulation
         return (
@@ -122,22 +131,6 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
     }, 1500);
   }
   
-  // If groupId is not yet resolved (e.g. paramsPromise is still pending), 
-  // React.use() will suspend. Show a loader or null.
-  // However, for this component, if `groupId` itself is undefined after resolution, that's an issue.
-  // The `if (!groupDetails && groupId)` check above handles the case where the group data isn't found for a resolved ID.
-  // If `groupId` itself is missing from resolved `params`, that's an unexpected state.
-  if (!groupId) {
-    // This should ideally not happen if the route matches `[groupId]`
-    return (
-        <div className="flex flex-col items-center justify-center h-full text-center py-10">
-            <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
-            <p className="text-muted-foreground">Loading group details...</p>
-        </div>
-    );
-  }
-
-
   return (
     <>
       <PageHeader
@@ -218,7 +211,9 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                       className="object-cover"
                       data-ai-hint={groupDetails?.dataAiHint || "group image"}
                       onError={() => {
-                        console.warn("Failed to load image preview for URL:", imagePreview);
+                        // console.warn("Failed to load image preview for URL:", imagePreview);
+                        // Optionally set a fallback or clear preview
+                        // setImagePreview(""); // Example: clear preview on error
                       }}
                     />
                   </div>
