@@ -43,7 +43,7 @@ export function AppSidebar() {
         return null;
       }
 
-      const isActive = item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href));
+      const isActive = item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href || "___NEVER_MATCH_EMPTY_HREF___")); // Added check for item.href
       const 메뉴버튼Component = isSubmenu ? SidebarMenuSubButton : SidebarMenuButton;
       const 메뉴아이템Component = isSubmenu ? SidebarMenuItem : SidebarMenuItem; 
 
@@ -65,11 +65,13 @@ export function AppSidebar() {
                 tooltip={sidebarState === "collapsed" ? item.title : undefined}
                 className="justify-between w-full"
               >
-                <div className="flex items-center gap-2">
-                  {item.icon && <item.icon className="shrink-0" />}
-                  <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
-                </div>
-                {sidebarState === "expanded" && (openSubMenus[itemKey] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)}
+                <>
+                  <span className="flex items-center gap-2"> {/* Changed div to span */}
+                    {item.icon && <item.icon className="shrink-0" />}
+                    <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
+                  </span>
+                  {sidebarState === "expanded" && (openSubMenus[itemKey] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)}
+                </>
               </메뉴버튼Component>
             </메뉴아이템Component>
             {openSubMenus[itemKey] && sidebarState === "expanded" && (
@@ -88,14 +90,16 @@ export function AppSidebar() {
             isActive={isActive}
             tooltip={sidebarState === "collapsed" ? item.title : undefined}
           >
-            <Link href={item.href} onClick={handleItemClick}>
-              {item.icon && <item.icon className="shrink-0" />}
-              <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
-              {item.label && sidebarState === "expanded" && (
-                <span className="ml-auto text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-sm">
-                  {item.label}
-                </span>
-              )}
+            <Link href={item.href || "/"} onClick={handleItemClick}> {/* Added fallback for href */}
+              <>
+                {item.icon && <item.icon className="shrink-0" />}
+                <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
+                {item.label && sidebarState === "expanded" && (
+                  <span className="ml-auto text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-sm">
+                    {item.label}
+                  </span>
+                )}
+              </>
             </Link>
           </메뉴버튼Component>
         </메뉴아이템Component>
@@ -124,3 +128,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
