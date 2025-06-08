@@ -61,9 +61,7 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                 </span>
               </Link>
             </Button>
-            <Link href={`/events/${eventId}/offer-drive`} className={cn(buttonVariants({ variant: "outline" }))}>
-                <Command className="h-4 w-4" /> I can drive
-            </Link>
+            {/* "I can drive" button removed from here */}
           </div>
         }
       />
@@ -127,9 +125,7 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                     </span>
                 </Link>
                 </Button>
-                <Link href={`/events/${eventId}/offer-drive`} className={cn(buttonVariants({ variant: "outline" }))}>
-                    <Command className="h-4 w-4" /> I can drive
-                </Link>
+                {/* "I can drive" button removed from here */}
             </div>
           </CardContent>
         </Card>
