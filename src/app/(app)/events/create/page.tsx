@@ -322,7 +322,7 @@ export default function CreateEventPage() {
                                     onSelect={() => {
                                       handleGroupSelection(group.id);
                                       // Keep popover open for multi-select
-                                      // setPopoverOpen(false); 
+                                      // setPopoverOpen(false);
                                     }}
                                   >
                                     <Check
