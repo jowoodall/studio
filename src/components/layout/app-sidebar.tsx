@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -82,7 +83,7 @@ export function AppSidebar() {
 
       return (
         <메뉴아이템Component key={itemKey}>
-          <Link href={item.href} passHref legacyBehavior>
+          <Link href={item.href} asChild>
             <메뉴버튼Component
               asChild
               isActive={isActive}
