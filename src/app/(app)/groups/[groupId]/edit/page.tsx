@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, use } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,11 +25,6 @@ const mockGroupsData: { [key: string]: { name: string; description: string; imag
   "3": { name: "Work Commute (Downtown)", description: "Shared rydz to downtown offices. Saving gas and sanity.", imageUrl: "https://placehold.co/400x300.png?text=Work+Commute", dataAiHint: "city skyline traffic" },
 };
 
-// No direct metadata export from client component files for dynamic routes like this easily.
-// Metadata should be handled by a parent server component or layout if title needs to be dynamic before client render.
-// For static titles or titles based on params available at build time, it's different.
-// We'll keep the PageHeader title dynamic based on fetched/mocked data.
-
 const groupEditFormSchema = z.object({
   groupName: z.string().min(3, "Group name must be at least 3 characters.").max(50, "Group name cannot exceed 50 characters."),
   description: z.string().max(200, "Description cannot exceed 200 characters.").optional(),
@@ -38,9 +33,16 @@ const groupEditFormSchema = z.object({
 
 type GroupEditFormValues = z.infer<typeof groupEditFormSchema>;
 
-export default function EditGroupPage({ params }: { params: { groupId: string } }) {
+// Define the expected shape of the resolved params
+interface ResolvedPageParams {
+  groupId: string;
+}
+
+export default function EditGroupPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+  const params = use(paramsPromise); // Unwrap the promise to get the actual params object
+  const { groupId } = params; // Destructure groupId from the resolved params
+
   const { toast } = useToast();
-  const { groupId } = params;
   const [groupDetails, setGroupDetails] = useState(mockGroupsData[groupId]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState(groupDetails?.imageUrl || "");
@@ -55,17 +57,20 @@ export default function EditGroupPage({ params }: { params: { groupId: string } 
   });
 
   useEffect(() => {
-    const currentGroup = mockGroupsData[groupId];
-    if (currentGroup) {
-      setGroupDetails(currentGroup);
-      form.reset({
-        groupName: currentGroup.name,
-        description: currentGroup.description,
-        imageUrl: currentGroup.imageUrl,
-      });
-      setImagePreview(currentGroup.imageUrl);
+    // Ensure groupId is resolved before using it
+    if (groupId) {
+        const currentGroup = mockGroupsData[groupId];
+        if (currentGroup) {
+        setGroupDetails(currentGroup);
+        form.reset({
+            groupName: currentGroup.name,
+            description: currentGroup.description,
+            imageUrl: currentGroup.imageUrl,
+        });
+        setImagePreview(currentGroup.imageUrl);
+        }
     }
-  }, [groupId, form]);
+  }, [groupId, form]); // Add groupId to dependency array
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
@@ -77,18 +82,26 @@ export default function EditGroupPage({ params }: { params: { groupId: string } 
   }, [form]);
 
 
-  if (!groupDetails) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
-        <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
-        <Button asChild className="mt-4">
-          <Link href="/groups">Back to Groups</Link>
-        </Button>
-      </div>
-    );
+  if (!groupDetails && groupId) { // Check if groupDetails is not yet set but groupId is available (after promise resolution)
+    // This block might be hit if the initial useState(mockGroupsData[groupId]) runs when groupId is briefly undefined
+    // or if mockGroupsData[groupId] is undefined. The useEffect above should handle setting it.
+    // For a better loading state, you might return a Skeleton/Loader here if !groupDetails after resolution.
+    // For now, if it's not found after resolution, we show the "Group Not Found" message.
+    const currentGroup = mockGroupsData[groupId];
+    if (!currentGroup && !isSubmitting) { // Ensure we don't show "not found" during submission simulation
+        return (
+        <div className="flex flex-col items-center justify-center h-full text-center py-10">
+            <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+            <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
+            <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
+            <Button asChild className="mt-4">
+            <Link href="/groups">Back to Groups</Link>
+            </Button>
+        </div>
+        );
+    }
   }
+
 
   function onSubmit(data: GroupEditFormValues) {
     setIsSubmitting(true);
@@ -96,8 +109,10 @@ export default function EditGroupPage({ params }: { params: { groupId: string } 
     // Simulate API call
     setTimeout(() => {
       // Update mock data (in real app, this would be a backend update and re-fetch or cache invalidation)
-      mockGroupsData[groupId] = { ...mockGroupsData[groupId], ...data, dataAiHint: mockGroupsData[groupId]?.dataAiHint };
-      setGroupDetails(mockGroupsData[groupId]); // Update local state to reflect change if needed
+      if (groupId) { // Ensure groupId is available
+        mockGroupsData[groupId] = { ...mockGroupsData[groupId], ...data, dataAiHint: mockGroupsData[groupId]?.dataAiHint };
+        setGroupDetails(mockGroupsData[groupId]); // Update local state to reflect change if needed
+      }
 
       toast({
         title: "Group Updated!",
@@ -106,12 +121,28 @@ export default function EditGroupPage({ params }: { params: { groupId: string } 
       setIsSubmitting(false);
     }, 1500);
   }
+  
+  // If groupId is not yet resolved (e.g. paramsPromise is still pending), 
+  // React.use() will suspend. Show a loader or null.
+  // However, for this component, if `groupId` itself is undefined after resolution, that's an issue.
+  // The `if (!groupDetails && groupId)` check above handles the case where the group data isn't found for a resolved ID.
+  // If `groupId` itself is missing from resolved `params`, that's an unexpected state.
+  if (!groupId) {
+    // This should ideally not happen if the route matches `[groupId]`
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-center py-10">
+            <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
+            <p className="text-muted-foreground">Loading group details...</p>
+        </div>
+    );
+  }
+
 
   return (
     <>
       <PageHeader
-        title={`Edit Group: ${groupDetails.name}`}
-        description={`You are currently editing the details for ${groupDetails.name}.`}
+        title={`Edit Group: ${groupDetails?.name || `Group ${groupId}`}`}
+        description={`You are currently editing the details for ${groupDetails?.name || `Group ${groupId}`}.`}
       />
       <Card className="w-full max-w-xl mx-auto shadow-xl">
         <CardHeader>
@@ -185,11 +216,8 @@ export default function EditGroupPage({ params }: { params: { groupId: string } 
                       alt="Group image preview"
                       fill
                       className="object-cover"
-                      data-ai-hint={groupDetails.dataAiHint || "group image"}
+                      data-ai-hint={groupDetails?.dataAiHint || "group image"}
                       onError={() => {
-                        // Optionally handle image load errors, e.g., show a fallback
-                        // For now, if it errors, it will show the alt text or broken image icon.
-                        // You could set imagePreview to a fallback placeholder URL here if needed.
                         console.warn("Failed to load image preview for URL:", imagePreview);
                       }}
                     />
