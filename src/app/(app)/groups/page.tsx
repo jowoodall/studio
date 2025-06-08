@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Settings2, Eye } from "lucide-react"; // Added Eye icon
+import { PlusCircle, Users, Edit, Trash2, Settings2, Eye } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -52,13 +52,7 @@ export default function GroupsPage() {
                 </div>
                 <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
               </CardContent>
-              <CardFooter className="border-t pt-4 flex flex-wrap justify-between items-center gap-2">
-                <Link
-                  href={`/groups/${group.id}`}
-                  className={cn(buttonVariants({ variant: "default", size: "sm" }), "flex-grow sm:flex-grow-0")}
-                >
-                  <Eye className="mr-2 h-4 w-4" /> View Group
-                </Link>
+              <CardFooter className="border-t pt-4 flex flex-wrap justify-end items-center gap-2"> {/* Adjusted justify-content */}
                 <div className="flex space-x-1">
                     <Link
                         href={`/groups/${group.id}/manage`}
