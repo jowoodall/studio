@@ -1,11 +1,12 @@
 
 import { PageHeader } from "@/components/shared/page-header";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button"; // Import buttonVariants
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarDays, MapPin, User, Car, PlusCircle, AlertTriangle, Command } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
+import { cn } from "@/lib/utils"; // Import cn
 
 // Mock data for rides related to an event
 const mockEventRides = [
@@ -60,13 +61,9 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                 </span>
               </Link>
             </Button>
-            <Button variant="outline" asChild>
-              <Link href={`/events/${eventId}/offer-drive`}>
-                <span className="flex items-center">
-                  <Command className="mr-2 h-4 w-4" /> I can drive
-                </span>
-              </Link>
-            </Button>
+            <Link href={`/events/${eventId}/offer-drive`} className={cn(buttonVariants({ variant: "outline" }))}>
+                <Command className="h-4 w-4" /> I can drive
+            </Link>
           </div>
         }
       />
@@ -130,13 +127,9 @@ export default function EventRidesPage({ params }: { params: { eventId: string }
                     </span>
                 </Link>
                 </Button>
-                <Button variant="outline" asChild>
-                <Link href={`/events/${eventId}/offer-drive`}>
-                    <span className="flex items-center">
-                      <Command className="mr-2 h-4 w-4" /> I can drive
-                    </span>
+                <Link href={`/events/${eventId}/offer-drive`} className={cn(buttonVariants({ variant: "outline" }))}>
+                    <Command className="h-4 w-4" /> I can drive
                 </Link>
-                </Button>
             </div>
           </CardContent>
         </Card>
