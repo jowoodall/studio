@@ -100,9 +100,9 @@ interface ResolvedPageParams {
 }
 
 export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
-  const resolvedParams = use(params); // Use 'params' directly as it's the promise
+  const resolvedParams = use(params); 
   const { toast } = useToast();
-  const { eventId } = resolvedParams; // Destructure from the resolved object
+  const { eventId } = resolvedParams || {}; // Destructure from the resolved object
 
   const eventDetails = eventId ? mockEventsData[eventId] : null;
   const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : [];
@@ -119,7 +119,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }, [eventDetails]);
 
   useEffect(() => {
-    if (currentAssociatedGroups.length > 0) {
+    if (currentAssociatedGroups.length > 0 && eventId) { // ensure eventId is available
       const drivers: GroupMember[] = [];
       const driverIds = new Set<string>();
 
@@ -136,7 +136,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     } else {
       setPotentialDrivers([]);
     }
-  }, [currentAssociatedGroups]);
+  }, [currentAssociatedGroups, eventId]); // Add eventId to dependency array
 
   const handleGroupSelection = (groupId: string) => {
     const newSelectedGroups = currentAssociatedGroups.includes(groupId)
@@ -167,12 +167,12 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
   };
 
-  if (!eventId || !eventDetails) { // Check both eventId (from resolvedParams) and eventDetails
+  if (!eventId || !eventDetails) { 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Event Not Found</h2>
-        <p className="text-muted-foreground">The event with ID "{resolvedParams.eventId || 'unknown'}" could not be found.</p>
+        <p className="text-muted-foreground">The event with ID "{resolvedParams?.eventId || 'unknown'}" could not be found.</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
@@ -327,7 +327,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                     </Badge>
                                     <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                                         <Link href={`/profile/view/${driver.id}`}> 
-                                            <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
+                                            <span className="flex items-center"> {/* Wrap icon and text */}
+                                                <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
+                                            </span>
                                         </Link>
                                     </Button>
                                 </div>
