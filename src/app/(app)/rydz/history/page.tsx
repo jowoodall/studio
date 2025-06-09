@@ -106,7 +106,7 @@ export default function RydHistoryPage() { // Changed RideHistoryPage to RydHist
                   )}
                 </div>
                 <Button variant="ghost" size="sm" asChild>
-                    <Link href={`/rydz/${ryd.id}/details`}> {/* Changed rides to rydz */}
+                    <Link href={`/rydz/tracking/${ryd.id}`}> {/* Changed link from /details to /tracking */}
                         View Ryd Details {/* Changed Ride to Ryd */}
                     </Link>
                 </Button>
@@ -135,4 +135,3 @@ export default function RydHistoryPage() { // Changed RideHistoryPage to RydHist
     </>
   );
 }
-
