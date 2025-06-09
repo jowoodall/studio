@@ -11,7 +11,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'New Message',
-  description: 'Compose a new message.',
+  description: 'Compose a new message to a user or group.',
 };
 
 export default function NewMessagePage() {
@@ -20,7 +20,7 @@ export default function NewMessagePage() {
     <>
       <PageHeader
         title="Compose New Message"
-        description="Select a recipient and write your message below."
+        description="Select a recipient (user or group) and write your message below."
         actions={
             <Button variant="outline" asChild>
                 <Link href="/messages">
@@ -40,7 +40,7 @@ export default function NewMessagePage() {
         <CardContent className="space-y-4">
           <div>
             <Label htmlFor="recipient">To:</Label>
-            <Input id="recipient" placeholder="Search by name or email..." className="mt-1" />
+            <Input id="recipient" placeholder="Search by name, email, or group name..." className="mt-1" />
             {/* Add search/dropdown functionality for recipients here */}
           </div>
           <div>
