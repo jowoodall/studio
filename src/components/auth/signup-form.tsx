@@ -1,9 +1,13 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
+import React, { useState } from "react"; // Import React and useState
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { UserRole } from "@/types";
+import { Loader2 } from "lucide-react";
 
 
 const signupFormSchema = z.object({
@@ -43,6 +48,7 @@ type SignupFormValues = z.infer<typeof signupFormSchema>;
 export function SignupForm() {
   const { toast } = useToast();
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupFormSchema),
@@ -51,18 +57,45 @@ export function SignupForm() {
       email: "",
       password: "",
       confirmPassword: "",
+      // role: UserRole.STUDENT, // Default role if desired
     },
   });
 
   async function onSubmit(data: SignupFormValues) {
-    // Placeholder for actual signup logic
-    console.log("Signup data:", data);
-    toast({
-      title: "Signup Attempted",
-      description: "Signup functionality is not yet implemented.",
-    });
-    // Simulate successful signup for now
-    router.push("/dashboard");
+    setIsLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      
+      if (userCredential.user) {
+        await updateProfile(userCredential.user, {
+          displayName: data.fullName,
+        });
+        // TODO: Set custom claim for role (requires backend function or admin SDK)
+        // This is a more advanced step. For now, the role is conceptual.
+        // console.log("User role selected:", data.role);
+      }
+
+      toast({
+        title: "Account Created!",
+        description: "You have been successfully signed up.",
+      });
+      router.push("/dashboard"); 
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      let errorMessage = "An unexpected error occurred. Please try again.";
+      if (error.code === "auth/email-already-in-use") {
+        errorMessage = "This email address is already in use.";
+      } else if (error.code === "auth/weak-password") {
+        errorMessage = "The password is too weak. It must be at least 6 characters long.";
+      }
+      toast({
+        title: "Signup Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -129,21 +162,22 @@ export function SignupForm() {
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select your role" />
+                    <SelectValue placeholder="Select your primary role" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
-                  <SelectItem value={UserRole.PARENT}>Parent</SelectItem>
-                  <SelectItem value={UserRole.DRIVER}>Driver</SelectItem>
+                  <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
+                  <SelectItem value={UserRole.DRIVER}>Driver (General)</SelectItem>
+                  {/* Admin role might be set through other means, not typically self-selected at signup */}
                 </SelectContent>
               </Select>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full">
-          Create Account
+        <Button type="submit" className="w-full" disabled={isLoading}>
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create Account"}
         </Button>
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}

@@ -1,7 +1,7 @@
 
 'use client';
 import Link from 'next/link';
-import { Bell, UserCircle, Menu } from 'lucide-react';
+import { Bell, UserCircle, Menu, LogOut, Settings } from 'lucide-react'; // Added LogOut, Settings
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,21 +16,34 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { siteConfig, userAccountMenu } from '@/config/site';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { signOut } from 'firebase/auth'; // Import Firebase signOut
+import { auth } from '@/lib/firebase'; // Import auth instance
+import { useAuth } from '@/context/AuthContext'; // Import useAuth
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // For user avatar
 
 export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth(); // Get user and loading state from context
 
-  const handleLogout = (event: Event) => {
-    event.preventDefault(); // Prevent default if it's trying to navigate via an href
-    // Placeholder for actual logout logic (e.g., clearing session, calling API)
-    console.log("Logging out...");
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-    });
-    router.push('/'); // Redirect to homepage
+  const handleLogout = async (event: Event) => {
+    event.preventDefault(); 
+    try {
+      await signOut(auth);
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out.",
+      });
+      router.push('/'); 
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast({
+        title: "Logout Failed",
+        description: "Could not log you out. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -64,31 +77,76 @@ export function AppHeader() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="User menu">
-                  <UserCircle className="h-5 w-5" />
+                <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
+                  <Avatar className="h-9 w-9">
+                    {user?.photoURL && <AvatarImage src={user.photoURL} alt={user.displayName || 'User avatar'} />}
+                    <AvatarFallback>
+                      {authLoading ? (
+                        <UserCircle className="h-5 w-5 text-muted-foreground" />
+                      ) : user?.displayName ? (
+                        user.displayName.charAt(0).toUpperCase()
+                      ) : (
+                        <UserCircle className="h-5 w-5" />
+                      )}
+                    </AvatarFallback>
+                  </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
+                {user && !authLoading && (
+                  <>
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{user.displayName || "User"}</p>
+                        <p className="text-xs leading-none text-muted-foreground">
+                          {user.email}
+                        </p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 {userAccountMenu.map((item) => {
+                  // Conditionally render items based on auth state if needed (e.g. hide "Log Out" if not logged in)
+                  if (!user && item.title === "Log Out") return null;
+                  if (!user && item.title !== "Log Out" && item.href !== "/login" && item.href !== "/signup") {
+                    // Potentially hide other auth-only items if not logged in, or handle via route protection
+                  }
+
                   if (item.title === 'Log Out') {
                     return (
                       <DropdownMenuItem key={item.title} onSelect={handleLogout} className="cursor-pointer">
-                        {item.icon && <item.icon className="h-4 w-4 text-muted-foreground" />}
-                        <span className="ml-2">{item.title}</span>
+                        {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
+                        <span>{item.title}</span>
                       </DropdownMenuItem>
                     );
                   }
                   return (
                     <DropdownMenuItem key={item.href} asChild>
-                      <Link href={item.href} className="flex items-center gap-2">
-                        {item.icon && <item.icon className="h-4 w-4 text-muted-foreground" />}
+                      <Link href={item.href} className="flex items-center">
+                        {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
                         <span>{item.title}</span>
                       </Link>
                     </DropdownMenuItem>
                   );
                 })}
+                 {!user && !authLoading && ( // Show Login/Signup if not logged in
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/login" className="flex items-center">
+                           <LogOut className="mr-2 h-4 w-4 text-muted-foreground transform rotate-180" /> {/* Using LogOut icon creatively for LogIn */}
+                          <span>Log In</span>
+                        </Link>
+                      </DropdownMenuItem>
+                       <DropdownMenuItem asChild>
+                        <Link href="/signup" className="flex items-center">
+                           <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" /> {/* Placeholder */}
+                          <span>Sign Up</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
