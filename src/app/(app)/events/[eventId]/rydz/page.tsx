@@ -99,12 +99,13 @@ interface ResolvedPageParams {
   eventId: string;
 }
 
-export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
-  const resolvedParams = use(paramsPromise);
+export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
+  const resolvedParams = use(params); // Use 'params' directly as it's the promise
   const { toast } = useToast();
-  const { eventId } = resolvedParams;
-  const eventDetails = mockEventsData[eventId];
-  const rydzForThisEvent = mockEventRydz.filter(ryd => ryd.eventId === eventId);
+  const { eventId } = resolvedParams; // Destructure from the resolved object
+
+  const eventDetails = eventId ? mockEventsData[eventId] : null;
+  const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : [];
 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
@@ -142,7 +143,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       ? currentAssociatedGroups.filter(id => id !== groupId)
       : [...currentAssociatedGroups, groupId];
     setCurrentAssociatedGroups(newSelectedGroups);
-    if (mockEventsData[eventId]) { // Ensure eventId is valid before trying to update
+    if (eventId && mockEventsData[eventId]) { 
         mockEventsData[eventId].associatedGroupIds = newSelectedGroups; 
     }
      toast({
@@ -156,7 +157,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   );
 
   const getDriverEventStatus = (driverId: string): EventDriverStatusInfo => {
-    return mockEventDriverStatuses[eventId]?.[driverId] || { status: "not responded" };
+    return eventId ? mockEventDriverStatuses[eventId]?.[driverId] || { status: "not responded" } : { status: "not responded" };
   };
 
   const statusConfig: Record<DriverEventStatus, { icon: React.ElementType, color: string, text: string }> = {
@@ -166,12 +167,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
   };
 
-  if (!eventDetails) {
+  if (!eventId || !eventDetails) { // Check both eventId (from resolvedParams) and eventDetails
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Event Not Found</h2>
-        <p className="text-muted-foreground">The event with ID "{eventId}" could not be found.</p>
+        <p className="text-muted-foreground">The event with ID "{resolvedParams.eventId || 'unknown'}" could not be found.</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
@@ -410,4 +411,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
+    
+
     
