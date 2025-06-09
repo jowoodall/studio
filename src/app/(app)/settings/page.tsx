@@ -23,7 +23,7 @@ export default function SettingsPage() {
           </div>
           <CardTitle className="text-center font-headline text-xl">Settings Dashboard</CardTitle>
           <CardDescription className="text-center">
-            This is where you'll be able to manage various aspects of your RydzConnect account.
+            This is where you'll be able to manage various aspects of your MyRydz account.
             (Functionality to be implemented)
           </CardDescription>
         </CardHeader>

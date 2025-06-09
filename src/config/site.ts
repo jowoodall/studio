@@ -20,12 +20,12 @@ import {
 import type { NavItem } from '@/types';
 
 export const siteConfig = {
-  name: 'RydzConnect',
-  description: 'Connecting communities for shared rydz. Simplify your carpooling needs with RydzConnect.',
-  url: 'https://rydzconnect.example.com',
-  ogImage: 'https://rydzconnect.example.com/og.png',
+  name: 'MyRydz',
+  description: 'Connecting communities for shared rydz. Simplify your carpooling needs with MyRydz.',
+  url: 'https://myrydz.example.com',
+  ogImage: 'https://myrydz.example.com/og.png',
   links: {
-    github: 'https://github.com/your-repo/rydzconnect', // Replace with actual repo
+    github: 'https://github.com/your-repo/myrydz', // Replace with actual repo
   },
 };
 

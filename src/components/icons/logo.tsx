@@ -1,3 +1,4 @@
+
 import { GitFork } from 'lucide-react'; // Using GitFork as a placeholder visual
 
 interface LogoProps extends React.SVGProps<SVGSVGElement> {
@@ -10,7 +11,7 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
       <GitFork className={cn("h-6 w-6 text-primary", className)} {...props} />
       {!iconOnly && (
         <span className="font-headline text-xl font-semibold text-primary">
-          RydzConnect
+          MyRydz
         </span>
       )}
     </div>
