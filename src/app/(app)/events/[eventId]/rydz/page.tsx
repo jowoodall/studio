@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Send } from "lucide-react"; // Send icon can be removed if not used elsewhere
+import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -44,29 +44,31 @@ interface GroupMember {
   avatarUrl: string;
   dataAiHint: string;
   canDrive: boolean;
+  rating?: number;
+  rydzCompleted?: number;
 }
 
 const mockGroupMembersDataForEventPage: { [groupId: string]: GroupMember[] } = {
   "group1": [
-    { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true },
-    { id: "user2", name: "Bob The Builder", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true },
+    { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 },
+    { id: "user2", name: "Bob The Builder", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true, rating: 4.5, rydzCompleted: 85 },
     { id: "user3", name: "Charlie Brown", avatarUrl: "https://placehold.co/100x100.png?text=CB", dataAiHint: "boy cartoon", canDrive: false },
   ],
   "group2": [
-    { id: "user4", name: "Diana Prince", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true },
+    { id: "user4", name: "Diana Prince", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true, rating: 4.9, rydzCompleted: 200 },
     { id: "user5", name: "Edward Scissorhands", avatarUrl: "https://placehold.co/100x100.png?text=ES", dataAiHint: "man pale", canDrive: false },
-    { id: "user6", name: "Fiona Gallagher", avatarUrl: "https://placehold.co/100x100.png?text=FG", dataAiHint: "woman determined", canDrive: true },
+    { id: "user6", name: "Fiona Gallagher", avatarUrl: "https://placehold.co/100x100.png?text=FG", dataAiHint: "woman determined", canDrive: true, rating: 4.2, rydzCompleted: 50 },
   ],
   "group3": [
-     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true }, // Alice is in another group too
-     { id: "user7", name: "Gus Fring", avatarUrl: "https://placehold.co/100x100.png?text=GF", dataAiHint: "man serious", canDrive: true },
+     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 }, // Alice is in another group too
+     { id: "user7", name: "Gus Fring", avatarUrl: "https://placehold.co/100x100.png?text=GF", dataAiHint: "man serious", canDrive: true, rating: 5.0, rydzCompleted: 30 },
   ],
   "group4": [
     { id: "user8", name: "Hank Hill", avatarUrl: "https://placehold.co/100x100.png?text=HH", dataAiHint: "man cartoon", canDrive: false },
   ],
   "group5": [], // No members or no drivers
   "group6": [
-    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true },
+    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true }, // No rating for this driver yet
   ]
 };
 
@@ -124,14 +126,6 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
   const filteredGroupsForPopover = mockAvailableGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
-
-  // const handleInviteDriver = (driverName: string) => {
-  //   toast({
-  //       title: "Driver Invited (Mock)",
-  //       description: `An invitation has been sent to ${driverName}.`,
-  //   });
-  //   // Placeholder for actual invite logic
-  // };
 
   if (!eventDetails) {
     return (
@@ -259,7 +253,18 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
                                     <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
                                     <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                                 </Avatar>
-                                <span className="font-medium">{driver.name}</span>
+                                <div>
+                                  <span className="font-medium">{driver.name}</span>
+                                  {driver.rating !== undefined && (
+                                    <div className="flex items-center text-xs text-muted-foreground mt-0.5">
+                                      <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
+                                      {driver.rating.toFixed(1)}
+                                      {driver.rydzCompleted !== undefined && 
+                                        <span className="ml-1">({driver.rydzCompleted} rydz)</span>
+                                      }
+                                    </div>
+                                  )}
+                                </div>
                             </div>
                             <div className="flex gap-2 w-full sm:w-auto justify-end">
                                 <Button variant="outline" size="sm" asChild>
@@ -267,7 +272,6 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
                                         <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
                                     </Link>
                                 </Button>
-                                {/* Invite Driver Button Removed */}
                             </div>
                         </li>
                     ))}
@@ -349,5 +353,4 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
     </>
   );
 }
-
     
