@@ -122,7 +122,8 @@ export const userAccountMenu: NavItem[] = [
   },
   {
     title: 'Log Out',
-    href: '/logout', 
+    href: '/', // Redirect to homepage after logout action
     icon: LogOut,
   },
 ];
+

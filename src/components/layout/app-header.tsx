@@ -1,3 +1,4 @@
+
 'use client';
 import Link from 'next/link';
 import { Bell, UserCircle, Menu } from 'lucide-react';
@@ -11,11 +12,26 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Logo } from '@/components/icons/logo';
-import { useSidebar } from '@/components/ui/sidebar'; // Assuming you're using shadcn sidebar
+import { useSidebar } from '@/components/ui/sidebar'; 
 import { siteConfig, userAccountMenu } from '@/config/site';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const handleLogout = (event: Event) => {
+    event.preventDefault(); // Prevent default if it's trying to navigate via an href
+    // Placeholder for actual logout logic (e.g., clearing session, calling API)
+    console.log("Logging out...");
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    });
+    router.push('/'); // Redirect to homepage
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -55,14 +71,24 @@ export function AppHeader() {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {userAccountMenu.map((item) => (
-                  <DropdownMenuItem key={item.href} asChild>
-                    <Link href={item.href} className="flex items-center gap-2">
-                      {item.icon && <item.icon className="h-4 w-4 text-muted-foreground" />}
-                      <span>{item.title}</span>
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
+                {userAccountMenu.map((item) => {
+                  if (item.title === 'Log Out') {
+                    return (
+                      <DropdownMenuItem key={item.title} onSelect={handleLogout} className="cursor-pointer">
+                        {item.icon && <item.icon className="h-4 w-4 text-muted-foreground" />}
+                        <span className="ml-2">{item.title}</span>
+                      </DropdownMenuItem>
+                    );
+                  }
+                  return (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <Link href={item.href} className="flex items-center gap-2">
+                        {item.icon && <item.icon className="h-4 w-4 text-muted-foreground" />}
+                        <span>{item.title}</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
