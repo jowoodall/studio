@@ -102,7 +102,7 @@ interface ResolvedPageParams {
 export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
   const resolvedParams = use(params); 
   const { toast } = useToast();
-  const { eventId } = resolvedParams || {}; // Destructure from the resolved object
+  const { eventId } = resolvedParams || {}; 
 
   const eventDetails = eventId ? mockEventsData[eventId] : null;
   const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : [];
@@ -119,7 +119,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }, [eventDetails]);
 
   useEffect(() => {
-    if (currentAssociatedGroups.length > 0 && eventId) { // ensure eventId is available
+    if (currentAssociatedGroups.length > 0 && eventId) { 
       const drivers: GroupMember[] = [];
       const driverIds = new Set<string>();
 
@@ -136,7 +136,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     } else {
       setPotentialDrivers([]);
     }
-  }, [currentAssociatedGroups, eventId]); // Add eventId to dependency array
+  }, [currentAssociatedGroups, eventId]); 
 
   const handleGroupSelection = (groupId: string) => {
     const newSelectedGroups = currentAssociatedGroups.includes(groupId)
@@ -194,13 +194,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 </span>
               </Link>
             </Button>
-            <Button variant="outline" asChild>
-              <Link href={`/events/${eventId}/offer-drive`}>
-                <span className="flex items-center">
-                  <Car className="mr-2 h-4 w-4" /> I can drive
-                </span>
-              </Link>
-            </Button>
+            {/* "I can drive" button removed from here */}
           </div>
         }
       />
@@ -327,7 +321,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                     </Badge>
                                     <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                                         <Link href={`/profile/view/${driver.id}`}> 
-                                            <span className="flex items-center"> {/* Wrap icon and text */}
+                                            <span className="flex items-center">
                                                 <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
                                             </span>
                                         </Link>
