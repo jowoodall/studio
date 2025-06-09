@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Send } from "lucide-react"; // Added UserCircle2, Send
+import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Send } from "lucide-react"; // Send icon can be removed if not used elsewhere
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -125,13 +125,13 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
 
-  const handleInviteDriver = (driverName: string) => {
-    toast({
-        title: "Driver Invited (Mock)",
-        description: `An invitation has been sent to ${driverName}.`,
-    });
-    // Placeholder for actual invite logic
-  };
+  // const handleInviteDriver = (driverName: string) => {
+  //   toast({
+  //       title: "Driver Invited (Mock)",
+  //       description: `An invitation has been sent to ${driverName}.`,
+  //   });
+  //   // Placeholder for actual invite logic
+  // };
 
   if (!eventDetails) {
     return (
@@ -267,9 +267,7 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
                                         <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
                                     </Link>
                                 </Button>
-                                <Button size="sm" onClick={() => handleInviteDriver(driver.name)}>
-                                    <Send className="mr-1.5 h-4 w-4" /> Invite Driver
-                                </Button>
+                                {/* Invite Driver Button Removed */}
                             </div>
                         </li>
                     ))}
