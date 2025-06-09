@@ -3,8 +3,10 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare } from "lucide-react"; // Added MessageSquare
 import type { Metadata } from 'next';
+import { Button } from "@/components/ui/button"; // Added Button
+import Link from "next/link"; // Added Link
 
 // Function to generate metadata dynamically based on rideId
 export async function generateMetadata({ params }: { params: { rideId: string } }): Promise<Metadata> {
@@ -63,8 +65,8 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
       />
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <InteractiveMap 
-            className="h-[400px] lg:h-full" 
+          <InteractiveMap
+            className="h-[400px] lg:h-full"
             markers={mapMarkers}
             routeCoordinates={mockRoutePath}
             defaultCenterLat={(mockRydDetails.origin.lat + mockRydDetails.destination.lat) / 2} // Center map between origin and destination
@@ -104,6 +106,11 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
                 <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To</h4>
                 <p>{mockRydDetails.destination.address}</p> {/* Changed mockRideDetails */}
               </div>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href={`/messages/new?rydId=${params.rideId}&context=rydParticipants`}>
+                  <MessageSquare className="mr-2 h-4 w-4" /> Message Ryd Participants
+                </Link>
+              </Button>
                <div className="text-xs text-muted-foreground pt-4 border-t">
                 Map and ETA are estimates and may vary based on real-time conditions.
               </div>
