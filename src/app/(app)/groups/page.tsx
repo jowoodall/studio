@@ -1,16 +1,19 @@
 
+"use client"; // Add this directive
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Settings2, Archive } from "lucide-react"; // Added Archive
+import { PlusCircle, Users, Edit, Trash2, Settings2, Archive } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
+// Metadata should be handled differently for client components, e.g. in a parent layout or via API
+// import type { Metadata } from 'next';
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = {
-  title: 'Manage Groups',
-};
+// export const metadata: Metadata = { // Metadata export is not used in Client Components
+//   title: 'Manage Groups',
+// };
 
 // Mock data for groups
 const mockGroups = [
