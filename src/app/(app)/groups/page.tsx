@@ -4,7 +4,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Settings2, Archive } from "lucide-react";
+import { PlusCircle, Users, Edit, Trash2, Archive } from "lucide-react"; // Removed Settings2 from here
 import Link from "next/link";
 import Image from "next/image";
 // Metadata should be handled differently for client components, e.g. in a parent layout or via API
@@ -77,7 +77,7 @@ export default function GroupsPage() {
                         aria-label="Manage group members"
                         title="Manage Members"
                     >
-                        <Settings2 className="h-4 w-4" />
+                        <Users className="h-4 w-4" /> {/* Changed from Settings2 to Users */}
                     </Link>
                     <Link
                         href={`/groups/${group.id}/edit`}
