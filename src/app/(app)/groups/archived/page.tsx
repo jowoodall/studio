@@ -1,4 +1,6 @@
 
+"use client"; // Add this directive
+
 // src/app/(app)/groups/archived/page.tsx
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -6,11 +8,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ArchiveRestore, Users, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
+// Metadata export is not used in Client Components
+// import type { Metadata } from 'next';
 
-export const metadata: Metadata = {
-  title: 'Archived Groups',
-};
+// export const metadata: Metadata = {
+//   title: 'Archived Groups',
+// };
 
 // Mock data for archived groups
 const mockArchivedGroups = [
