@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle // New icons for driver status
+  CheckCircle2, XCircle, UserMinus, HelpCircle 
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -184,6 +184,13 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
               <Link href={`/rydz/request?eventId=${eventId}`}>
                 <span className="flex items-center">
                   <PlusCircle className="mr-2 h-4 w-4" /> Request Ryd
+                </span>
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/events/${eventId}/offer-drive`}>
+                <span className="flex items-center">
+                  <Car className="mr-2 h-4 w-4" /> I can drive
                 </span>
               </Link>
             </Button>
