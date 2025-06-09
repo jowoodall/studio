@@ -19,11 +19,19 @@ export async function generateMetadata({ params }: { params: { rideId: string } 
 const mockRydDetails = { // Changed mockRideDetails to mockRydDetails
   driver: { name: "Jane Doe", avatar: "https://placehold.co/100x100.png?text=JD", dataAiHint: "woman driver" },
   vehicle: "Blue Sedan - XYZ 123",
-  origin: "123 Oak Street, Anytown",
-  destination: "Northwood High School",
+  origin: { lat: 35.0450, lng: -85.3100, address: "123 Oak Street, Anytown" }, // Made origin an object
+  destination: { lat: 35.0550, lng: -85.2900, address: "Northwood High School" }, // Made destination an object
   eta: "15 minutes",
   status: "En route", // Other statuses: "Picking up", "Delayed", "Arrived"
 };
+
+// Mock route coordinates for demonstration
+const mockRoutePath = [
+  { lat: mockRydDetails.origin.lat, lng: mockRydDetails.origin.lng }, // Start at origin
+  { lat: 35.0480, lng: -85.3050 }, // Intermediate point 1
+  { lat: 35.0500, lng: -85.2980 }, // Intermediate point 2
+  { lat: mockRydDetails.destination.lat, lng: mockRydDetails.destination.lng }, // End at destination
+];
 
 
 export default function LiveRydTrackingPage({ params }: { params: { rideId: string } }) { // Changed LiveRideTrackingPage to LiveRydTrackingPage
@@ -40,6 +48,12 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
     );
   }
 
+  const mapMarkers = [
+    { id: 'origin', position: mockRydDetails.origin, title: `Origin: ${mockRydDetails.origin.address}` },
+    { id: 'destination', position: mockRydDetails.destination, title: `Destination: ${mockRydDetails.destination.address}` },
+    // Potentially add a marker for the driver's current location if available
+  ];
+
 
   return (
     <>
@@ -49,7 +63,14 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
       />
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <InteractiveMap className="h-[400px] lg:h-full" />
+          <InteractiveMap 
+            className="h-[400px] lg:h-full" 
+            markers={mapMarkers}
+            routeCoordinates={mockRoutePath}
+            defaultCenterLat={(mockRydDetails.origin.lat + mockRydDetails.destination.lat) / 2} // Center map between origin and destination
+            defaultCenterLng={(mockRydDetails.origin.lng + mockRydDetails.destination.lng) / 2}
+            defaultZoom={12} // Adjust zoom as needed for the route
+          />
         </div>
         <div className="lg:col-span-1">
           <Card className="shadow-lg">
@@ -77,11 +98,11 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Car className="h-4 w-4 mr-1.5" /> From</h4>
-                <p>{mockRydDetails.origin}</p> {/* Changed mockRideDetails */}
+                <p>{mockRydDetails.origin.address}</p> {/* Changed mockRideDetails */}
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To</h4>
-                <p>{mockRydDetails.destination}</p> {/* Changed mockRideDetails */}
+                <p>{mockRydDetails.destination.address}</p> {/* Changed mockRideDetails */}
               </div>
                <div className="text-xs text-muted-foreground pt-4 border-t">
                 Map and ETA are estimates and may vary based on real-time conditions.
@@ -93,4 +114,3 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
     </>
   );
 }
-
