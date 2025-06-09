@@ -15,6 +15,7 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
+let auth: Auth; // Declare auth here
 let db: Firestore;
 
 if (!getApps().length) {
