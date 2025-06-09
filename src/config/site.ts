@@ -14,7 +14,8 @@ import {
   MapPin,
   DollarSign,
   MessageSquare,
-  ClipboardList, // Added for My Students
+  ClipboardList, 
+  Home, // Added for My Locations
 } from 'lucide-react';
 import type { NavItem } from '@/types';
 
@@ -106,8 +107,13 @@ export const userAccountMenu: NavItem[] = [
   {
     title: 'My Students',
     href: '/parent/my-students',
-    icon: ClipboardList, // Using ClipboardList as it can represent managing a list of students
-    roles: ['parent'], // Only show for parents
+    icon: ClipboardList, 
+    roles: ['parent'], 
+  },
+  {
+    title: 'My Locations',
+    href: '/profile/locations',
+    icon: Home, // Using Home icon for locations, MapPin is also a good choice
   },
   {
     title: 'Settings',
@@ -116,8 +122,7 @@ export const userAccountMenu: NavItem[] = [
   },
   {
     title: 'Log Out',
-    href: '/logout', // This would typically trigger a logout action
+    href: '/logout', 
     icon: LogOut,
   },
 ];
-
