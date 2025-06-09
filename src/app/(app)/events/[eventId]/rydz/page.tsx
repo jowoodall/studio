@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,10 +95,14 @@ const mockEventDriverStatuses: { [eventId: string]: { [driverId: string]: EventD
   },
 };
 
+interface ResolvedPageParams {
+  eventId: string;
+}
 
-export default function EventRydzPage({ params }: { params: { eventId: string } }) {
+export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+  const resolvedParams = use(paramsPromise);
   const { toast } = useToast();
-  const { eventId } = params;
+  const { eventId } = resolvedParams;
   const eventDetails = mockEventsData[eventId];
   const rydzForThisEvent = mockEventRydz.filter(ryd => ryd.eventId === eventId);
 
@@ -138,7 +142,9 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
       ? currentAssociatedGroups.filter(id => id !== groupId)
       : [...currentAssociatedGroups, groupId];
     setCurrentAssociatedGroups(newSelectedGroups);
-    mockEventsData[eventId].associatedGroupIds = newSelectedGroups; 
+    if (mockEventsData[eventId]) { // Ensure eventId is valid before trying to update
+        mockEventsData[eventId].associatedGroupIds = newSelectedGroups; 
+    }
      toast({
       title: "Groups Updated",
       description: `Event groups have been updated. (Mock update)`,
