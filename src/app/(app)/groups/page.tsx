@@ -2,7 +2,7 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Settings2, Eye } from "lucide-react";
+import { PlusCircle, Users, Edit, Trash2, Settings2, Archive } from "lucide-react"; // Added Archive
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -20,17 +20,31 @@ const mockGroups = [
 ];
 
 export default function GroupsPage() {
+  // Mock archive action
+  const handleArchiveGroup = (groupId: string, groupName: string) => {
+    console.log(`Archiving group: ${groupName} (ID: ${groupId})`);
+    alert(`Mock archive: ${groupName} would be archived.`);
+    // In a real app, you'd update the group's status and potentially re-fetch/filter the list
+  };
+
   return (
     <>
       <PageHeader
         title="Carpool Groups"
         description="Manage your carpool groups or create new ones."
         actions={
-          <Button asChild>
-            <Link href="/groups/create">
-              <PlusCircle className="mr-2 h-4 w-4" /> Create New Group
-            </Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button asChild>
+              <Link href="/groups/create">
+                <PlusCircle className="mr-2 h-4 w-4" /> Create New Group
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/groups/archived">
+                <Archive className="mr-2 h-4 w-4" /> View Archived Groups
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -52,7 +66,7 @@ export default function GroupsPage() {
                 </div>
                 <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
               </CardContent>
-              <CardFooter className="border-t pt-4 flex flex-wrap justify-end items-center gap-2"> {/* Adjusted justify-content */}
+              <CardFooter className="border-t pt-4 flex flex-wrap justify-end items-center gap-2">
                 <div className="flex space-x-1">
                     <Link
                         href={`/groups/${group.id}/manage`}
@@ -70,7 +84,16 @@ export default function GroupsPage() {
                     >
                         <Edit className="h-4 w-4" />
                     </Link>
-                  {/* Delete button remains a direct action for now */}
+                    <Button 
+                        variant="outline" 
+                        size="icon" 
+                        aria-label="Archive group" 
+                        title="Archive Group"
+                        onClick={() => handleArchiveGroup(group.id, group.name)}
+                        className="text-blue-600 hover:bg-blue-500/10 hover:text-blue-700"
+                    >
+                        <Archive className="h-4 w-4" />
+                    </Button>
                   <Button variant="destructive" size="icon" aria-label="Delete group" title="Delete Group">
                     <Trash2 className="h-4 w-4" />
                   </Button>
