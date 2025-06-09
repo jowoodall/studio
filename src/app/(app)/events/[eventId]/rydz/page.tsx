@@ -6,7 +6,10 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star } from "lucide-react";
+import { 
+  CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
+  CheckCircle2, XCircle, UserMinus, HelpCircle // New icons for driver status
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -60,16 +63,36 @@ const mockGroupMembersDataForEventPage: { [groupId: string]: GroupMember[] } = {
     { id: "user6", name: "Fiona Gallagher", avatarUrl: "https://placehold.co/100x100.png?text=FG", dataAiHint: "woman determined", canDrive: true, rating: 4.2, rydzCompleted: 50 },
   ],
   "group3": [
-     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 }, // Alice is in another group too
+     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 }, 
      { id: "user7", name: "Gus Fring", avatarUrl: "https://placehold.co/100x100.png?text=GF", dataAiHint: "man serious", canDrive: true, rating: 5.0, rydzCompleted: 30 },
   ],
   "group4": [
     { id: "user8", name: "Hank Hill", avatarUrl: "https://placehold.co/100x100.png?text=HH", dataAiHint: "man cartoon", canDrive: false },
   ],
-  "group5": [], // No members or no drivers
+  "group5": [], 
   "group6": [
-    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true }, // No rating for this driver yet
+    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true },
   ]
+};
+
+type DriverEventStatus = "not driving" | "has room" | "full car" | "not responded";
+
+interface EventDriverStatusInfo {
+  status: DriverEventStatus;
+  seatsAvailable?: number;
+}
+
+const mockEventDriverStatuses: { [eventId: string]: { [driverId: string]: EventDriverStatusInfo } } = {
+  "1": { // Event ID for "School Annual Day"
+    "user1": { status: "has room", seatsAvailable: 2 }, // Alice Wonderland
+    "user2": { status: "full car" },                  // Bob The Builder
+  },
+  "2": { // Event ID for "Community Soccer Match"
+    "user4": { status: "not responded" },              // Diana Prince
+    "user6": { status: "not driving" },                // Fiona Gallagher
+    "user1": { status: "has room", seatsAvailable: 1 }, // Alice Wonderland (also in this event's group)
+    "user7": { status: "not responded"},               // Gus Fring
+  },
 };
 
 
@@ -115,8 +138,7 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
       ? currentAssociatedGroups.filter(id => id !== groupId)
       : [...currentAssociatedGroups, groupId];
     setCurrentAssociatedGroups(newSelectedGroups);
-    // In a real app, you'd call an action here to update the backend
-    mockEventsData[eventId].associatedGroupIds = newSelectedGroups; // Update mock data for persistence in session
+    mockEventsData[eventId].associatedGroupIds = newSelectedGroups; 
      toast({
       title: "Groups Updated",
       description: `Event groups have been updated. (Mock update)`,
@@ -126,6 +148,17 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
   const filteredGroupsForPopover = mockAvailableGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
+
+  const getDriverEventStatus = (driverId: string): EventDriverStatusInfo => {
+    return mockEventDriverStatuses[eventId]?.[driverId] || { status: "not responded" };
+  };
+
+  const statusConfig: Record<DriverEventStatus, { icon: React.ElementType, color: string, text: string }> = {
+    "has room": { icon: CheckCircle2, color: "text-green-600 bg-green-100 border-green-200", text: "Has Room" },
+    "full car": { icon: UserMinus, color: "text-orange-600 bg-orange-100 border-orange-200", text: "Car Full" },
+    "not driving": { icon: XCircle, color: "text-red-600 bg-red-100 border-red-200", text: "Not Driving" },
+    "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
+  };
 
   if (!eventDetails) {
     return (
@@ -241,40 +274,52 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
       <Card className="mb-6 shadow-lg">
         <CardHeader>
             <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
-            <CardDescription>Drivers from the groups above who might be available for this event.</CardDescription>
+            <CardDescription>Drivers from the groups above and their status for this event.</CardDescription>
         </CardHeader>
         <CardContent>
             {potentialDrivers.length > 0 ? (
                 <ul className="space-y-3">
-                    {potentialDrivers.map(driver => (
-                        <li key={driver.id} className="flex flex-col sm:flex-row items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3 sm:gap-2">
-                            <div className="flex items-center gap-3 flex-grow">
-                                <Avatar className="h-10 w-10">
-                                    <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
-                                    <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <span className="font-medium">{driver.name}</span>
-                                  {driver.rating !== undefined && (
-                                    <div className="flex items-center text-xs text-muted-foreground mt-0.5">
-                                      <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
-                                      {driver.rating.toFixed(1)}
-                                      {driver.rydzCompleted !== undefined && 
-                                        <span className="ml-1">({driver.rydzCompleted} rydz)</span>
-                                      }
+                    {potentialDrivers.map(driver => {
+                        const driverStatusInfo = getDriverEventStatus(driver.id);
+                        const currentStatusConfig = statusConfig[driverStatusInfo.status];
+                        const StatusIcon = currentStatusConfig.icon;
+                        return (
+                            <li key={driver.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3 sm:gap-2">
+                                <div className="flex items-center gap-3 flex-grow">
+                                    <Avatar className="h-10 w-10">
+                                        <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
+                                        <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1">
+                                      <span className="font-medium">{driver.name}</span>
+                                      {driver.rating !== undefined && (
+                                        <div className="flex items-center text-xs text-muted-foreground mt-0.5">
+                                          <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
+                                          {driver.rating.toFixed(1)}
+                                          {driver.rydzCompleted !== undefined && 
+                                            <span className="ml-1">({driver.rydzCompleted} rydz)</span>
+                                          }
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
                                 </div>
-                            </div>
-                            <div className="flex gap-2 w-full sm:w-auto justify-end">
-                                <Button variant="outline" size="sm" asChild>
-                                    <Link href={`/profile/view/${driver.id}`}> {/* Placeholder profile link */}
-                                        <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
-                                    </Link>
-                                </Button>
-                            </div>
-                        </li>
-                    ))}
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
+                                    <Badge variant="outline" className={cn("text-xs py-1 px-2.5 border capitalize", currentStatusConfig.color)}>
+                                        <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
+                                        {currentStatusConfig.text}
+                                        {driverStatusInfo.status === "has room" && driverStatusInfo.seatsAvailable !== undefined && (
+                                            <span className="ml-1.5">({driverStatusInfo.seatsAvailable} open)</span>
+                                        )}
+                                    </Badge>
+                                    <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
+                                        <Link href={`/profile/view/${driver.id}`}> 
+                                            <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
+                                        </Link>
+                                    </Button>
+                                </div>
+                            </li>
+                        );
+                    })}
                 </ul>
             ) : (
                 <div className="text-center py-4 text-muted-foreground">
@@ -285,7 +330,6 @@ export default function EventRydzPage({ params }: { params: { eventId: string } 
             )}
         </CardContent>
       </Card>
-
 
       {rydzForThisEvent.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
