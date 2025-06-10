@@ -70,17 +70,43 @@ export function SignupForm() {
       if (userCredential.user) {
         await updateProfile(userCredential.user, {
           displayName: data.fullName,
+          // photoURL can be set here if you have an avatar upload mechanism
         });
 
+        // Create a reference to the user's document in Firestore
         const userRef = doc(db, "users", userCredential.user.uid);
+
+        // Set the user's profile data in Firestore
+        // Simplified payload to match current security rules for create
         await setDoc(userRef, {
           uid: userCredential.user.uid,
           fullName: data.fullName,
           email: data.email,
           role: data.role,
           createdAt: Timestamp.now(),
-          avatarUrl: userCredential.user.photoURL || "",
-          canDrive: false, 
+          avatarUrl: userCredential.user.photoURL || "", // Default to empty string if no photoURL
+          canDrive: false, // Default value
+          // The following fields are temporarily removed for debugging the 400 error
+          // bio: "",
+          // phone: "",
+          // preferences: {
+          //   notifications: "email", 
+          //   preferredPickupRadius: "5 miles",
+          // },
+          // address: {
+          //   street: "",
+          //   city: "",
+          //   state: "",
+          //   zip: "",
+          // },
+          // driverDetails: {
+          //   ageRange: "",
+          //   drivingExperience: "",
+          //   primaryVehicle: "",
+          //   passengerCapacity: "",
+          // },
+          // managedStudentIds: [],
+          // associatedParentIds: [],
         });
       }
 
@@ -98,15 +124,18 @@ export function SignupForm() {
       } else if (error.code === "auth/weak-password") {
         errorMessage = "The password is too weak. It must be at least 8 characters long.";
       }
+      // Check for Firestore specific errors if available, though 400 is less common for permissions
+      if (error.code && error.code.startsWith('firestore/')) {
+        errorMessage = `Firestore error: ${error.message}`;
+      }
+
       toast({
         title: "Signup Failed",
         description: errorMessage,
         variant: "destructive",
       });
-      setIsLoading(false); // Also ensure loading is false in catch block
+      setIsLoading(false); 
     }
-    // No finally block needed if setIsLoading(false) is handled in both try and catch.
-    // If you prefer a finally block, ensure it doesn't interfere with the logic above.
   }
 
   return (
