@@ -58,7 +58,7 @@ export function SignupForm() {
       email: "",
       password: "",
       confirmPassword: "",
-      // role: UserRole.STUDENT, // Default role if desired
+      role: UserRole.STUDENT, 
     },
   });
 
@@ -70,10 +70,8 @@ export function SignupForm() {
       if (userCredential.user) {
         await updateProfile(userCredential.user, {
           displayName: data.fullName,
-          // photoURL can be set here if you have an avatar upload during signup
         });
 
-        // Save user data to Firestore
         const userRef = doc(db, "users", userCredential.user.uid);
         await setDoc(userRef, {
           uid: userCredential.user.uid,
@@ -81,21 +79,16 @@ export function SignupForm() {
           email: data.email,
           role: data.role,
           createdAt: Timestamp.now(),
-          avatarUrl: userCredential.user.photoURL || "", // Store avatar URL if available
-          canDrive: false, // Default value
-          // Initialize other fields as needed based on your data model
-          // e.g., bio: "", phone: "", preferences: {}, address: {}
+          avatarUrl: userCredential.user.photoURL || "",
+          canDrive: false, 
         });
-        
-        // TODO: Set custom claim for role (requires backend function or admin SDK)
-        // This is a more advanced step. For now, the role is conceptual on the Auth object but stored in Firestore.
-        // console.log("User role selected:", data.role, "and stored in Firestore.");
       }
 
       toast({
         title: "Account Created!",
         description: "You have been successfully signed up.",
       });
+      setIsLoading(false); // Set loading to false before navigation
       router.push("/dashboard"); 
     } catch (error: any) {
       console.error("Signup error:", error);
@@ -103,16 +96,17 @@ export function SignupForm() {
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email address is already in use.";
       } else if (error.code === "auth/weak-password") {
-        errorMessage = "The password is too weak. It must be at least 6 characters long.";
+        errorMessage = "The password is too weak. It must be at least 8 characters long.";
       }
       toast({
         title: "Signup Failed",
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Also ensure loading is false in catch block
     }
+    // No finally block needed if setIsLoading(false) is handled in both try and catch.
+    // If you prefer a finally block, ensure it doesn't interfere with the logic above.
   }
 
   return (
@@ -186,7 +180,6 @@ export function SignupForm() {
                   <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
                   <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
                   <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
-                  {/* UserRole.DRIVER has been removed as per request */}
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -206,4 +199,3 @@ export function SignupForm() {
     </Form>
   );
 }
-
