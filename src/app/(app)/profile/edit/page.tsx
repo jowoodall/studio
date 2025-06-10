@@ -1,0 +1,426 @@
+
+"use client";
+
+import { PageHeader } from "@/components/shared/page-header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/context/AuthContext";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { ArrowLeft, Edit3, Loader2, Save } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserRole } from "@/types";
+
+// Define a type for the user profile data from Firestore, matching profile/page.tsx
+interface UserProfileData {
+  uid: string;
+  fullName: string;
+  email: string; // Email is usually not editable directly by user for security
+  role: UserRole; // Role might also be non-editable by user
+  avatarUrl?: string;
+  dataAiHint?: string;
+  bio?: string;
+  phone?: string;
+  preferences?: {
+    notifications?: string;
+    preferredPickupRadius?: string;
+  };
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
+  canDrive?: boolean;
+  driverDetails?: {
+    ageRange?: string;
+    drivingExperience?: string;
+    primaryVehicle?: string;
+    passengerCapacity?: string;
+  };
+}
+
+const profileEditFormSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters."),
+  avatarUrl: z.string().url("Please enter a valid URL for the avatar.").or(z.literal("")).optional(),
+  dataAiHint: z.string().optional(),
+  bio: z.string().max(500, "Bio cannot exceed 500 characters.").optional(),
+  phone: z.string().optional(), // Add more specific validation if needed (e.g., regex for phone format)
+  
+  prefNotifications: z.string().optional(),
+  prefPickupRadius: z.string().optional(),
+
+  addrStreet: z.string().optional(),
+  addrCity: z.string().optional(),
+  addrState: z.string().optional(),
+  addrZip: z.string().optional(),
+
+  canDrive: z.boolean().optional(),
+  driverAgeRange: z.string().optional(),
+  driverExperience: z.string().optional(),
+  driverVehicle: z.string().optional(),
+  driverCapacity: z.string().optional(),
+});
+
+type ProfileEditFormValues = z.infer<typeof profileEditFormSchema>;
+
+export default function EditProfilePage() {
+  const { user: authUser, loading: authLoading } = useAuth();
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const form = useForm<ProfileEditFormValues>({
+    resolver: zodResolver(profileEditFormSchema),
+    defaultValues: {
+      fullName: "",
+      avatarUrl: "",
+      dataAiHint: "",
+      bio: "",
+      phone: "",
+      prefNotifications: "email",
+      prefPickupRadius: "5 miles",
+      addrStreet: "",
+      addrCity: "",
+      addrState: "",
+      addrZip: "",
+      canDrive: false,
+      driverAgeRange: "",
+      driverExperience: "",
+      driverVehicle: "",
+      driverCapacity: "",
+    },
+  });
+
+  useEffect(() => {
+    async function fetchUserProfile() {
+      if (authUser) {
+        setIsLoadingProfile(true);
+        try {
+          const userDocRef = doc(db, "users", authUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data() as UserProfileData;
+            setUserProfile(data);
+            form.reset({
+              fullName: data.fullName || "",
+              avatarUrl: data.avatarUrl || "",
+              dataAiHint: data.dataAiHint || "",
+              bio: data.bio || "",
+              phone: data.phone || "",
+              prefNotifications: data.preferences?.notifications || "email",
+              prefPickupRadius: data.preferences?.preferredPickupRadius || "5 miles",
+              addrStreet: data.address?.street || "",
+              addrCity: data.address?.city || "",
+              addrState: data.address?.state || "",
+              addrZip: data.address?.zip || "",
+              canDrive: data.canDrive || false,
+              driverAgeRange: data.driverDetails?.ageRange || "",
+              driverExperience: data.driverDetails?.drivingExperience || "",
+              driverVehicle: data.driverDetails?.primaryVehicle || "",
+              driverCapacity: data.driverDetails?.passengerCapacity || "",
+            });
+          } else {
+            toast({ title: "Error", description: "User profile not found.", variant: "destructive" });
+            router.push("/profile"); // Redirect if profile doesn't exist
+          }
+        } catch (error) {
+          console.error("Error fetching user profile for edit:", error);
+          toast({ title: "Error", description: "Failed to load profile for editing.", variant: "destructive" });
+        } finally {
+          setIsLoadingProfile(false);
+        }
+      } else if (!authLoading) {
+        router.push("/login"); // Redirect if not authenticated
+      }
+    }
+    if (!authLoading) {
+      fetchUserProfile();
+    }
+  }, [authUser, authLoading, router, form, toast]);
+
+  async function onSubmit(data: ProfileEditFormValues) {
+    if (!authUser || !userProfile) {
+      toast({ title: "Error", description: "User not authenticated or profile not loaded.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const userDocRef = doc(db, "users", authUser.uid);
+      const updatedData: Partial<UserProfileData> = {
+        fullName: data.fullName,
+        avatarUrl: data.avatarUrl,
+        dataAiHint: data.dataAiHint,
+        bio: data.bio,
+        phone: data.phone,
+        preferences: {
+          notifications: data.prefNotifications,
+          preferredPickupRadius: data.prefPickupRadius,
+        },
+        address: {
+          street: data.addrStreet,
+          city: data.addrCity,
+          state: data.addrState,
+          zip: data.addrZip,
+        },
+        canDrive: data.canDrive,
+        driverDetails: data.canDrive ? {
+          ageRange: data.driverAgeRange,
+          drivingExperience: data.driverExperience,
+          primaryVehicle: data.driverVehicle,
+          passengerCapacity: data.driverCapacity,
+        } : {}, // Clear driver details if not driving
+      };
+
+      await updateDoc(userDocRef, updatedData);
+      toast({ title: "Profile Updated", description: "Your profile has been successfully updated." });
+      router.push("/profile");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast({ title: "Update Failed", description: "Could not update your profile. Please try again.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (authLoading || isLoadingProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading profile editor...</p>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+     // This case should be handled by the redirect in useEffect, but as a fallback:
+    return (
+        <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+            <p className="text-muted-foreground">Could not load profile data.</p>
+        </div>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Edit Profile"
+        description="Update your personal information and preferences."
+        actions={
+          <Button variant="outline" asChild>
+            <Link href="/profile">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
+            </Link>
+          </Button>
+        }
+      />
+      <Card className="w-full max-w-2xl mx-auto shadow-xl">
+        <CardHeader>
+          <CardTitle className="font-headline text-xl">Your Information</CardTitle>
+          <CardDescription>Make changes to your profile below. Email and Role are not editable here.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="fullName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="avatarUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Avatar URL</FormLabel>
+                    <FormControl><Input type="url" placeholder="https://example.com/avatar.png" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="dataAiHint"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Avatar AI Hint (Optional)</FormLabel>
+                    <FormControl><Input placeholder="e.g., man smiling" {...field} /></FormControl>
+                    <FormDescription className="text-xs">Helps AI understand the image if a placeholder is used or for accessibility.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="bio"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Bio (Optional)</FormLabel>
+                    <FormControl><Textarea placeholder="Tell us a little about yourself..." {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number (Optional)</FormLabel>
+                    <FormControl><Input type="tel" placeholder="e.g., (555) 123-4567" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <h3 className="text-lg font-semibold pt-4 border-t">Address</h3>
+              <FormField control={form.control} name="addrStreet" render={({ field }) => (<FormItem><FormLabel>Street</FormLabel><FormControl><Input placeholder="123 Main St" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField control={form.control} name="addrCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Anytown" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="addrState" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="CA" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="addrZip" render={({ field }) => (<FormItem><FormLabel>Zip Code</FormLabel><FormControl><Input placeholder="90210" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              </div>
+
+              <h3 className="text-lg font-semibold pt-4 border-t">Preferences</h3>
+               <FormField
+                control={form.control}
+                name="prefNotifications"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notification Type</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select notification preference" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="push">Push Notifications</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="prefPickupRadius"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Preferred Pickup Radius</FormLabel>
+                     <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select pickup radius" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="1 mile">1 Mile</SelectItem>
+                        <SelectItem value="3 miles">3 Miles</SelectItem>
+                        <SelectItem value="5 miles">5 Miles</SelectItem>
+                        <SelectItem value="10 miles">10 Miles</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="pt-4 border-t">
+                <FormField
+                    control={form.control}
+                    name="canDrive"
+                    render={({ field }) => (
+                    <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20">
+                        <FormControl>
+                        <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                        />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                        <FormLabel className="text-base cursor-pointer">
+                            I can drive
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                            Check this if you are able and willing to be a driver for rydz.
+                        </FormDescription>
+                        </div>
+                    </FormItem>
+                    )}
+                />
+              </div>
+
+              {form.watch("canDrive") && (
+                <div className="space-y-6 pl-4 border-l-2 border-primary/30 ml-2 pt-2 pb-4 animate-accordion-down">
+                  <h3 className="text-md font-semibold text-primary">Driver Details</h3>
+                  <FormField control={form.control} name="driverAgeRange" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Age Range</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select age range" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="16-18">16-18</SelectItem>
+                          <SelectItem value="19-23">19-23</SelectItem>
+                          <SelectItem value="24+">24+</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="driverExperience" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Driving Experience</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select driving experience" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="0-6m">0-6 months</SelectItem>
+                          <SelectItem value="6m-1y">6 months - 1 year</SelectItem>
+                          <SelectItem value="1-3y">1-3 years</SelectItem>
+                          <SelectItem value="3-5y">3-5 years</SelectItem>
+                          <SelectItem value="5y+">5+ years</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="driverVehicle" render={({ field }) => (
+                    <FormItem><FormLabel>Primary Vehicle</FormLabel><FormControl><Input placeholder="e.g., Toyota Camry 2020, Blue" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={form.control} name="driverCapacity" render={({ field }) => (
+                    <FormItem><FormLabel>Passenger Capacity (excluding driver)</FormLabel><FormControl><Input type="number" placeholder="e.g., 4" min="1" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                </div>
+              )}
+
+
+              <Button type="submit" className="w-full" disabled={isSubmitting || isLoadingProfile}>
+                {isSubmitting ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
+                ) : (
+                  <><Save className="mr-2 h-4 w-4" /> Save Changes</>
+                )}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+    
