@@ -185,8 +185,8 @@ export function SignupForm() {
                 <SelectContent>
                   <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
                   <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
-                  <SelectItem value={UserRole.DRIVER}>Driver (General)</SelectItem>
-                  {/* Admin role might be set through other means, not typically self-selected at signup */}
+                  <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                  {/* UserRole.DRIVER has been removed as per request */}
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -206,3 +206,4 @@ export function SignupForm() {
     </Form>
   );
 }
+
