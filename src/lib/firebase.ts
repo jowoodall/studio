@@ -15,27 +15,48 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
-let auth: Auth; // Declare auth here
+let auth: Auth;
 let db: Firestore;
 
 if (!getApps().length) {
-  if (
-    !firebaseConfig.apiKey ||
-    !firebaseConfig.authDomain ||
-    !firebaseConfig.projectId
-  ) {
-    console.warn(
-      "Firebase config is missing or incomplete. Please check your .env.local file."
-    );
-    // Potentially throw an error or use a dummy app if critical for development
-    // For now, we'll let it proceed, but auth will likely fail.
+  // Check for missing essential Firebase config variables
+  if (!firebaseConfig.apiKey) {
+    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_API_KEY is missing in .env.local. Firebase initialization failed.");
   }
-  app = initializeApp(firebaseConfig);
+  if (!firebaseConfig.authDomain) {
+    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN is missing in .env.local. Firebase initialization failed.");
+  }
+  if (!firebaseConfig.projectId) {
+    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in .env.local. Firebase initialization failed.");
+  }
+
+  // Only initialize if essential configs are present
+  if (firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    // Fallback or throw error if essential config is missing
+    // For now, logging error and app will be undefined, leading to subsequent errors
+    console.error("Firebase initialization was skipped due to missing critical environment variables.");
+    // To make the app fail more gracefully or obviously, you could throw an error here:
+    // throw new Error("Critical Firebase configuration is missing. Check .env.local and server logs.");
+  }
 } else {
   app = getApps()[0];
 }
 
-auth = getAuth(app);
-db = getFirestore(app); // Initialize Firestore
+// Ensure app is initialized before trying to use it
+if (app!) {
+  auth = getAuth(app);
+  db = getFirestore(app); // Initialize Firestore
+} else {
+  // Handle the case where app initialization failed
+  // Assign dummy objects or throw to prevent further runtime errors if app is critical
+  console.error("Firebase app was not initialized. Auth and Firestore services will not be available.");
+  // Fallback to prevent crashing if auth/db are accessed later, though they won't work.
+  // This part depends on how critical Firebase is at every point of your app.
+  // A more robust solution might involve a global state indicating Firebase readiness.
+  auth = {} as Auth; // Dummy assignment
+  db = {} as Firestore; // Dummy assignment
+}
 
 export { app, auth, db };
