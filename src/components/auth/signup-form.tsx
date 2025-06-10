@@ -7,8 +7,8 @@ import * as z from "zod";
 import Link from "next/link";
 import React, { useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { auth, db } from "@/lib/firebase"; // Import db
-import { doc, setDoc, Timestamp } from "firebase/firestore"; // Import Firestore functions
+import { auth, db } from "@/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // Import serverTimestamp
 
 import { Button } from "@/components/ui/button";
 import {
@@ -70,43 +70,40 @@ export function SignupForm() {
       if (userCredential.user) {
         await updateProfile(userCredential.user, {
           displayName: data.fullName,
-          // photoURL can be set here if you have an avatar upload mechanism
         });
 
-        // Create a reference to the user's document in Firestore
         const userRef = doc(db, "users", userCredential.user.uid);
 
-        // Set the user's profile data in Firestore
-        // Simplified payload to match current security rules for create
         await setDoc(userRef, {
           uid: userCredential.user.uid,
           fullName: data.fullName,
           email: data.email,
           role: data.role,
-          createdAt: Timestamp.now(),
-          avatarUrl: userCredential.user.photoURL || "", // Default to empty string if no photoURL
-          canDrive: false, // Default value
-          // The following fields are temporarily removed for debugging the 400 error
-          // bio: "",
-          // phone: "",
-          // preferences: {
-          //   notifications: "email", 
-          //   preferredPickupRadius: "5 miles",
-          // },
-          // address: {
-          //   street: "",
-          //   city: "",
-          //   state: "",
-          //   zip: "",
-          // },
-          // driverDetails: {
-          //   ageRange: "",
-          //   drivingExperience: "",
-          //   primaryVehicle: "",
-          //   passengerCapacity: "",
-          // },
-          // managedStudentIds: [],
-          // associatedParentIds: [],
+          createdAt: serverTimestamp(), // Use serverTimestamp here
+          avatarUrl: userCredential.user.photoURL || "",
+          canDrive: false,
+          // The following fields are simplified to ensure basic profile creation works
+          // You can expand this later and adjust security rules accordingly
+          bio: "",
+          phone: "",
+          preferences: {
+            notifications: "email", 
+            preferredPickupRadius: "5 miles",
+          },
+          address: {
+            street: "",
+            city: "",
+            state: "",
+            zip: "",
+          },
+          driverDetails: {
+            ageRange: "",
+            drivingExperience: "",
+            primaryVehicle: "",
+            passengerCapacity: "",
+          },
+          managedStudentIds: [],
+          associatedParentIds: [],
         });
       }
 
@@ -114,7 +111,7 @@ export function SignupForm() {
         title: "Account Created!",
         description: "You have been successfully signed up.",
       });
-      setIsLoading(false); // Set loading to false before navigation
+      setIsLoading(false);
       router.push("/dashboard"); 
     } catch (error: any) {
       console.error("Signup error:", error);
@@ -123,11 +120,12 @@ export function SignupForm() {
         errorMessage = "This email address is already in use.";
       } else if (error.code === "auth/weak-password") {
         errorMessage = "The password is too weak. It must be at least 8 characters long.";
-      }
-      // Check for Firestore specific errors if available, though 400 is less common for permissions
-      if (error.code && error.code.startsWith('firestore/')) {
+      } else if (error.message && error.message.includes("permission-denied") || error.message && error.message.includes("Missing or insufficient permissions")) {
+        errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore rules.";
+      } else if (error.code && error.code.startsWith('firestore/')) {
         errorMessage = `Firestore error: ${error.message}`;
       }
+
 
       toast({
         title: "Signup Failed",
