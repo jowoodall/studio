@@ -5,9 +5,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
-import React, { useState } from "react"; // Import React and useState
+import React, { useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase"; // Import db
+import { doc, setDoc, Timestamp } from "firebase/firestore"; // Import Firestore functions
 
 import { Button } from "@/components/ui/button";
 import {
@@ -69,10 +70,26 @@ export function SignupForm() {
       if (userCredential.user) {
         await updateProfile(userCredential.user, {
           displayName: data.fullName,
+          // photoURL can be set here if you have an avatar upload during signup
         });
+
+        // Save user data to Firestore
+        const userRef = doc(db, "users", userCredential.user.uid);
+        await setDoc(userRef, {
+          uid: userCredential.user.uid,
+          fullName: data.fullName,
+          email: data.email,
+          role: data.role,
+          createdAt: Timestamp.now(),
+          avatarUrl: userCredential.user.photoURL || "", // Store avatar URL if available
+          canDrive: false, // Default value
+          // Initialize other fields as needed based on your data model
+          // e.g., bio: "", phone: "", preferences: {}, address: {}
+        });
+        
         // TODO: Set custom claim for role (requires backend function or admin SDK)
-        // This is a more advanced step. For now, the role is conceptual.
-        // console.log("User role selected:", data.role);
+        // This is a more advanced step. For now, the role is conceptual on the Auth object but stored in Firestore.
+        // console.log("User role selected:", data.role, "and stored in Firestore.");
       }
 
       toast({

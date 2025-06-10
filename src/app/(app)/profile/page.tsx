@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,32 +9,47 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { UserRole } from '@/types';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from '@/context/AuthContext';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 
-// Mock user data - replace with actual data fetching
-const mockUser = {
-  fullName: "Alex Johnson",
-  email: "alex.johnson@example.com",
-  phone: "555-123-4567",
-  role: UserRole.STUDENT, // Default role
-  avatarUrl: "https://placehold.co/128x128.png?text=AJ",
-  dataAiHint: "professional portrait",
-  bio: "Loves carpooling and making new friends on the go. Enjoys coding and soccer.",
-  preferences: {
-    notifications: "Email & Push",
-    preferredPickupRadius: "5 miles",
-  },
-  address: {
-    street: "123 Main Street",
-    city: "Anytown",
-    state: "CA",
-    zip: "90210"
-  }
-};
+// Define a type for the user profile data from Firestore
+interface UserProfileData {
+  uid: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+  avatarUrl?: string;
+  dataAiHint?: string;
+  bio?: string;
+  phone?: string;
+  preferences?: {
+    notifications?: string;
+    preferredPickupRadius?: string;
+  };
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
+  canDrive?: boolean;
+  driverDetails?: {
+    ageRange?: string;
+    drivingExperience?: string;
+    primaryVehicle?: string;
+    passengerCapacity?: string;
+  };
+  managedStudentIds?: string[];
+  associatedParentIds?: string[];
+  createdAt?: Timestamp; // Assuming you store this
+}
+
 
 const exampleLinkedApps = [
   { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
@@ -44,6 +59,12 @@ const exampleLinkedApps = [
 ];
 
 export default function ProfilePage() {
+  const { user: authUser, loading: authLoading } = useAuth();
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // States for UI interaction, to be driven by userProfile once loaded
   const [canDrive, setCanDrive] = useState(false);
   const [driverDetails, setDriverDetails] = useState({
     ageRange: "",
@@ -51,32 +72,109 @@ export default function ProfilePage() {
     primaryVehicle: "",
     passengerCapacity: "",
   });
-
-  // Role selection and parent/student management state
-  const [selectedRole, setSelectedRole] = useState<UserRole>(mockUser.role);
+  const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
   const [studentIdentifierInput, setStudentIdentifierInput] = useState("");
-  const [managedStudents, setManagedStudents] = useState<string[]>([]);
+  const [managedStudents, setManagedStudents] = useState<string[]>([]); // Should be UserProfileData.managedStudentIds
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
-  const [associatedParents, setAssociatedParents] = useState<string[]>([]);
+  const [associatedParents, setAssociatedParents] = useState<string[]>([]); // Should be UserProfileData.associatedParentIds
+
+  useEffect(() => {
+    async function fetchUserProfile() {
+      if (authUser) {
+        setIsLoadingProfile(true);
+        setProfileError(null);
+        try {
+          const userDocRef = doc(db, "users", authUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data() as UserProfileData;
+            setUserProfile(data);
+            // Initialize UI states from fetched profile
+            setCanDrive(data.canDrive || false);
+            setDriverDetails(data.driverDetails || { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" });
+            setSelectedRoleForView(data.role); // Set the role for view based on DB
+            setManagedStudents(data.managedStudentIds || []);
+            setAssociatedParents(data.associatedParentIds || []);
+
+          } else {
+            console.log("No such user profile document!");
+            setProfileError("User profile not found. Please complete your profile.");
+            // Potentially redirect to a profile creation/edit page if profile is mandatory
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          setProfileError("Failed to load profile. Please try again.");
+        } finally {
+          setIsLoadingProfile(false);
+        }
+      } else if (!authLoading) {
+        // No authenticated user, and auth is not loading anymore
+        setIsLoadingProfile(false);
+        // router.push('/login'); // Or handle as appropriate if profile page is accessed without auth
+      }
+    }
+
+    if (!authLoading) {
+        fetchUserProfile();
+    }
+  }, [authUser, authLoading]);
 
 
   const handleAddStudent = () => {
     if (studentIdentifierInput.trim() !== "") {
+      // In a real app, this would involve searching for a student and then updating the parent's Firestore doc
       setManagedStudents(prev => [...prev, studentIdentifierInput.trim()]);
       setStudentIdentifierInput("");
+      // TODO: Persist this change to Firestore for userProfile.managedStudentIds
     }
   };
 
   const handleAddParent = () => {
     if (parentIdentifierInput.trim() !== "") {
+      // In a real app, this would involve searching for a parent and then updating the student's Firestore doc
       setAssociatedParents(prev => [...prev, parentIdentifierInput.trim()]);
       setParentIdentifierInput("");
+      // TODO: Persist this change to Firestore for userProfile.associatedParentIds
     }
   };
   
-  const currentDisplayRole = selectedRole || mockUser.role;
+  // Use userProfile.role for displaying the role, selectedRoleForView is for UI logic
+  const currentDisplayRole = userProfile?.role || selectedRoleForView;
+
+  if (authLoading || isLoadingProfile) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading profile...</p>
+      </div>
+    );
+  }
+
+  if (profileError && !userProfile) {
+    return (
+       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Error Loading Profile</h2>
+        <p className="text-muted-foreground mb-4">{profileError}</p>
+        <Button asChild>
+          <Link href="/dashboard">Go to Dashboard</Link>
+        </Button>
+      </div>
+    )
+  }
+  
+  if (!authUser || !userProfile) {
+     // This case should ideally be handled by the AppLayout redirecting to /login
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+            <p className="text-muted-foreground">Please log in to view your profile.</p>
+             <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
+        </div>
+    );
+  }
 
 
   return (
@@ -98,23 +196,25 @@ export default function ProfilePage() {
           <Card className="shadow-lg text-center">
             <CardHeader>
               <Avatar className="h-32 w-32 mx-auto mb-4 border-4 border-primary">
-                <AvatarImage src={mockUser.avatarUrl} alt={mockUser.fullName} data-ai-hint={mockUser.dataAiHint} />
-                <AvatarFallback>{mockUser.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                <AvatarImage src={userProfile.avatarUrl || authUser.photoURL || `https://placehold.co/128x128.png?text=${userProfile.fullName.split(" ").map(n=>n[0]).join("")}`} alt={userProfile.fullName} data-ai-hint={userProfile.dataAiHint || "profile picture"} />
+                <AvatarFallback>{userProfile.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
               </Avatar>
-              <CardTitle className="font-headline text-2xl">{mockUser.fullName}</CardTitle>
-              <CardDescription className="capitalize">{currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole}</CardDescription>
+              <CardTitle className="font-headline text-2xl">{userProfile.fullName}</CardTitle>
+              <CardDescription className="capitalize">
+                {currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground px-4">{mockUser.bio}</p>
+              <p className="text-sm text-muted-foreground px-4">{userProfile.bio || "No bio available."}</p>
               <Separator className="my-4" />
               <div className="space-y-3 text-left">
                 <div className="flex items-center text-sm">
                   <Mail className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span>{mockUser.email}</span>
+                  <span>{userProfile.email}</span>
                 </div>
                 <div className="flex items-center text-sm">
                   <Phone className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span>{mockUser.phone}</span>
+                  <span>{userProfile.phone || "Not provided"}</span>
                 </div>
               </div>
             </CardContent>
@@ -127,13 +227,13 @@ export default function ProfilePage() {
                 <Button variant="outline" className="w-full justify-start" asChild>
                     <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> Account Settings</Link>
                 </Button>
-                { (selectedRole === UserRole.PARENT || mockUser.role === UserRole.PARENT) &&
+                { (userProfile.role === UserRole.PARENT) &&
                     <Button variant="outline" className="w-full justify-start" asChild>
                         <Link href="/parent/approvals"><Shield className="mr-2 h-4 w-4" /> Driver Approvals</Link>
                     </Button>
                 }
                 <Button variant="destructive" className="w-full justify-start" asChild>
-                     <Link href="/logout">
+                     <Link href="/"> {/* Link is to / which will trigger logout action if user is logged out */}
                         <LogOut className="mr-2 h-4 w-4" /> Log Out
                      </Link>
                 </Button>
@@ -151,24 +251,24 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="fullName">Full Name</Label>
-                  <Input id="fullName" value={mockUser.fullName} readOnly className="mt-1 bg-muted/50" />
+                  <Input id="fullName" value={userProfile.fullName} readOnly className="mt-1 bg-muted/50" />
                 </div>
                 <div>
                   <Label htmlFor="email">Email Address</Label>
-                  <Input id="email" type="email" value={mockUser.email} readOnly className="mt-1 bg-muted/50" />
+                  <Input id="email" type="email" value={userProfile.email} readOnly className="mt-1 bg-muted/50" />
                 </div>
               </div>
                <div>
                   <Label htmlFor="phone">Phone Number</Label>
-                  <Input id="phone" type="tel" value={mockUser.phone} readOnly className="mt-1 bg-muted/50" />
+                  <Input id="phone" type="tel" value={userProfile.phone || ""} readOnly className="mt-1 bg-muted/50" />
                 </div>
               <div>
                 <Label htmlFor="address">Address</Label>
-                <Input id="addressStreet" value={mockUser.address.street} readOnly className="mt-1 bg-muted/50" />
+                <Input id="addressStreet" value={userProfile.address?.street || ""} readOnly className="mt-1 bg-muted/50" placeholder="Street not set"/>
                 <div className="grid grid-cols-3 gap-2 mt-2">
-                    <Input id="addressCity" placeholder="City" value={mockUser.address.city} readOnly className="bg-muted/50" />
-                    <Input id="addressState" placeholder="State" value={mockUser.address.state} readOnly className="bg-muted/50" />
-                    <Input id="addressZip" placeholder="Zip" value={mockUser.address.zip} readOnly className="bg-muted/50" />
+                    <Input id="addressCity" placeholder="City" value={userProfile.address?.city || ""} readOnly className="bg-muted/50" />
+                    <Input id="addressState" placeholder="State" value={userProfile.address?.state || ""} readOnly className="bg-muted/50" />
+                    <Input id="addressZip" placeholder="Zip" value={userProfile.address?.zip || ""} readOnly className="bg-muted/50" />
                 </div>
               </div>
               <Separator />
@@ -176,34 +276,35 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="notifications">Notification Preferences</Label>
-                  <Input id="notifications" value={mockUser.preferences.notifications} readOnly className="mt-1 bg-muted/50" />
+                  <Input id="notifications" value={userProfile.preferences?.notifications || "Not set"} readOnly className="mt-1 bg-muted/50" />
                 </div>
                 <div>
                   <Label htmlFor="pickupRadius">Preferred Pickup Radius</Label>
-                  <Input id="pickupRadius" value={mockUser.preferences.preferredPickupRadius} readOnly className="mt-1 bg-muted/50" />
+                  <Input id="pickupRadius" value={userProfile.preferences?.preferredPickupRadius || "Not set"} readOnly className="mt-1 bg-muted/50" />
                 </div>
               </div>
 
               <Separator className="my-6" />
 
               <div>
-                <Label htmlFor="roleSelect" className="text-base font-medium">My Primary Role</Label>
+                <Label htmlFor="roleSelect" className="text-base font-medium">My Primary Role (View)</Label>
                 <Select
-                  value={selectedRole}
-                  onValueChange={(value) => setSelectedRole(value as UserRole)}
+                  value={selectedRoleForView}
+                  onValueChange={(value) => setSelectedRoleForView(value as UserRole)}
                 >
                   <SelectTrigger id="roleSelect" className="mt-1">
-                    <SelectValue placeholder="Select your primary role" />
+                    <SelectValue placeholder="Select role to view relevant sections" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
-                    <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
-                    <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                    <SelectItem value={UserRole.STUDENT}>View as Student</SelectItem>
+                    <SelectItem value={UserRole.PARENT}>View as Parent or Guardian</SelectItem>
+                    <SelectItem value={UserRole.ADMIN}>View as Admin</SelectItem>
                   </SelectContent>
                 </Select>
+                 <p className="text-xs text-muted-foreground mt-1">Your actual role is: <span className="font-semibold capitalize">{userProfile.role}</span>. This selector changes your view.</p>
               </div>
 
-              {selectedRole === UserRole.PARENT && (
+              {selectedRoleForView === UserRole.PARENT && (
                 <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-accent mb-2">
                       <Users className="h-5 w-5" />
@@ -214,7 +315,7 @@ export default function ProfilePage() {
                       <Label htmlFor="studentIdentifier" className="sr-only">Student Identifier</Label>
                       <Input
                       id="studentIdentifier"
-                      placeholder="Enter Student's User ID or Email"
+                      placeholder="Enter Student's User ID or Email (Mock Add)"
                       value={studentIdentifierInput}
                       onChange={(e) => setStudentIdentifierInput(e.target.value)}
                       className="mt-1"
@@ -222,14 +323,14 @@ export default function ProfilePage() {
                       <p className="text-xs text-muted-foreground mt-1">
                           In a live system, you would search for and select an existing student user.
                       </p>
-                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student</Button>
+                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student (Mock)</Button>
                   </div>
                   {managedStudents.length > 0 && (
                       <div>
                       <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User Identifiers):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
-                          {managedStudents.map((student, index) => (
-                          <li key={index} className="text-sm">{student}</li>
+                          {managedStudents.map((studentId, index) => (
+                          <li key={index} className="text-sm">{studentId}</li>
                           ))}
                       </ul>
                       </div>
@@ -237,7 +338,7 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {selectedRole === UserRole.STUDENT && (
+              {selectedRoleForView === UserRole.STUDENT && (
                 <div className="space-y-6 pl-4 border-l-2 border-blue-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-blue-600 mb-2">
                       <Users className="h-5 w-5" />
@@ -248,7 +349,7 @@ export default function ProfilePage() {
                       <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Identifier</Label>
                       <Input
                       id="parentIdentifier"
-                      placeholder="Enter Parent/Guardian's User ID or Email"
+                      placeholder="Enter Parent/Guardian's User ID or Email (Mock Add)"
                       value={parentIdentifierInput}
                       onChange={(e) => setParentIdentifierInput(e.target.value)}
                       className="mt-1"
@@ -256,14 +357,14 @@ export default function ProfilePage() {
                       <p className="text-xs text-muted-foreground mt-1">
                           In a live system, you would search for and select an existing parent/guardian user.
                       </p>
-                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian</Button>
+                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian (Mock)</Button>
                   </div>
                   {associatedParents.length > 0 && (
                       <div>
                       <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Parents/Guardians (User Identifiers):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
-                          {associatedParents.map((parent, index) => (
-                          <li key={index} className="text-sm">{parent}</li>
+                          {associatedParents.map((parentId, index) => (
+                          <li key={index} className="text-sm">{parentId}</li>
                           ))}
                       </ul>
                       </div>
@@ -271,7 +372,7 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {selectedRole === UserRole.ADMIN && (
+              {selectedRoleForView === UserRole.ADMIN && (
                 <div className="space-y-6 pl-4 border-l-2 border-red-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-red-600 mb-2">
                       <UserCog className="h-5 w-5" />
@@ -290,7 +391,10 @@ export default function ProfilePage() {
                   <Checkbox
                     id="canDrive"
                     checked={canDrive}
-                    onCheckedChange={(checked) => setCanDrive(Boolean(checked))}
+                    onCheckedChange={(checked) => {
+                      setCanDrive(Boolean(checked));
+                      // TODO: Persist this change to Firestore for userProfile.canDrive
+                    }}
                   />
                   <Label htmlFor="canDrive" className="text-base font-medium cursor-pointer">
                     I can drive
@@ -307,7 +411,10 @@ export default function ProfilePage() {
                       <Label htmlFor="ageRange">Age Range</Label>
                       <Select
                         value={driverDetails.ageRange}
-                        onValueChange={(value) => setDriverDetails(prev => ({ ...prev, ageRange: value }))}
+                        onValueChange={(value) => {
+                          setDriverDetails(prev => ({ ...prev, ageRange: value }));
+                          // TODO: Persist driverDetails change
+                        }}
                       >
                         <SelectTrigger id="ageRange" className="mt-1">
                           <SelectValue placeholder="Select your age range" />
@@ -324,7 +431,10 @@ export default function ProfilePage() {
                       <Label htmlFor="drivingExperience">Driving Experience</Label>
                       <Select
                         value={driverDetails.drivingExperience}
-                        onValueChange={(value) => setDriverDetails(prev => ({ ...prev, drivingExperience: value }))}
+                        onValueChange={(value) => {
+                          setDriverDetails(prev => ({ ...prev, drivingExperience: value }));
+                          // TODO: Persist driverDetails change
+                        }}
                       >
                         <SelectTrigger id="drivingExperience" className="mt-1">
                           <SelectValue placeholder="Select your driving experience" />
@@ -344,7 +454,10 @@ export default function ProfilePage() {
                       <Input
                         id="primaryVehicle"
                         value={driverDetails.primaryVehicle}
-                        onChange={(e) => setDriverDetails(prev => ({ ...prev, primaryVehicle: e.target.value }))}
+                        onChange={(e) => {
+                          setDriverDetails(prev => ({ ...prev, primaryVehicle: e.target.value }));
+                          // TODO: Persist driverDetails change
+                        }}
                         placeholder="e.g., Toyota Camry 2020, Blue"
                         className="mt-1"
                       />
@@ -356,7 +469,10 @@ export default function ProfilePage() {
                         id="passengerCapacity"
                         type="number"
                         value={driverDetails.passengerCapacity}
-                        onChange={(e) => setDriverDetails(prev => ({ ...prev, passengerCapacity: e.target.value }))}
+                        onChange={(e) => {
+                          setDriverDetails(prev => ({ ...prev, passengerCapacity: e.target.value }));
+                          // TODO: Persist driverDetails change
+                        }}
                         placeholder="e.g., 4"
                         min="1"
                         className="mt-1"
@@ -373,7 +489,7 @@ export default function ProfilePage() {
                   <LinkIcon className="h-5 w-5" />
                   <h4 className="text-base font-medium">Linked Apps</h4>
                 </div>
-                <p className="text-xs text-muted-foreground mb-4">Connect RydzConnect with other apps you use.</p>
+                <p className="text-xs text-muted-foreground mb-4">Connect MyRydz with other apps you use.</p>
                 <div className="space-y-4">
                   {exampleLinkedApps.map((app) => (
                     <div key={app.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-md">
@@ -381,7 +497,7 @@ export default function ProfilePage() {
                         <p className="font-medium">{app.name}</p>
                         <p className="text-xs text-muted-foreground">{app.description}</p>
                       </div>
-                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled>
+                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> {/* Button disabled for now */}
                         {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
                       </Button>
                     </div>
@@ -396,6 +512,3 @@ export default function ProfilePage() {
     </>
   );
 }
-
-
-    
