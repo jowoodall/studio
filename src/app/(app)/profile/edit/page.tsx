@@ -21,6 +21,15 @@ import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserRole } from "@/types";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"; // <<<<<<<<<<<< ADDED THIS IMPORT BLOCK
 
 // Define a type for the user profile data from Firestore, matching profile/page.tsx
 interface UserProfileData {
@@ -422,5 +431,4 @@ export default function EditProfilePage() {
     </>
   );
 }
-
     
