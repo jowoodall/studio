@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"; // Added getDoc
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -51,9 +51,6 @@ const rydRequestFormSchema = z.object({
         path: ["eventName"], 
       });
     }
-    // Accessing userProfile here to check role is tricky in Zod's superRefine
-    // because it doesn't have direct access to component state/context.
-    // We will handle the "at least one student selected for parent" validation in the onSubmit handler.
 });
 
 type RydRequestFormValues = z.infer<typeof rydRequestFormSchema>; 
@@ -67,7 +64,7 @@ export default function RydRequestPage() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentSelectItem[]>([]);
-  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(false);
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true); // Initialize as true
   const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
@@ -92,7 +89,6 @@ export default function RydRequestPage() {
         const fetchedEvents: EventData[] = [];
         querySnapshot.forEach((doc) => {
           const eventData = doc.data() as EventData;
-          // Ensure eventTimestamp is a Firestore Timestamp and convert to Date for comparison
           const eventDate = eventData.eventTimestamp instanceof Timestamp ? eventData.eventTimestamp.toDate() : new Date(0);
           if (eventDate >= new Date()) {
             fetchedEvents.push({ id: doc.id, ...eventData });
@@ -111,8 +107,9 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
+      setIsLoadingManagedStudents(true); // Start loading before checks
+
       if (userProfile && userProfile.role === UserRole.PARENT && userProfile.managedStudentIds && userProfile.managedStudentIds.length > 0) {
-        setIsLoadingManagedStudents(true);
         try {
           const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
             const studentDocRef = doc(db, "users", studentId);
@@ -128,17 +125,28 @@ export default function RydRequestPage() {
         } catch (error) {
           console.error("Error fetching managed students:", error);
           toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
+          setManagedStudentsList([]);
         } finally {
-          setIsLoadingManagedStudents(false);
+          setIsLoadingManagedStudents(false); // Set to false after try/catch
         }
       } else {
+        // Not a parent, or no managed students, or userProfile not loaded enough yet for these checks
         setManagedStudentsList([]);
+        setIsLoadingManagedStudents(false); // Crucial: set to false if no fetch attempt needed or criteria not met
       }
     };
 
-    if (!authLoading && !isLoadingProfile && userProfile) {
-      fetchManagedStudents();
+    if (!authLoading && !isLoadingProfile) { // Only proceed if auth and context profile are resolved
+      if (userProfile && userProfile.role === UserRole.PARENT) {
+        fetchManagedStudents();
+      } else {
+        // Not a parent or no userProfile, so no students to load.
+        setManagedStudentsList([]);
+        setIsLoadingManagedStudents(false); // Ensure loading state is false
+      }
     }
+    // If authLoading or isLoadingProfile is true, this effect might not run yet, or might run with an incomplete userProfile.
+    // The button's disabled state relies on these flags.
   }, [userProfile, authLoading, isLoadingProfile, toast]);
 
 
@@ -348,7 +356,6 @@ export default function RydRequestPage() {
                 )}
               />
 
-              {/* "This ryd is for" section */}
               {(authLoading || isLoadingProfile) && (
                 <div className="space-y-2">
                   <Skeleton className="h-4 w-1/4" />
