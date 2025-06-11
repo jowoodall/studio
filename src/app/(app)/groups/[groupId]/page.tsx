@@ -1,10 +1,13 @@
 
 // src/app/(app)/groups/[groupId]/page.tsx
+'use client';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CalendarDays, Car, Edit, Users, MapPin, AlertTriangle, Info } from "lucide-react";
+import { CalendarDays, Car, Edit, Users, MapPin, AlertTriangle, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from 'next';
@@ -12,6 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import type { GroupData, UserProfileData, UserRole } from "@/types";
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 interface FetchedGroupMember {
   id: string;
@@ -22,67 +27,139 @@ interface FetchedGroupMember {
   role: UserRole;
 }
 
-async function getGroupDetails(groupId: string): Promise<GroupData | null> {
-  const groupDocRef = doc(db, "groups", groupId);
-  const groupDocSnap = await getDoc(groupDocRef);
-  if (groupDocSnap.exists()) {
-    return { id: groupDocSnap.id, ...groupDocSnap.data() } as GroupData;
-  }
-  return null;
+// Static metadata for now, as dynamic generation is complex with client-side fetching.
+// export const metadata: Metadata = {
+//   title: 'View Group', // Generic title
+// };
+// To have dynamic metadata, a parent Server Component (e.g., layout.tsx) would need to fetch it.
+
+interface GroupViewPageProps {
+  params: { groupId: string };
 }
 
-async function getGroupMembers(memberIds: string[]): Promise<FetchedGroupMember[]> {
-  if (!memberIds || memberIds.length === 0) return [];
-  const memberPromises = memberIds.map(async (id) => {
-    const userDocRef = doc(db, "users", id);
-    const userDocSnap = await getDoc(userDocRef);
-    if (userDocSnap.exists()) {
-      const userData = userDocSnap.data() as UserProfileData;
-      return {
-        id: userDocSnap.id,
-        name: userData.fullName,
-        avatarUrl: userData.avatarUrl,
-        dataAiHint: userData.dataAiHint,
-        canDrive: userData.canDrive || false,
-        role: userData.role,
-      };
-    }
-    return null;
-  });
-  const members = (await Promise.all(memberPromises)).filter(Boolean) as FetchedGroupMember[];
-  return members;
-}
-
-export async function generateMetadata({ params }: { params: { groupId: string } }): Promise<Metadata> {
-  const group = await getGroupDetails(params.groupId);
-  const groupName = group?.name || `Group ${params.groupId}`;
-  return {
-    title: `View Group: ${groupName}`,
-  };
-}
-
-export default async function GroupViewPage({ params }: { params: { groupId: string } }) {
+export default function GroupViewPage({ params }: GroupViewPageProps) {
   const { groupId } = params;
-  const group = await getGroupDetails(groupId);
+  const { user: authUser, loading: authLoading } = useAuth();
+  const { toast } = useToast();
 
-  if (!group) {
+  const [group, setGroup] = useState<GroupData | null>(null);
+  const [members, setMembers] = useState<FetchedGroupMember[]>([]);
+  const [drivers, setDrivers] = useState<FetchedGroupMember[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchGroupAndMembers = useCallback(async () => {
+    if (!authUser) {
+      // Wait for authUser to be available if auth is still loading.
+      // If auth is done and no user, no need to fetch.
+      if (!authLoading) setIsLoading(false);
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const groupDocRef = doc(db, "groups", groupId);
+      const groupDocSnap = await getDoc(groupDocRef);
+
+      if (!groupDocSnap.exists()) {
+        setError(`Group with ID "${groupId}" not found.`);
+        setGroup(null);
+        setMembers([]);
+        setDrivers([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const groupData = { id: groupDocSnap.id, ...groupDocSnap.data() } as GroupData;
+      setGroup(groupData);
+
+      if (groupData.memberIds && groupData.memberIds.length > 0) {
+        const memberPromises = groupData.memberIds.map(async (id) => {
+          const userDocRef = doc(db, "users", id);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data() as UserProfileData;
+            return {
+              id: userDocSnap.id,
+              name: userData.fullName,
+              avatarUrl: userData.avatarUrl,
+              dataAiHint: userData.dataAiHint,
+              canDrive: userData.canDrive || false,
+              role: userData.role,
+            };
+          }
+          return null;
+        });
+        const fetchedMembers = (await Promise.all(memberPromises)).filter(Boolean) as FetchedGroupMember[];
+        setMembers(fetchedMembers);
+        setDrivers(fetchedMembers.filter(m => m.canDrive));
+      } else {
+        setMembers([]);
+        setDrivers([]);
+      }
+
+    } catch (e: any) {
+      console.error("Error fetching group details:", e);
+      setError("Failed to load group details. " + (e.message || ""));
+      toast({
+        title: "Error",
+        description: "Could not load group information.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [groupId, authUser, authLoading, toast]);
+
+  useEffect(() => {
+    if (!authLoading) { // Only fetch if auth state is resolved
+        fetchGroupAndMembers();
+    }
+  }, [groupId, authLoading, fetchGroupAndMembers]);
+
+  // Placeholder for upcoming events for this group
+  const events: { id: string; name: string; date: string; time: string; location: string }[] = [];
+
+  if (authLoading || (isLoading && !group && !error)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+        <p className="text-muted-foreground">Loading group details...</p>
+      </div>
+    );
+  }
+
+  if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
-        <p className="text-muted-foreground">The group with ID "{groupId}" could not be found in Firestore.</p>
+        <h2 className="text-2xl font-semibold mb-2">Error Loading Group</h2>
+        <p className="text-muted-foreground px-4">{error}</p>
         <Button asChild className="mt-4">
           <Link href="/groups">Back to Groups</Link>
         </Button>
       </div>
     );
   }
-
-  const members = await getGroupMembers(group.memberIds || []);
-  const drivers = members.filter(member => member.canDrive);
-
-  // Placeholder for upcoming events for this group, as this isn't directly modeled yet.
-  const events: { id: string; name: string; date: string; time: string; location: string }[] = [];
+  
+  if (!group) {
+    // This case should ideally be caught by the error state if fetch failed,
+    // or loading state if still fetching. If group is null and no error/loading,
+    // it implies group ID might be invalid or fetch logic has an issue.
+    // The `fetchGroupAndMembers` should set an error if groupDocSnap doesn't exist.
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
+        <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
+        <Button asChild className="mt-4">
+          <Link href="/groups">Back to Groups</Link>
+        </Button>
+      </div>
+    );
+  }
 
 
   return (
@@ -121,7 +198,7 @@ export default async function GroupViewPage({ params }: { params: { groupId: str
             </div>
             <CardHeader>
               <CardTitle className="font-headline text-2xl">{group.name}</CardTitle>
-              <CardDescription>{group.memberIds?.length || 0} members</CardDescription>
+              <CardDescription>{members.length || 0} members</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">{group.description}</p>
@@ -233,3 +310,5 @@ export default async function GroupViewPage({ params }: { params: { groupId: str
     </>
   );
 }
+
+    
