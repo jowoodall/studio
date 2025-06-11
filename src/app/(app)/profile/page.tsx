@@ -168,37 +168,43 @@ export default function ProfilePage() {
     }
 
     setIsAddingStudent(true);
+    console.log("handleAddStudent: Attempting to add student with email:", studentEmailToAdd);
+    console.log("handleAddStudent: Current authUser UID:", authUser?.uid);
+
     try {
       const usersRef = collection(db, "users");
-      // Query for the user by email
       const q = query(usersRef, where("email", "==", studentEmailToAdd));
+      console.log("handleAddStudent: Executing query for student email:", studentEmailToAdd);
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        toast({ title: "Student Not Found", description: `No user found with email: ${studentEmailToAdd}. Please ensure the student has an account with this email.`, variant: "destructive" });
+        console.log("handleAddStudent: No student found with email:", studentEmailToAdd);
+        toast({ title: "Student Not Found", description: `No user found with email: ${studentEmailToAdd}. Please ensure they have an account.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
       }
       
       if (querySnapshot.docs.length > 1) {
-        // This case should ideally not happen if email is unique in your Auth and Firestore user creation
-        toast({ title: "Multiple Accounts Found", description: `Multiple accounts found with email: ${studentEmailToAdd}. Please contact support.`, variant: "destructive" });
+        console.warn("handleAddStudent: Multiple students found with email:", studentEmailToAdd);
+        toast({ title: "Multiple Accounts Found", description: `Multiple accounts found for email: ${studentEmailToAdd}. Please contact support.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
       }
 
       const studentDocSnap = querySnapshot.docs[0];
-      const studentIdToAdd = studentDocSnap.id; // This is the student's UID
+      const studentIdToAdd = studentDocSnap.id;
       const studentData = studentDocSnap.data() as UserProfileData;
+      console.log("handleAddStudent: Found student:", studentIdToAdd, studentData);
 
-      // Check if the found user is actually a student
       if (studentData.role === UserRole.PARENT || studentData.role === UserRole.ADMIN) {
+        console.warn("handleAddStudent: User is not a student:", studentEmailToAdd, studentData.role);
         toast({ title: "Invalid Role", description: `User with email ${studentEmailToAdd} is not a student.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
       }
 
       if (managedStudents.includes(studentIdToAdd)) {
+        console.log("handleAddStudent: Student already managed:", studentIdToAdd);
         toast({ title: "Already Managed", description: `${studentData.fullName || 'Student'} (${studentEmailToAdd}) is already in your managed list.` });
         setStudentEmailInput("");
         setIsAddingStudent(false);
@@ -212,31 +218,39 @@ export default function ProfilePage() {
       batch.update(parentDocRef, {
         managedStudentIds: arrayUnion(studentIdToAdd)
       });
+      console.log(`handleAddStudent: Batch: Added student ${studentIdToAdd} to parent ${authUser.uid}'s managedStudentIds`);
 
-      // Update student's document
+      // Temporarily comment out updating the student's document for diagnosis
+      /* 
       const studentDocRef = doc(db, "users", studentIdToAdd);
       batch.update(studentDocRef, {
         associatedParentIds: arrayUnion(authUser.uid)
       });
+      console.log(`handleAddStudent: Batch: Added parent ${authUser.uid} to student ${studentIdToAdd}'s associatedParentIds`);
+      */
 
+      console.log("handleAddStudent: Attempting batch.commit() (parent update only)");
       await batch.commit();
+      console.log("handleAddStudent: Batch commit successful (parent update only).");
 
-      // Optimistically update local state
       setManagedStudents(prev => [...new Set([...prev, studentIdToAdd])]); 
       setStudentEmailInput("");
-      toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now managed and linked to your account.` });
+      toast({ title: "Student Associated (Parent Updated)", description: `Student ${studentData.fullName || studentEmailToAdd} is now in your managed list. Student's record not updated in this step for diagnosis.` });
 
     } catch (error: any) {
-      console.error("Error associating student:", error);
+      console.error("handleAddStudent: Error associating student:", error);
       let errorMessage = "Could not associate student. Please try again.";
       if (error.message?.toLowerCase().includes("index") || error.message?.toLowerCase().includes("requires an index")) {
-          errorMessage = "Database operation failed: A required index is missing. Please check your browser's developer console (F12 -> Console). Firebase usually provides a direct link there to create the necessary index on the 'email' field in the 'users' collection. Click that link and create the index."
-      } else if (error.message?.includes("permission-denied")) {
-          errorMessage = "Permission denied. Please check Firestore security rules for querying users or updating profiles."
+          errorMessage = "Database operation failed: A required index is missing. Your Firestore queries for users by email need an index on the 'email' field in the 'users' collection. Please check your browser's developer console (F12 -> Console); Firebase usually provides a direct link there to create the necessary index. Click that link and create the index."
+      } else if (error.message?.includes("permission-denied") || error.code?.includes("permission-denied")) {
+          errorMessage = "Permission denied by Firestore security rules. Please check your rules to ensure this operation is allowed."
+      } else if (error.code === 'unavailable' || error.message?.includes('unavailable')) {
+        errorMessage = "The Firestore service is temporarily unavailable. Please try again later."
       }
       toast({ title: "Association Failed", description: errorMessage, variant: "destructive", duration: 9000 });
     } finally {
       setIsAddingStudent(false);
+      console.log("handleAddStudent: Finished attempt.");
     }
   };
 
