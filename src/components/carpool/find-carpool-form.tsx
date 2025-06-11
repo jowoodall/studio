@@ -30,6 +30,9 @@ import { useToast } from "@/hooks/use-toast";
 
 import type { CarpoolMatchingInput, CarpoolMatchingOutput } from "@/ai/flows/carpool-matching";
 import { findMatchingCarpoolsAction } from "@/actions/carpool";
+import { db } from "@/lib/firebase";
+import { collection, query, getDocs } from "firebase/firestore";
+import type { GroupData } from "@/types";
 
 const findCarpoolFormSchema = z.object({
   eventLocation: z.string().min(5, { message: "Event location must be at least 5 characters." }),
@@ -37,7 +40,7 @@ const findCarpoolFormSchema = z.object({
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Invalid time format (HH:MM)."}),
   userLocation: z.string().min(5, { message: "Your location must be at least 5 characters." }),
   trafficConditions: z.string().min(3, { message: "Traffic conditions must be at least 3 characters (e.g., light, moderate, heavy)." }),
-  associatedGroupIds: z.array(z.string()).optional(), // Changed from knownCarpools
+  associatedGroupIds: z.array(z.string()).optional(),
 });
 
 type FindCarpoolFormValues = z.infer<typeof findCarpoolFormSchema>;
@@ -46,29 +49,27 @@ interface FindCarpoolFormProps {
   initialEventLocation?: string;
   initialEventDate?: Date;
   initialEventTime?: string;
-  initialAssociatedGroupIds?: string[]; // Added prop
+  initialAssociatedGroupIds?: string[];
 }
 
 const defaultFormValues = {
   eventLocation: "",
-  eventTime: "17:00", 
+  eventTime: "17:00",
   userLocation: "",
   trafficConditions: "moderate",
-  associatedGroupIds: [], 
+  associatedGroupIds: [],
 };
 
-const mockAvailableGroups = [ // Mock data for group selection
-  { id: "group1", name: "Morning School Run" },
-  { id: "group2", name: "Soccer Practice Crew" },
-  { id: "group3", name: "Work Commute (Downtown)" },
-  { id: "group4", name: "Weekend Study Buddies" },
-];
+interface GroupSelectItem {
+  id: string;
+  name: string;
+}
 
 export function FindCarpoolForm({
   initialEventLocation,
   initialEventDate,
   initialEventTime,
-  initialAssociatedGroupIds, // Destructure new prop
+  initialAssociatedGroupIds,
 }: FindCarpoolFormProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -76,6 +77,8 @@ export function FindCarpoolForm({
   const [error, setError] = useState<string | null>(null);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
+  const [availableGroups, setAvailableGroups] = useState<GroupSelectItem[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
 
   const form = useForm<FindCarpoolFormValues>({
     resolver: zodResolver(findCarpoolFormSchema),
@@ -91,6 +94,32 @@ export function FindCarpoolForm({
   const isEventPreFilled = !!initialEventLocation;
 
   useEffect(() => {
+    const fetchGroups = async () => {
+      setIsLoadingGroups(true);
+      try {
+        const groupsQuery = query(collection(db, "groups"));
+        const querySnapshot = await getDocs(groupsQuery);
+        const fetchedGroups: GroupSelectItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const groupData = doc.data() as GroupData;
+          fetchedGroups.push({ id: doc.id, name: groupData.name });
+        });
+        setAvailableGroups(fetchedGroups);
+      } catch (err) {
+        console.error("Error fetching groups:", err);
+        toast({
+          title: "Error",
+          description: "Could not fetch groups for selection.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingGroups(false);
+      }
+    };
+    fetchGroups();
+  }, [toast]);
+
+  useEffect(() => {
     form.reset({
       ...defaultFormValues,
       userLocation: form.getValues("userLocation") || defaultFormValues.userLocation,
@@ -98,7 +127,7 @@ export function FindCarpoolForm({
       eventLocation: initialEventLocation || defaultFormValues.eventLocation,
       eventDate: initialEventDate,
       eventTime: initialEventTime || defaultFormValues.eventTime,
-      associatedGroupIds: initialAssociatedGroupIds || [], // Reset associated groups based on prop
+      associatedGroupIds: initialAssociatedGroupIds || [],
     });
   }, [initialEventLocation, initialEventDate, initialEventTime, initialAssociatedGroupIds, form]);
 
@@ -111,7 +140,7 @@ export function FindCarpoolForm({
     form.setValue("associatedGroupIds", newSelectedGroups, { shouldValidate: true });
   };
 
-  const filteredGroups = mockAvailableGroups.filter(group =>
+  const filteredGroups = availableGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
   const currentSelectedGroups = form.watch("associatedGroupIds") || [];
@@ -131,8 +160,7 @@ export function FindCarpoolForm({
         eventDateTime: eventDateTime.toISOString(),
         userLocation: data.userLocation,
         trafficConditions: data.trafficConditions,
-        // The AI flow expects `associatedGroups` which is an array of strings (group names or IDs)
-        associatedGroups: data.associatedGroupIds?.map(id => mockAvailableGroups.find(g => g.id === id)?.name || id) || [],
+        associatedGroups: data.associatedGroupIds?.map(id => availableGroups.find(g => g.id === id)?.name || id) || [],
       };
 
       const response = await findMatchingCarpoolsAction(inputForAI);
@@ -172,8 +200,8 @@ export function FindCarpoolForm({
       <CardHeader>
         <CardTitle className="font-headline text-2xl">Carpool Details</CardTitle>
         <CardDescription>
-          {isEventPreFilled 
-            ? "Event details are pre-filled. Confirm your location and preferences." 
+          {isEventPreFilled
+            ? "Event details are pre-filled. Confirm your location and preferences."
             : "Fill in the details to find carpool options."}
         </CardDescription>
       </CardHeader>
@@ -187,9 +215,9 @@ export function FindCarpoolForm({
                 <FormItem>
                   <FormLabel>Event Location</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="e.g., 123 Main St, Anytown, USA or School Auditorium" 
-                      {...field} 
+                    <Input
+                      placeholder="e.g., 123 Main St, Anytown, USA or School Auditorium"
+                      {...field}
                       disabled={isEventPreFilled}
                       className={isEventPreFilled ? "bg-muted/50" : ""}
                     />
@@ -249,9 +277,9 @@ export function FindCarpoolForm({
                   <FormItem>
                     <FormLabel>Event Time (24h format)</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="time" 
-                        {...field} 
+                      <Input
+                        type="time"
+                        {...field}
                         disabled={isEventPreFilled}
                         className={isEventPreFilled ? "bg-muted/50" : ""}
                       />
@@ -297,18 +325,18 @@ export function FindCarpoolForm({
                 <FormItem className="flex flex-col">
                   <FormLabel className="text-base flex items-center">
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-                    Associate Groups
+                    Associate Groups (AI will prioritize these)
                   </FormLabel>
-                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 ? (
+                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 && !isLoadingGroups ? (
                     <>
                       <div className="pt-2 space-x-1 space-y-1">
                         {initialAssociatedGroupIds.map(groupId => {
-                            const group = mockAvailableGroups.find(g => g.id === groupId);
+                            const group = availableGroups.find(g => g.id === groupId);
                             return group ? (
                                 <Badge key={groupId} variant="secondary" className="mr-1">
                                     {group.name}
                                 </Badge>
-                            ) : null;
+                            ) :  <Badge key={groupId} variant="outline" className="mr-1">ID: {groupId.substring(0,6)}...</Badge>;
                         })}
                       </div>
                       <FormDescription>Groups pre-filled from selected event. These will be considered by the AI.</FormDescription>
@@ -322,10 +350,11 @@ export function FindCarpoolForm({
                             role="combobox"
                             aria-expanded={groupPopoverOpen}
                             className="w-full justify-between"
+                            disabled={isLoadingGroups}
                           >
-                            {currentSelectedGroups.length > 0
+                             {isLoadingGroups ? "Loading groups..." : (currentSelectedGroups.length > 0
                               ? `${currentSelectedGroups.length} group(s) selected`
-                              : "Select groups..."}
+                              : "Select groups...")}
                             <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
@@ -335,12 +364,14 @@ export function FindCarpoolForm({
                               placeholder="Search groups..."
                               value={groupSearchTerm}
                               onValueChange={setGroupSearchTerm}
+                              disabled={isLoadingGroups}
                             />
                             <CommandList>
-                              <CommandEmpty>No groups found.</CommandEmpty>
                               <ScrollArea className="h-48">
+                                {isLoadingGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                                {!isLoadingGroups && filteredGroups.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
                                 <CommandGroup>
-                                  {filteredGroups.map((group) => (
+                                  {!isLoadingGroups && filteredGroups.map((group) => (
                                     <CommandItem
                                       key={group.id}
                                       value={group.id}
@@ -371,7 +402,7 @@ export function FindCarpoolForm({
                       {currentSelectedGroups.length > 0 && (
                           <div className="pt-2 space-x-1 space-y-1">
                               {currentSelectedGroups.map(groupId => {
-                                  const group = mockAvailableGroups.find(g => g.id === groupId);
+                                  const group = availableGroups.find(g => g.id === groupId);
                                   return group ? (
                                       <Badge
                                           key={groupId}
@@ -393,14 +424,14 @@ export function FindCarpoolForm({
                       )}
                     </>
                   ) : (
-                    <FormDescription>No groups associated with the pre-selected event, or manually add groups below.</FormDescription>
+                    <FormDescription>{isLoadingGroups ? "Loading event's associated groups..." : "No specific groups pre-associated with this event."}</FormDescription>
                   )}
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <Button type="submit" className="w-full" disabled={isPending}>
+            <Button type="submit" className="w-full" disabled={isPending || isLoadingGroups}>
               {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -413,7 +444,7 @@ export function FindCarpoolForm({
           </form>
         </Form>
       </CardContent>
-      
+
       {error && (
         <CardFooter className="flex flex-col items-start gap-2 mt-6 border-t pt-6">
             <div className="flex items-center text-destructive">

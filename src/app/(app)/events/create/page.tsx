@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -17,37 +17,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format, parse } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2, Users, Check, X } from "lucide-react"; // Removed LinkIcon
+import { format } from "date-fns";
+import { CalendarIcon, PlusCircle, Loader2, Users, Check, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import type { EventData } from "@/types";
+import type { EventData, GroupData } from "@/types";
 
 const eventFormSchema = z.object({
-  // importSource removed
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
-  selectedGroups: z.array(z.string()).optional(), 
+  selectedGroups: z.array(z.string()).optional(),
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
-const mockAvailableGroups = [
-  { id: "group1", name: "Morning School Run" },
-  { id: "group2", name: "Soccer Practice Crew" },
-  { id: "group3", name: "Work Commute (Downtown)" },
-  { id: "group4", name: "Weekend Study Buddies" },
-  { id: "group5", name: "Art Club Carpool" },
-  { id: "group6", name: "Debate Team Transport" },
-];
+interface GroupSelectItem {
+  id: string;
+  name: string;
+}
 
 export default function CreateEventPage() {
   const { toast } = useToast();
@@ -56,16 +51,43 @@ export default function CreateEventPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [availableGroups, setAvailableGroups] = useState<GroupSelectItem[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
-      // importSource removed from defaultValues
       eventTime: "10:00",
       eventType: "",
       selectedGroups: [],
     },
   });
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      setIsLoadingGroups(true);
+      try {
+        const groupsQuery = query(collection(db, "groups"));
+        const querySnapshot = await getDocs(groupsQuery);
+        const fetchedGroups: GroupSelectItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const groupData = doc.data() as GroupData;
+          fetchedGroups.push({ id: doc.id, name: groupData.name });
+        });
+        setAvailableGroups(fetchedGroups);
+      } catch (error) {
+        console.error("Error fetching groups:", error);
+        toast({
+          title: "Error",
+          description: "Could not fetch groups. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingGroups(false);
+      }
+    };
+    fetchGroups();
+  }, [toast]);
 
   async function onSubmit(data: EventFormValues) {
     if (!authUser) {
@@ -102,7 +124,7 @@ export default function CreateEventPage() {
         description: `The event "${data.eventName}" has been successfully created.`,
       });
       router.push(`/events/${docRef.id}/rydz`);
-      
+
     } catch (error) {
       console.error("Error creating event:", error);
       toast({
@@ -115,8 +137,6 @@ export default function CreateEventPage() {
     }
   }
 
-  // Removed selectedImportSource and its useEffect
-
   const handleGroupSelection = (groupId: string) => {
     const currentSelectedGroups = form.getValues("selectedGroups") || [];
     const newSelectedGroups = currentSelectedGroups.includes(groupId)
@@ -125,7 +145,7 @@ export default function CreateEventPage() {
     form.setValue("selectedGroups", newSelectedGroups, { shouldValidate: true });
   };
 
-  const filteredGroups = mockAvailableGroups.filter(group =>
+  const filteredGroups = availableGroups.filter(group =>
     group.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -146,7 +166,6 @@ export default function CreateEventPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Removed Import from Calendar/App FormField */}
 
               <FormField
                 control={form.control}
@@ -291,10 +310,11 @@ export default function CreateEventPage() {
                           role="combobox"
                           aria-expanded={popoverOpen}
                           className="w-full justify-between"
+                          disabled={isLoadingGroups}
                         >
-                          {currentSelectedGroups.length > 0
+                          {isLoadingGroups ? "Loading groups..." : (currentSelectedGroups.length > 0
                             ? `${currentSelectedGroups.length} group(s) selected`
-                            : "Select groups..."}
+                            : "Select groups...")}
                            <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
@@ -304,17 +324,19 @@ export default function CreateEventPage() {
                             placeholder="Search groups..."
                             value={searchTerm}
                             onValueChange={setSearchTerm}
+                            disabled={isLoadingGroups}
                           />
                           <CommandList>
-                            <CommandEmpty>No groups found.</CommandEmpty>
                             <ScrollArea className="h-48">
+                              {isLoadingGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                              {!isLoadingGroups && filteredGroups.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
                               <CommandGroup>
-                                {filteredGroups.map((group) => (
+                                {!isLoadingGroups && filteredGroups.map((group) => (
                                   <CommandItem
                                     key={group.id}
-                                    value={group.id} 
+                                    value={group.id}
                                     onSelect={() => {
-                                      handleGroupSelection(group.id); 
+                                      handleGroupSelection(group.id);
                                     }}
                                   >
                                     <Check
@@ -340,7 +362,7 @@ export default function CreateEventPage() {
                     {currentSelectedGroups.length > 0 && (
                         <div className="pt-2 space-x-1 space-y-1">
                             {currentSelectedGroups.map(groupId => {
-                                const group = mockAvailableGroups.find(g => g.id === groupId);
+                                const group = availableGroups.find(g => g.id === groupId);
                                 return group ? (
                                     <Badge
                                         key={groupId}
@@ -365,7 +387,7 @@ export default function CreateEventPage() {
                 )}
               />
 
-              <Button type="submit" className="w-full" disabled={isSubmitting || !authUser}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || !authUser || isLoadingGroups}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Event...</>
                 ) : (
