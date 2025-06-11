@@ -108,17 +108,15 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
   const handleRoleChange = async (memberId: string, newRole: MemberRoleInGroup) => {
     if (!group || !authUser) return;
-    // Basic check: ensure current user is an admin of this group
     if (!group.adminIds.includes(authUser.uid)) {
         toast({ title: "Permission Denied", description: "Only group admins can change roles.", variant: "destructive"});
         return;
     }
-    // Simplified: doesn't prevent removing last admin for now
     const groupDocRef = doc(db, "groups", groupId);
     try {
       if (newRole === "admin") {
         await updateDoc(groupDocRef, { adminIds: arrayUnion(memberId) });
-      } else { // newRole is "member"
+      } else { 
         await updateDoc(groupDocRef, { adminIds: arrayRemove(memberId) });
       }
       setMembers(prevMembers =>
@@ -126,6 +124,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
           member.id === memberId ? { ...member, roleInGroup: newRole } : member
         )
       );
+      setGroup(prev => prev ? ({ ...prev, adminIds: newRole === 'admin' ? [...prev.adminIds, memberId] : prev.adminIds.filter(id => id !== memberId)}) : null);
       toast({
         title: "Role Updated",
         description: `${members.find(m => m.id === memberId)?.name || 'Member'}'s role changed to ${newRole}.`,
@@ -138,19 +137,18 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
   const handleRemoveMember = async (memberIdToRemove: string) => {
     if (!group || !authUser) return;
-    if (!group.adminIds.includes(authUser.uid) && authUser.uid !== memberIdToRemove) { // Admins can remove others, users can remove themselves (if feature allowed)
+    if (!group.adminIds.includes(authUser.uid) && authUser.uid !== memberIdToRemove) { 
         toast({ title: "Permission Denied", description: "Only group admins can remove other members.", variant: "destructive"});
         return;
     }
-    // Simplified: doesn't prevent removing last admin or self if last admin for now
-
+    
     const memberName = members.find(m => m.id === memberIdToRemove)?.name || 'Member';
     try {
       const batch = writeBatch(db);
       const groupDocRef = doc(db, "groups", groupId);
       batch.update(groupDocRef, {
         memberIds: arrayRemove(memberIdToRemove),
-        adminIds: arrayRemove(memberIdToRemove) // Also remove from admins if they were one
+        adminIds: arrayRemove(memberIdToRemove) 
       });
 
       const userDocRef = doc(db, "users", memberIdToRemove);
@@ -161,7 +159,6 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
       await batch.commit();
 
       setMembers(prevMembers => prevMembers.filter(member => member.id !== memberIdToRemove));
-      // Also update group state if memberIds/adminIds are stored directly on it
       setGroup(prev => prev ? ({...prev, 
         memberIds: prev.memberIds.filter(id => id !== memberIdToRemove),
         adminIds: prev.adminIds.filter(id => id !== memberIdToRemove),
@@ -173,7 +170,13 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
       });
     } catch (e: any) {
       console.error("Error removing member:", e);
-      toast({ title: "Removal Failed", description: e.message || "Could not remove member.", variant: "destructive"});
+      let description = "Could not remove member. Please check console for details.";
+       if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
+            description = "Permission denied by Firestore rules. Ensure rules allow admins to remove members and update their profiles.";
+      } else if (e.message) {
+            description = e.message;
+      }
+      toast({ title: "Removal Failed", description, variant: "destructive", duration: 9000});
     }
   };
   
@@ -216,8 +219,15 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         const groupDocRef = doc(db, "groups", groupId);
         batch.update(groupDocRef, { memberIds: arrayUnion(newMemberId) });
 
+        // IMPORTANT: Updating another user's document (userDocRef below)
+        // typically requires specific Firestore security rules.
+        // If this operation fails with "permission-denied", you need to adjust your
+        // Firestore rules to allow an admin of a group to add that groupId to
+        // the `joinedGroupIds` of the user being added.
+        // Alternatively, remove this line and handle the new member's `joinedGroupIds` update
+        // through a different mechanism (e.g., the user accepts an invitation).
         const userDocRef = doc(db, "users", newMemberId);
-        batch.update(userDocRef, { joinedGroupIds: arrayUnion(groupId) });
+        batch.update(userDocRef, { joinedGroupIds: arrayUnion(groupId) }); 
         
         await batch.commit();
 
@@ -226,7 +236,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
             name: newMemberData.fullName,
             avatarUrl: newMemberData.avatarUrl,
             dataAiHint: newMemberData.dataAiHint,
-            roleInGroup: "member", // New members are always 'member' by default
+            roleInGroup: "member", 
             canDrive: newMemberData.canDrive || false,
             email: newMemberData.email,
         };
@@ -237,7 +247,13 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         setNewMemberEmail("");
     } catch (e: any) {
         console.error("Error adding member:", e);
-        toast({ title: "Invitation Failed", description: e.message || "Could not add member.", variant: "destructive"});
+        let description = "Could not add member. Please check console for details.";
+        if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
+            description = "Permission denied by Firestore rules. Ensure rules allow admins to add members to the group and to update the new member's 'joinedGroupIds'. This might require specific cross-document write permissions in your rules.";
+        } else if (e.message) {
+            description = e.message;
+        }
+        toast({ title: "Invitation Failed", description, variant: "destructive", duration: 9000});
     } finally {
         setIsAddingMember(false);
     }
@@ -387,3 +403,5 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
+
+    
