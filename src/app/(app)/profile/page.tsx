@@ -51,6 +51,12 @@ interface UserProfileData {
   createdAt?: Timestamp;
 }
 
+interface ManagedStudentDisplayInfo {
+  uid: string;
+  fullName: string;
+  email: string;
+}
+
 
 const exampleLinkedApps = [
   { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
@@ -77,7 +83,7 @@ export default function ProfilePage() {
   
   const [studentEmailInput, setStudentEmailInput] = useState("");
   const [isAddingStudent, setIsAddingStudent] = useState(false);
-  const [managedStudents, setManagedStudents] = useState<string[]>([]); 
+  const [managedStudents, setManagedStudents] = useState<ManagedStudentDisplayInfo[]>([]); 
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
   const [associatedParents, setAssociatedParents] = useState<string[]>([]);
@@ -97,8 +103,30 @@ export default function ProfilePage() {
             setCanDrive(data.canDrive || false);
             setDriverDetails(data.driverDetails || { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" });
             setSelectedRoleForView(data.role); 
-            setManagedStudents(data.managedStudentIds || []);
             setAssociatedParents(data.associatedParentIds || []);
+
+            // Fetch details for managed students
+            if (data.managedStudentIds && data.managedStudentIds.length > 0) {
+              const studentPromises = data.managedStudentIds.map(async (studentId) => {
+                try {
+                  const studentDocRef = doc(db, "users", studentId);
+                  const studentDocSnap = await getDoc(studentDocRef);
+                  if (studentDocSnap.exists()) {
+                    const studentData = studentDocSnap.data() as UserProfileData;
+                    return { uid: studentId, fullName: studentData.fullName, email: studentData.email };
+                  }
+                  console.warn(`Managed student with ID ${studentId} not found.`);
+                  return null;
+                } catch (studentFetchError) {
+                  console.error(`Error fetching student ${studentId}:`, studentFetchError);
+                  return null;
+                }
+              });
+              const resolvedStudents = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentDisplayInfo[];
+              setManagedStudents(resolvedStudents);
+            } else {
+              setManagedStudents([]);
+            }
 
           } else {
             console.log("No such user profile document!");
@@ -141,7 +169,6 @@ export default function ProfilePage() {
           setIsLoadingProfile(false);
         }
       } else if (!authLoading) {
-        // If auth is not loading and there's no authUser, implies logged out or initial state
         setIsLoadingProfile(false);
       }
     }
@@ -202,8 +229,9 @@ export default function ProfilePage() {
         setIsAddingStudent(false);
         return;
       }
-
-      if (managedStudents.includes(studentIdToAdd)) {
+      
+      const isAlreadyManaged = managedStudents.some(s => s.uid === studentIdToAdd) || userProfile?.managedStudentIds?.includes(studentIdToAdd);
+      if (isAlreadyManaged) {
         console.log("handleAddStudent: Student already managed:", studentIdToAdd);
         toast({ title: "Already Managed", description: `${studentData.fullName || 'Student'} (${studentEmailToAdd}) is already in your managed list.` });
         setStudentEmailInput("");
@@ -213,34 +241,35 @@ export default function ProfilePage() {
       
       const batch = writeBatch(db);
 
-      // Update parent's document
       const parentDocRef = doc(db, "users", authUser.uid);
       batch.update(parentDocRef, {
         managedStudentIds: arrayUnion(studentIdToAdd)
       });
       console.log(`handleAddStudent: Batch: Added student ${studentIdToAdd} to parent ${authUser.uid}'s managedStudentIds`);
-
-      // Temporarily comment out updating the student's document for diagnosis
-      /* 
+      
       const studentDocRef = doc(db, "users", studentIdToAdd);
       batch.update(studentDocRef, {
         associatedParentIds: arrayUnion(authUser.uid)
       });
       console.log(`handleAddStudent: Batch: Added parent ${authUser.uid} to student ${studentIdToAdd}'s associatedParentIds`);
-      */
+      
 
-      console.log("handleAddStudent: Attempting batch.commit() (parent update only)");
+      console.log("handleAddStudent: Attempting batch.commit()");
       await batch.commit();
-      console.log("handleAddStudent: Batch commit successful (parent update only).");
+      console.log("handleAddStudent: Batch commit successful.");
 
-      setManagedStudents(prev => [...new Set([...prev, studentIdToAdd])]); 
+      setManagedStudents(prev => {
+        const studentExistsInDisplay = prev.some(s => s.uid === studentIdToAdd);
+        if (studentExistsInDisplay) return prev;
+        return [...prev, { uid: studentIdToAdd, fullName: studentData.fullName, email: studentData.email }];
+      });
       setStudentEmailInput("");
-      toast({ title: "Student Associated (Parent Updated)", description: `Student ${studentData.fullName || studentEmailToAdd} is now in your managed list. Student's record not updated in this step for diagnosis.` });
+      toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now linked.` });
 
     } catch (error: any) {
       console.error("handleAddStudent: Error associating student:", error);
       let errorMessage = "Could not associate student. Please try again.";
-      if (error.message?.toLowerCase().includes("index") || error.message?.toLowerCase().includes("requires an index")) {
+       if (error.message?.toLowerCase().includes("index") || error.message?.toLowerCase().includes("requires an index")) {
           errorMessage = "Database operation failed: A required index is missing. Your Firestore queries for users by email need an index on the 'email' field in the 'users' collection. Please check your browser's developer console (F12 -> Console); Firebase usually provides a direct link there to create the necessary index. Click that link and create the index."
       } else if (error.message?.includes("permission-denied") || error.code?.includes("permission-denied")) {
           errorMessage = "Permission denied by Firestore security rules. Please check your rules to ensure this operation is allowed."
@@ -268,9 +297,14 @@ export default function ProfilePage() {
       toast({ title: "Invalid Action", description: "You cannot add yourself as an associated parent to your own account.", variant: "destructive" });
       return;
     }
+    // This function currently only updates local state.
+    // A full implementation would involve querying Firestore to verify the parentId,
+    // then updating the current student's document (authUser.uid if current user is student)
+    // and potentially the parent's document (to add this student to their managedStudentIds).
+    // This requires careful consideration of security rules.
     setAssociatedParents(prev => [...new Set([...prev, parentIdToAdd])]);
     setParentIdentifierInput("");
-    toast({ title: "Parent Association (Mock)", description: `Mock association with ${parentIdToAdd}. Real implementation needs Firestore logic and rules.`});
+    toast({ title: "Parent Association (Local Update)", description: `Mock association with ${parentIdToAdd}. Real implementation needs Firestore logic for both student and parent documents, and appropriate security rules.`});
   };
   
   const currentDisplayRole = userProfile?.role || selectedRoleForView;
@@ -298,8 +332,6 @@ export default function ProfilePage() {
   }
   
   if (!authUser || !userProfile) {
-    // This case handles when auth is not loading, but either authUser or userProfile is null.
-    // It could mean the user is logged out, or profile fetching failed silently after initial load.
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
             <p className="text-muted-foreground">Please log in to view your profile or profile data could not be loaded.</p>
@@ -460,11 +492,13 @@ export default function ProfilePage() {
                   </div>
                   {managedStudents.length > 0 && (
                       <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Managed Students (User IDs):</h5>
-                      <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
-                          {managedStudents.map((studentId, index) => (
-                          // In a real app, you'd fetch student details (like name) using these IDs
-                          <li key={index} className="text-sm">{studentId}</li> 
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Managed Students:</h5>
+                      <ul className="list-disc list-inside space-y-2 bg-muted/30 p-3 rounded-md">
+                          {managedStudents.map((student) => (
+                          <li key={student.uid} className="text-sm">
+                            <span className="font-medium">{student.fullName}</span> ({student.email})
+                            {/* Placeholder for remove button or link to student's restricted profile */}
+                          </li> 
                           ))}
                       </ul>
                       </div>
@@ -525,85 +559,36 @@ export default function ProfilePage() {
                     onCheckedChange={(checked) => {
                       setCanDrive(Boolean(checked));
                       // TODO: Persist this change to Firestore for userProfile.canDrive
+                      // This might be better handled on the Edit Profile page.
                     }}
+                    disabled // Keep disabled on view page, enable on edit page
                   />
-                  <Label htmlFor="canDrive" className="text-base font-medium cursor-pointer">
+                  <Label htmlFor="canDrive" className="text-base font-medium">
                     I can drive
                   </Label>
                 </div>
 
-                {canDrive && (
+                {canDrive && userProfile.driverDetails && (
                   <div className="space-y-6 pl-4 border-l-2 border-primary/20 ml-2 pt-2 pb-4 animate-accordion-down">
                     <div className="flex items-center gap-2 text-primary mb-2">
                         <CarIcon className="h-5 w-5" />
-                        <h4 className="font-semibold">Driver Information</h4>
+                        <h4 className="font-semibold">Driver Information (Read-only)</h4>
                     </div>
                     <div>
                       <Label htmlFor="ageRange">Age Range</Label>
-                      <Select
-                        value={driverDetails.ageRange}
-                        onValueChange={(value) => {
-                          setDriverDetails(prev => ({ ...prev, ageRange: value }));
-                        }}
-                      >
-                        <SelectTrigger id="ageRange" className="mt-1">
-                          <SelectValue placeholder="Select your age range" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="16-18">16-18</SelectItem>
-                          <SelectItem value="19-23">19-23</SelectItem>
-                          <SelectItem value="24+">24+</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Input id="ageRange" value={userProfile.driverDetails.ageRange || "Not set"} readOnly className="mt-1 bg-muted/50" />
                     </div>
-
                     <div>
                       <Label htmlFor="drivingExperience">Driving Experience</Label>
-                      <Select
-                        value={driverDetails.drivingExperience}
-                        onValueChange={(value) => {
-                          setDriverDetails(prev => ({ ...prev, drivingExperience: value }));
-                        }}
-                      >
-                        <SelectTrigger id="drivingExperience" className="mt-1">
-                          <SelectValue placeholder="Select your driving experience" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0-6m">0-6 months</SelectItem>
-                          <SelectItem value="6m-1y">6 months - 1 year</SelectItem>
-                          <SelectItem value="1-3y">1-3 years</SelectItem>
-                          <SelectItem value="3-5y">3-5 years</SelectItem>
-                          <SelectItem value="5y+">5+ years</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Input id="drivingExperience" value={userProfile.driverDetails.drivingExperience || "Not set"} readOnly className="mt-1 bg-muted/50" />
                     </div>
-
                     <div>
                       <Label htmlFor="primaryVehicle">Primary Vehicle</Label>
-                      <Input
-                        id="primaryVehicle"
-                        value={driverDetails.primaryVehicle}
-                        onChange={(e) => {
-                          setDriverDetails(prev => ({ ...prev, primaryVehicle: e.target.value }));
-                        }}
-                        placeholder="e.g., Toyota Camry 2020, Blue"
-                        className="mt-1"
-                      />
+                      <Input id="primaryVehicle" value={userProfile.driverDetails.primaryVehicle || "Not set"} readOnly className="mt-1 bg-muted/50" />
                     </div>
-
                     <div>
-                      <Label htmlFor="passengerCapacity">Passenger Capacity (excluding driver)</Label>
-                      <Input
-                        id="passengerCapacity"
-                        type="number"
-                        value={driverDetails.passengerCapacity}
-                        onChange={(e) => {
-                          setDriverDetails(prev => ({ ...prev, passengerCapacity: e.target.value }));
-                        }}
-                        placeholder="e.g., 4"
-                        min="1"
-                        className="mt-1"
-                      />
+                      <Label htmlFor="passengerCapacity">Passenger Capacity</Label>
+                      <Input id="passengerCapacity" value={userProfile.driverDetails.passengerCapacity || "Not set"} readOnly className="mt-1 bg-muted/50" />
                     </div>
                   </div>
                 )}
