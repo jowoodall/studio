@@ -40,16 +40,6 @@ interface GroupMember {
   rydzCompleted?: number;
 }
 
-const mockGroupMembersDataForEventPage: { [groupId: string]: GroupMember[] } = {
-  "group1": [
-    { id: "user1", name: "Alice W.", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 },
-    { id: "user2", name: "Bob B.", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true, rating: 4.5, rydzCompleted: 85 },
-  ],
-  "group2": [
-    { id: "user4", name: "Diana P.", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true, rating: 4.9, rydzCompleted: 200 },
-  ],
-};
-
 type DriverEventStatus = "not driving" | "has room" | "full car" | "not responded";
 interface EventDriverStatusInfo { status: DriverEventStatus; seatsAvailable?: number; }
 const mockEventDriverStatuses: { [eventId: string]: { [driverId: string]: EventDriverStatusInfo } } = {
@@ -74,6 +64,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
   const [potentialDrivers, setPotentialDrivers] = useState<GroupMember[]>([]);
+  const [isLoadingPotentialDrivers, setIsLoadingPotentialDrivers] = useState(false);
   const [isUpdatingGroups, setIsUpdatingGroups] = useState(false);
 
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
@@ -136,26 +127,64 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }, [fetchEventDetails, fetchAllGroups]);
 
   useEffect(() => {
-    // This effect updates potential drivers based on currently associated groups
-    // For now, it uses mockGroupMembersDataForEventPage.
-    // In a real app, this would fetch member details for each group ID in currentAssociatedGroups.
-    if (currentAssociatedGroups.length > 0 && eventId) { 
-      const drivers: GroupMember[] = [];
-      const driverIds = new Set<string>();
-      currentAssociatedGroups.forEach(groupId => {
-        const members = mockGroupMembersDataForEventPage[groupId] || [];
-        members.forEach(member => {
-          if (member.canDrive && !driverIds.has(member.id)) {
-            drivers.push(member);
-            driverIds.add(member.id);
-          }
-        });
-      });
-      setPotentialDrivers(drivers);
-    } else {
-      setPotentialDrivers([]);
-    }
-  }, [currentAssociatedGroups, eventId]); 
+    const fetchPotentialDriversFromGroups = async () => {
+        if (currentAssociatedGroups.length > 0 && eventId) {
+            setIsLoadingPotentialDrivers(true);
+            const drivers: GroupMember[] = [];
+            const driverIdsProcessed = new Set<string>();
+
+            for (const groupId of currentAssociatedGroups) {
+                try {
+                    const groupDocRef = doc(db, "groups", groupId);
+                    const groupDocSnap = await getDoc(groupDocRef);
+
+                    if (groupDocSnap.exists()) {
+                        const groupData = groupDocSnap.data() as GroupData;
+                        if (groupData.memberIds && groupData.memberIds.length > 0) {
+                            for (const memberId of groupData.memberIds) {
+                                if (driverIdsProcessed.has(memberId)) continue;
+
+                                const userDocRef = doc(db, "users", memberId);
+                                const userDocSnap = await getDoc(userDocRef);
+
+                                if (userDocSnap.exists()) {
+                                    const userData = userDocSnap.data() as UserProfileData;
+                                    if (userData.canDrive) {
+                                        drivers.push({
+                                            id: memberId,
+                                            name: userData.fullName || "Unnamed User",
+                                            avatarUrl: userData.avatarUrl || `https://placehold.co/100x100.png?text=${(userData.fullName || "U").split(" ").map(n=>n[0]).join("")}`,
+                                            dataAiHint: userData.dataAiHint || "driver photo",
+                                            canDrive: true,
+                                            // Rating and rydzCompleted would ideally come from aggregated data or specific driver stats
+                                            // For now, we leave them optional or use placeholders if necessary
+                                            rating: undefined, // e.g., userData.driverProfile?.averageRating
+                                            rydzCompleted: undefined, // e.g., userData.driverProfile?.totalRydz
+                                        });
+                                        driverIdsProcessed.add(memberId);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error fetching members for group ${groupId}:`, error);
+                    toast({
+                        title: "Driver Fetch Error",
+                        description: `Could not load potential drivers from group ${groupId}.`,
+                        variant: "destructive",
+                    });
+                }
+            }
+            setPotentialDrivers(drivers);
+            setIsLoadingPotentialDrivers(false);
+        } else {
+            setPotentialDrivers([]);
+        }
+    };
+
+    fetchPotentialDriversFromGroups();
+  }, [currentAssociatedGroups, eventId, toast]);
 
   const handleGroupSelection = async (groupIdToToggle: string) => {
     if (!eventDetails || !authUser) {
@@ -336,13 +365,18 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       <Card className="mb-6 shadow-lg">
         <CardHeader>
             <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
-            <CardDescription>Drivers from the groups above and their status for this event. (Mock data for now)</CardDescription>
+            <CardDescription>Drivers from the groups above and their status for this event. (Driver status is mock data for now)</CardDescription>
         </CardHeader>
         <CardContent>
-            {potentialDrivers.length > 0 ? (
+            {isLoadingPotentialDrivers ? (
+                <div className="flex items-center justify-center py-6">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <p className="ml-2 text-muted-foreground">Loading potential drivers...</p>
+                </div>
+            ) : potentialDrivers.length > 0 ? (
                 <ul className="space-y-3">
                     {potentialDrivers.map(driver => {
-                        const driverStatusInfo = getDriverEventStatus(driver.id);
+                        const driverStatusInfo = getDriverEventStatus(driver.id); // This uses mock data
                         const currentStatusConfig = statusConfig[driverStatusInfo.status];
                         const StatusIcon = currentStatusConfig.icon;
                         return (
@@ -354,7 +388,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                     </Avatar>
                                     <div className="flex-1">
                                       <span className="font-medium">{driver.name}</span>
-                                      {driver.rating !== undefined && (
+                                      {driver.rating !== undefined && ( // Show rating only if available
                                         <div className="flex items-center text-xs text-muted-foreground mt-0.5">
                                           <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
                                           {driver.rating.toFixed(1)}
@@ -389,7 +423,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 <div className="text-center py-4 text-muted-foreground">
                     <Info className="mx-auto h-8 w-8 mb-2" />
                     <p>No potential drivers found in the currently associated groups, or no groups associated.</p>
-                    <p className="text-xs mt-1">Try associating groups with known drivers.</p>
+                    <p className="text-xs mt-1">Try associating groups with known drivers or ensure members have "Can Drive" enabled in their profiles.</p>
                 </div>
             )}
         </CardContent>
@@ -462,6 +496,3 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
-
-
-    
