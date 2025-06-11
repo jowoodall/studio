@@ -46,7 +46,7 @@ interface GroupSelectItem {
 
 export default function CreateEventPage() {
   const { toast } = useToast();
-  const { user: authUser } = useAuth();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -64,30 +64,51 @@ export default function CreateEventPage() {
   });
 
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchUserGroups = async () => {
+      if (authLoading || isLoadingProfile || !userProfile || !authUser) {
+        // Wait for auth context to be ready and user profile to be loaded
+        if (!authLoading && !isLoadingProfile && !userProfile && authUser) {
+            // Profile might be missing or this user has no joined groups
+            setIsLoadingGroups(false);
+            setAvailableGroups([]);
+        }
+        return;
+      }
+
       setIsLoadingGroups(true);
       try {
+        const userJoinedGroupIds = userProfile.joinedGroupIds || [];
+        if (userJoinedGroupIds.length === 0) {
+          setAvailableGroups([]);
+          setIsLoadingGroups(false);
+          return;
+        }
+
+        // Fetch all groups and then filter, or construct more targeted queries if needed for performance
         const groupsQuery = query(collection(db, "groups"));
         const querySnapshot = await getDocs(groupsQuery);
         const fetchedGroups: GroupSelectItem[] = [];
         querySnapshot.forEach((doc) => {
-          const groupData = doc.data() as GroupData;
-          fetchedGroups.push({ id: doc.id, name: groupData.name });
+          // Only add the group if the user is a member (ID is in userJoinedGroupIds)
+          if (userJoinedGroupIds.includes(doc.id)) {
+            const groupData = doc.data() as GroupData;
+            fetchedGroups.push({ id: doc.id, name: groupData.name });
+          }
         });
         setAvailableGroups(fetchedGroups);
       } catch (error) {
-        console.error("Error fetching groups:", error);
+        console.error("Error fetching user's groups:", error);
         toast({
           title: "Error",
-          description: "Could not fetch groups. Please try again.",
+          description: "Could not fetch your groups. Please try again.",
           variant: "destructive",
         });
       } finally {
         setIsLoadingGroups(false);
       }
     };
-    fetchGroups();
-  }, [toast]);
+    fetchUserGroups();
+  }, [toast, authUser, userProfile, authLoading, isLoadingProfile]);
 
   async function onSubmit(data: EventFormValues) {
     if (!authUser) {
@@ -301,7 +322,7 @@ export default function CreateEventPage() {
                   <FormItem className="flex flex-col">
                     <FormLabel className="text-base flex items-center">
                       <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-                      Associate Groups (Optional)
+                      Associate Your Groups (Optional)
                     </FormLabel>
                     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                       <PopoverTrigger asChild>
@@ -310,18 +331,18 @@ export default function CreateEventPage() {
                           role="combobox"
                           aria-expanded={popoverOpen}
                           className="w-full justify-between"
-                          disabled={isLoadingGroups}
+                          disabled={isLoadingGroups || (authLoading || isLoadingProfile)}
                         >
-                          {isLoadingGroups ? "Loading groups..." : (currentSelectedGroups.length > 0
+                          {isLoadingGroups ? "Loading your groups..." : (currentSelectedGroups.length > 0
                             ? `${currentSelectedGroups.length} group(s) selected`
-                            : "Select groups...")}
+                            : "Select from your groups...")}
                            <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                         <Command>
                           <CommandInput
-                            placeholder="Search groups..."
+                            placeholder="Search your groups..."
                             value={searchTerm}
                             onValueChange={setSearchTerm}
                             disabled={isLoadingGroups}
@@ -329,7 +350,7 @@ export default function CreateEventPage() {
                           <CommandList>
                             <ScrollArea className="h-48">
                               {isLoadingGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
-                              {!isLoadingGroups && filteredGroups.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
+                              {!isLoadingGroups && filteredGroups.length === 0 && <CommandEmpty>No groups found or you are not a member of any.</CommandEmpty>}
                               <CommandGroup>
                                 {!isLoadingGroups && filteredGroups.map((group) => (
                                   <CommandItem
@@ -357,7 +378,7 @@ export default function CreateEventPage() {
                       </PopoverContent>
                     </Popover>
                     <FormDescription>
-                      Select carpool groups to associate with this event.
+                      Select carpool groups you are a member of to associate with this event.
                     </FormDescription>
                     {currentSelectedGroups.length > 0 && (
                         <div className="pt-2 space-x-1 space-y-1">
@@ -387,7 +408,7 @@ export default function CreateEventPage() {
                 )}
               />
 
-              <Button type="submit" className="w-full" disabled={isSubmitting || !authUser || isLoadingGroups}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || !authUser || isLoadingGroups || authLoading || isLoadingProfile}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Event...</>
                 ) : (

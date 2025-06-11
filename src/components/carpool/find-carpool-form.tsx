@@ -33,6 +33,7 @@ import { findMatchingCarpoolsAction } from "@/actions/carpool";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs } from "firebase/firestore";
 import type { GroupData } from "@/types";
+import { useAuth } from "@/context/AuthContext"; // Import useAuth
 
 const findCarpoolFormSchema = z.object({
   eventLocation: z.string().min(5, { message: "Event location must be at least 5 characters." }),
@@ -72,6 +73,7 @@ export function FindCarpoolForm({
   initialAssociatedGroupIds,
 }: FindCarpoolFormProps) {
   const { toast } = useToast();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth(); // Use AuthContext
   const [isPending, startTransition] = useTransition();
   const [results, setResults] = useState<CarpoolMatchingOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,40 +96,76 @@ export function FindCarpoolForm({
   const isEventPreFilled = !!initialEventLocation;
 
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchUserGroups = async () => {
+      if (authLoading || isLoadingProfile || !userProfile || !authUser) {
+        if (!authLoading && !isLoadingProfile && !userProfile && authUser) {
+            setIsLoadingGroups(false);
+            setAvailableGroups([]);
+        }
+        return;
+      }
+
       setIsLoadingGroups(true);
       try {
+        const userJoinedGroupIds = userProfile.joinedGroupIds || [];
+        if (userJoinedGroupIds.length === 0 && !isEventPreFilled) { // Only set to empty if not pre-filling, as pre-filled might reference non-member groups
+          setAvailableGroups([]);
+          setIsLoadingGroups(false);
+          return;
+        }
+
         const groupsQuery = query(collection(db, "groups"));
         const querySnapshot = await getDocs(groupsQuery);
         const fetchedGroups: GroupSelectItem[] = [];
+        const allFetchedGroupsForPreFillCheck: GroupSelectItem[] = [];
+
         querySnapshot.forEach((doc) => {
           const groupData = doc.data() as GroupData;
-          fetchedGroups.push({ id: doc.id, name: groupData.name });
+          const groupItem = { id: doc.id, name: groupData.name };
+          allFetchedGroupsForPreFillCheck.push(groupItem);
+          if (userJoinedGroupIds.includes(doc.id)) {
+            fetchedGroups.push(groupItem);
+          }
         });
-        setAvailableGroups(fetchedGroups);
+
+        setAvailableGroups(fetchedGroups); // These are the groups the user can select from
+
+        // If event is pre-filled, ensure initialAssociatedGroupIds are set correctly,
+        // even if they are not part of the user's joined groups.
+        // The form.reset below handles setting form.values, this ensures AI gets correct names.
+        if (isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0) {
+           const preFilledGroupNamesForAI = initialAssociatedGroupIds
+            .map(id => allFetchedGroupsForPreFillCheck.find(g => g.id === id)?.name || id);
+           // The form values are already set via form.reset, this is more about ensuring names are available for AI
+        }
+
       } catch (err) {
-        console.error("Error fetching groups:", err);
+        console.error("Error fetching user's groups:", err);
         toast({
           title: "Error",
-          description: "Could not fetch groups for selection.",
+          description: "Could not fetch your groups for selection.",
           variant: "destructive",
         });
       } finally {
         setIsLoadingGroups(false);
       }
     };
-    fetchGroups();
-  }, [toast]);
+    fetchUserGroups();
+  }, [toast, authUser, userProfile, authLoading, isLoadingProfile, isEventPreFilled, initialAssociatedGroupIds]);
 
   useEffect(() => {
+    // This effect ensures that if initial props change (e.g., user selects a different event from the parent page),
+    // the form resets to reflect those new initial values, including the user's location.
+    const currentUserLocation = form.getValues("userLocation");
+    const currentTrafficConditions = form.getValues("trafficConditions");
     form.reset({
-      ...defaultFormValues,
-      userLocation: form.getValues("userLocation") || defaultFormValues.userLocation,
-      trafficConditions: form.getValues("trafficConditions") || defaultFormValues.trafficConditions,
+      ...defaultFormValues, // Start with base defaults
+      userLocation: currentUserLocation || defaultFormValues.userLocation, // Preserve user's input if they typed something
+      trafficConditions: currentTrafficConditions || defaultFormValues.trafficConditions, // Preserve user's input
       eventLocation: initialEventLocation || defaultFormValues.eventLocation,
-      eventDate: initialEventDate,
+      eventDate: initialEventDate, // This can be undefined if no event is pre-selected
       eventTime: initialEventTime || defaultFormValues.eventTime,
-      associatedGroupIds: initialAssociatedGroupIds || [],
+      associatedGroupIds: initialAssociatedGroupIds || [], // Reset associated groups based on new event
     });
   }, [initialEventLocation, initialEventDate, initialEventTime, initialAssociatedGroupIds, form]);
 
@@ -140,7 +178,7 @@ export function FindCarpoolForm({
     form.setValue("associatedGroupIds", newSelectedGroups, { shouldValidate: true });
   };
 
-  const filteredGroups = availableGroups.filter(group =>
+  const filteredGroupsForPopover = availableGroups.filter(group => // Only show user's groups in popover
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
   const currentSelectedGroups = form.watch("associatedGroupIds") || [];
@@ -155,12 +193,24 @@ export function FindCarpoolForm({
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       eventDateTime.setHours(hours, minutes);
 
+      // For AI, we need all groups (user's + pre-filled event's groups)
+      // Fetch all group names once to map IDs to names for AI
+      const allGroupsSnapshot = await getDocs(query(collection(db, "groups")));
+      const allGroupDetails: GroupSelectItem[] = [];
+      allGroupsSnapshot.forEach(doc => allGroupDetails.push({id: doc.id, name: (doc.data() as GroupData).name}));
+
+      const groupIdsToConsiderForAI = data.associatedGroupIds || [];
+      const groupNamesForAI = groupIdsToConsiderForAI
+        .map(id => allGroupDetails.find(g => g.id === id)?.name || id) // Fallback to ID if name not found
+        .filter(Boolean);
+
+
       const inputForAI: CarpoolMatchingInput = {
         eventLocation: data.eventLocation,
         eventDateTime: eventDateTime.toISOString(),
         userLocation: data.userLocation,
         trafficConditions: data.trafficConditions,
-        associatedGroups: data.associatedGroupIds?.map(id => availableGroups.find(g => g.id === id)?.name || id) || [],
+        associatedGroups: groupNamesForAI,
       };
 
       const response = await findMatchingCarpoolsAction(inputForAI);
@@ -325,113 +375,117 @@ export function FindCarpoolForm({
                 <FormItem className="flex flex-col">
                   <FormLabel className="text-base flex items-center">
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-                    Associate Groups (AI will prioritize these)
+                    Associate Your Groups (AI will prioritize these)
                   </FormLabel>
-                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 && !isLoadingGroups ? (
-                    <>
-                      <div className="pt-2 space-x-1 space-y-1">
-                        {initialAssociatedGroupIds.map(groupId => {
-                            const group = availableGroups.find(g => g.id === groupId);
-                            return group ? (
-                                <Badge key={groupId} variant="secondary" className="mr-1">
+                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 ? (
+                     <>
+                        <div className="pt-2 space-x-1 space-y-1">
+                           {initialAssociatedGroupIds.map(groupId => {
+                              // Display name if available, otherwise ID. This might need all groups data if not already fetched.
+                              // For simplicity, we'll rely on the availableGroups (user's groups) or fallback to ID.
+                              const group = availableGroups.find(g => g.id === groupId) || {id: groupId, name: `Group (ID: ${groupId.substring(0,6)}... )`};
+                              return (
+                                 <Badge key={groupId} variant="secondary" className="mr-1">
                                     {group.name}
-                                </Badge>
-                            ) :  <Badge key={groupId} variant="outline" className="mr-1">ID: {groupId.substring(0,6)}...</Badge>;
-                        })}
-                      </div>
-                      <FormDescription>Groups pre-filled from selected event. These will be considered by the AI.</FormDescription>
-                    </>
-                  ) : !isEventPreFilled ? (
-                    <>
-                      <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={groupPopoverOpen}
-                            className="w-full justify-between"
-                            disabled={isLoadingGroups}
-                          >
-                             {isLoadingGroups ? "Loading groups..." : (currentSelectedGroups.length > 0
-                              ? `${currentSelectedGroups.length} group(s) selected`
-                              : "Select groups...")}
-                            <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                          <Command>
-                            <CommandInput
-                              placeholder="Search groups..."
-                              value={groupSearchTerm}
-                              onValueChange={setGroupSearchTerm}
-                              disabled={isLoadingGroups}
-                            />
-                            <CommandList>
-                              <ScrollArea className="h-48">
-                                {isLoadingGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
-                                {!isLoadingGroups && filteredGroups.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
-                                <CommandGroup>
-                                  {!isLoadingGroups && filteredGroups.map((group) => (
-                                    <CommandItem
-                                      key={group.id}
-                                      value={group.id}
-                                      onSelect={() => {
-                                        handleGroupSelection(group.id);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          currentSelectedGroups.includes(group.id)
-                                            ? "opacity-100"
-                                            : "opacity-0"
-                                        )}
-                                      />
+                                 </Badge>
+                              );
+                           })}
+                        </div>
+                        <FormDescription>Groups pre-filled from event. Add more of your groups below if needed.</FormDescription>
+                     </>
+                  ) : null }
+                 
+                  <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={groupPopoverOpen}
+                        className="w-full justify-between"
+                        disabled={isLoadingGroups || authLoading || isLoadingProfile}
+                      >
+                        {isLoadingGroups ? "Loading your groups..." : (
+                          currentSelectedGroups.filter(id => availableGroups.some(g => g.id === id)).length > 0 // Count only selectable groups
+                          ? `${currentSelectedGroups.filter(id => availableGroups.some(g => g.id === id)).length} of your group(s) selected`
+                          : "Select from your groups..."
+                        )}
+                        <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput
+                          placeholder="Search your groups..."
+                          value={groupSearchTerm}
+                          onValueChange={setGroupSearchTerm}
+                          disabled={isLoadingGroups}
+                        />
+                        <CommandList>
+                          <ScrollArea className="h-48">
+                            {isLoadingGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                            {!isLoadingGroups && filteredGroupsForPopover.length === 0 && <CommandEmpty>No groups found or you are not a member of any.</CommandEmpty>}
+                            <CommandGroup>
+                              {!isLoadingGroups && filteredGroupsForPopover.map((group) => (
+                                <CommandItem
+                                  key={group.id}
+                                  value={group.id}
+                                  onSelect={() => {
+                                    handleGroupSelection(group.id);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      currentSelectedGroups.includes(group.id)
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    )}
+                                  />
+                                  {group.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </ScrollArea>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormDescription>
+                    Select carpool groups you are a member of. The AI will consider these, plus any pre-filled from an event.
+                  </FormDescription>
+                  {currentSelectedGroups.length > 0 && (
+                      <div className="pt-2 space-x-1 space-y-1">
+                          {currentSelectedGroups.map(groupId => {
+                              const group = availableGroups.find(g => g.id === groupId) || (isEventPreFilled && initialAssociatedGroupIds?.includes(groupId) ? { id: groupId, name: `Pre-selected Group (ID: ${groupId.substring(0,6)}... )`} : null);
+                              if (!group) return null; // Skip if group not found (e.g. pre-selected and not in user's list)
+                              return (
+                                  <Badge
+                                      key={groupId}
+                                      variant="secondary"
+                                      className="mr-1"
+                                  >
                                       {group.name}
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </ScrollArea>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                      <FormDescription>
-                        Select carpool groups to associate with this carpool request.
-                      </FormDescription>
-                      {currentSelectedGroups.length > 0 && (
-                          <div className="pt-2 space-x-1 space-y-1">
-                              {currentSelectedGroups.map(groupId => {
-                                  const group = availableGroups.find(g => g.id === groupId);
-                                  return group ? (
-                                      <Badge
-                                          key={groupId}
-                                          variant="secondary"
-                                          className="mr-1"
-                                      >
-                                          {group.name}
-                                          <button
-                                              type="button"
-                                              className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                                              onClick={() => handleGroupSelection(groupId)}
-                                          >
-                                              <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                                          </button>
-                                      </Badge>
-                                  ) : null;
-                              })}
-                          </div>
-                      )}
-                    </>
-                  ) : (
-                    <FormDescription>{isLoadingGroups ? "Loading event's associated groups..." : "No specific groups pre-associated with this event."}</FormDescription>
+                                      {/* Only allow removing if it's one of the user's selectable groups */}
+                                      {availableGroups.some(g => g.id === groupId) && (
+                                        <button
+                                            type="button"
+                                            className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                            onClick={() => handleGroupSelection(groupId)}
+                                        >
+                                            <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                        </button>
+                                      )}
+                                  </Badge>
+                              );
+                          })}
+                      </div>
                   )}
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <Button type="submit" className="w-full" disabled={isPending || isLoadingGroups}>
+            <Button type="submit" className="w-full" disabled={isPending || isLoadingGroups || authLoading || isLoadingProfile}>
               {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
