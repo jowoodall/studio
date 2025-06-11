@@ -11,11 +11,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
 import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
-import type { GroupData, UserProfileData, UserRole } from "@/types";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, Timestamp } from "firebase/firestore"; // Added collection, query, where, getDocs, orderBy, Timestamp
+import type { GroupData, UserProfileData, UserRole, EventData } from "@/types"; // Added EventData
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Badge } from '@/components/ui/badge'; // Import Badge
+import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns'; // For formatting event dates
 
 interface FetchedGroupMember {
   id: string;
@@ -24,7 +25,7 @@ interface FetchedGroupMember {
   dataAiHint?: string;
   canDrive: boolean;
   role: UserRole;
-  hasAcceptedInvitation: boolean; // Added this field
+  hasAcceptedInvitation: boolean;
 }
 
 interface GroupViewPageProps {
@@ -41,19 +42,23 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
   const [group, setGroup] = useState<GroupData | null>(null);
   const [members, setMembers] = useState<FetchedGroupMember[]>([]);
   const [drivers, setDrivers] = useState<FetchedGroupMember[]>([]);
+  const [associatedEvents, setAssociatedEvents] = useState<EventData[]>([]); // State for associated events
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true); // Separate loading for events
   const [error, setError] = useState<string | null>(null);
 
-  const fetchGroupAndMembers = useCallback(async () => {
+  const fetchGroupAndMembersAndEvents = useCallback(async () => {
     if (!authUser) {
       if (!authLoading) setIsLoading(false);
       return;
     }
     
     setIsLoading(true);
+    setIsLoadingEvents(true);
     setError(null);
 
     try {
+      // Fetch Group Details
       const groupDocRef = doc(db, "groups", groupId);
       const groupDocSnap = await getDoc(groupDocRef);
 
@@ -62,20 +67,23 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
         setGroup(null);
         setMembers([]);
         setDrivers([]);
+        setAssociatedEvents([]);
         setIsLoading(false);
+        setIsLoadingEvents(false);
         return;
       }
 
       const groupData = { id: groupDocSnap.id, ...groupDocSnap.data() } as GroupData;
       setGroup(groupData);
 
+      // Fetch Members
       if (groupData.memberIds && groupData.memberIds.length > 0) {
         const memberPromises = groupData.memberIds.map(async (id) => {
           const userDocRef = doc(db, "users", id);
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as UserProfileData;
-            const hasAccepted = (userData.joinedGroupIds || []).includes(groupId); // Check acceptance
+            const hasAccepted = (userData.joinedGroupIds || []).includes(groupId);
             return {
               id: userDocSnap.id,
               name: userData.fullName,
@@ -83,40 +91,53 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
               dataAiHint: userData.dataAiHint,
               canDrive: userData.canDrive || false,
               role: userData.role,
-              hasAcceptedInvitation: hasAccepted, // Set the flag
+              hasAcceptedInvitation: hasAccepted,
             };
           }
           return null;
         });
         const fetchedMembers = (await Promise.all(memberPromises)).filter(Boolean) as FetchedGroupMember[];
         setMembers(fetchedMembers);
-        setDrivers(fetchedMembers.filter(m => m.canDrive && m.hasAcceptedInvitation)); // Only show accepted drivers
+        setDrivers(fetchedMembers.filter(m => m.canDrive && m.hasAcceptedInvitation));
       } else {
         setMembers([]);
         setDrivers([]);
       }
+      setIsLoading(false); // Done loading group and members
+
+      // Fetch Associated Events
+      const eventsQuery = query(
+        collection(db, "events"), 
+        where("associatedGroupIds", "array-contains", groupId),
+        orderBy("eventTimestamp", "asc") // Show upcoming events first
+      );
+      const eventsSnapshot = await getDocs(eventsQuery);
+      const fetchedEvents: EventData[] = [];
+      eventsSnapshot.forEach(docSnap => {
+        fetchedEvents.push({ id: docSnap.id, ...docSnap.data() } as EventData);
+      });
+      setAssociatedEvents(fetchedEvents);
 
     } catch (e: any) {
-      console.error("Error fetching group details:", e);
-      setError("Failed to load group details. " + (e.message || ""));
+      console.error("Error fetching group details or events:", e);
+      setError("Failed to load group details or events. " + (e.message || ""));
       toast({
         title: "Error",
-        description: "Could not load group information.",
+        description: "Could not load group information or associated events.",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Ensure this is set false even if events part errors
+      setIsLoadingEvents(false);
     }
   }, [groupId, authUser, authLoading, toast]);
 
   useEffect(() => {
     if (!authLoading) { 
-        fetchGroupAndMembers();
+        fetchGroupAndMembersAndEvents();
     }
-  }, [groupId, authLoading, fetchGroupAndMembers]);
+  }, [groupId, authLoading, fetchGroupAndMembersAndEvents]);
 
-  // Placeholder for upcoming events for this group
-  const events: { id: string; name: string; date: string; time: string; location: string }[] = [];
 
   if (authLoading || (isLoading && !group && !error)) {
     return (
@@ -200,29 +221,39 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
           <Card className="shadow-xl">
             <CardHeader>
               <CardTitle className="flex items-center"><CalendarDays className="mr-2 h-5 w-5 text-primary" /> Upcoming Events</CardTitle>
-              <CardDescription>Events relevant to this group.</CardDescription>
+              <CardDescription>Events this group is associated with.</CardDescription>
             </CardHeader>
             <CardContent>
-              {events.length > 0 ? (
+              {isLoadingEvents ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <p className="ml-2 text-muted-foreground">Loading events...</p>
+                </div>
+              ) : associatedEvents.length > 0 ? (
                 <ul className="space-y-4">
-                  {events.map(event => (
+                  {associatedEvents.map(event => {
+                    const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
+                    return (
                     <li key={event.id} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                       <h4 className="font-semibold">{event.name}</h4>
                       <div className="text-sm text-muted-foreground mt-1">
-                        <span className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> {event.date} at {event.time}</span>
+                        <span className="flex items-center">
+                          <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                          {format(eventDate, "PPP 'at' p")}
+                        </span>
                         <span className="flex items-center mt-0.5"><MapPin className="mr-1.5 h-4 w-4" /> {event.location}</span>
                       </div>
                       <Button variant="link" size="sm" className="px-0 h-auto mt-1" asChild>
                         <Link href={`/events/${event.id}/rydz`}>View Event Rydz</Link>
                       </Button>
                     </li>
-                  ))}
+                  )})}
                 </ul>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
                   <Info className="mx-auto h-8 w-8 mb-2" />
                   <p>No upcoming events specifically listed for this group at the moment.</p>
-                  <p className="text-xs mt-1">Events associated with groups can be viewed on the individual event pages.</p>
+                  <p className="text-xs mt-1">Events can be associated with groups on the individual event pages or during event creation.</p>
                 </div>
               )}
             </CardContent>
@@ -309,7 +340,3 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
     </>
   );
 }
-
-    
-
-
