@@ -58,10 +58,12 @@ service cloud.firestore {
 
       allow update: if isAuthenticated() &&
                        request.auth.uid == userId &&
+                       // Prevent changing immutable fields
                        request.resource.data.uid == resource.data.uid &&
                        request.resource.data.email == resource.data.email &&
                        request.resource.data.role == resource.data.role &&
                        request.resource.data.createdAt == resource.data.createdAt &&
+                       // Validate mutable fields
                        request.resource.data.fullName is string &&
                        (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
                        (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
@@ -83,7 +85,7 @@ service cloud.firestore {
                        (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
                        (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list);
 
-      allow delete: if false;
+      allow delete: if false; // Generally, users should not delete their own accounts directly via client
     }
 
     // ======================================================================
@@ -107,19 +109,21 @@ service cloud.firestore {
                        request.resource.data.keys().size() == 8;
 
       allow update: if isAuthenticated() &&
-                       resource.data.adminIds.hasAny([request.auth.uid]) &&
+                       resource.data.adminIds.hasAny([request.auth.uid]) && // Only admins of the group can update
+                       // Ensure immutable fields are not changed
                        request.resource.data.createdBy == resource.data.createdBy &&
                        request.resource.data.createdAt == resource.data.createdAt &&
+                       // Validate mutable fields
                        request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 50 &&
-                       request.resource.data.description is string && request.resource.data.description.size() >= 10 && request.resource.data.description.size() <= 200 &&
+                       request.resource.data.description is string && request.resource.data.description.size() >= 0 && request.resource.data.description.size() <= 200 && // Allow empty description
                        (request.resource.data.imageUrl == null || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 2048)) &&
                        (request.resource.data.dataAiHint == null || (request.resource.data.dataAiHint is string && request.resource.data.dataAiHint.size() <= 50)) &&
                        request.resource.data.memberIds is list &&
                        request.resource.data.adminIds is list &&
-                       request.resource.data.adminIds.toSet().difference(request.resource.data.memberIds.toSet()).size() == 0 &&
-                       (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() >= 1);
+                       request.resource.data.adminIds.toSet().difference(request.resource.data.memberIds.toSet()).size() == 0 && // All admins must be members
+                       (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() >= 1); // If there are members, there must be at least one admin
 
-      allow delete: if isAuthenticated() && resource.data.adminIds.hasAny([request.auth.uid]);
+      allow delete: if isAuthenticated() && resource.data.adminIds.hasAny([request.auth.uid]); // Only group admins can delete
     }
 
     // ======================================================================
@@ -140,7 +144,7 @@ service cloud.firestore {
                        request.resource.data.keys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds']);
 
       allow update: if isAuthenticated() &&
-                       resource.data.createdBy == request.auth.uid &&
+                       resource.data.createdBy == request.auth.uid && // Only creator can update
                        request.resource.data.createdBy == resource.data.createdBy &&
                        request.resource.data.createdAt == resource.data.createdAt &&
                        request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 100 &&
@@ -158,35 +162,28 @@ service cloud.firestore {
     // Event Driver States (Collection: "eventDriverStates")
     // Document ID format: {eventId}_{driverId}
     // ======================================================================
-    match /eventDriverStates/{stateId} {
+    match /eventDriverStates/{eventDriverStateId} {
+      // Any authenticated user can read the status of drivers for an event
       allow read: if isAuthenticated();
 
-      function isDriverForState() {
-        // stateId is composite: eventId_driverId
-        return request.auth.uid == stateId.split('_')[1];
-      }
+      // A driver can create or update their own status for an event
+      allow write: if isAuthenticated() &&
+                      request.auth.uid == request.resource.data.driverId && // User is the driver
+                      request.resource.data.eventId is string &&
+                      request.resource.data.driverId is string &&
+                      request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
+                      (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable is number) &&
+                      request.resource.data.updatedAt == request.time &&
+                      // Check document ID matches eventId and driverId from the data
+                      eventDriverStateId == request.resource.data.eventId + '_' + request.resource.data.driverId &&
+                      request.resource.data.keys().hasOnly(['eventId', 'driverId', 'status', 'seatsAvailable', 'updatedAt']);
 
-      function isValidEventDriverStateData(data) {
-        return data.eventId is string &&
-               data.driverId is string &&
-               data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
-               (data.seatsAvailable == null || data.seatsAvailable is number) && // Allow null or number
-               data.updatedAt == request.time;
-      }
-
-      allow create: if isAuthenticated() &&
-                       isDriverForState() &&
-                       request.resource.data.driverId == request.auth.uid &&
-                       isValidEventDriverStateData(request.resource.data);
-
-      allow update: if isAuthenticated() &&
-                       isDriverForState() &&
-                       request.resource.data.driverId == resource.data.driverId && // DriverId cannot change
-                       request.resource.data.eventId == resource.data.eventId &&   // EventId cannot change
-                       isValidEventDriverStateData(request.resource.data);
-
-      allow delete: if isAuthenticated() && isDriverForState();
+      // Drivers cannot delete their status directly, they should update it to "not_driving" or "pending_response"
+      // allow delete: if false;
+      // OR allow if they are the driver
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.driverId;
     }
+
   }
 }
 
