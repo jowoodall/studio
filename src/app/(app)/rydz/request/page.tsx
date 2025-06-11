@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc } from "firebase/firestore"; // Renamed getDoc to getFirestoreDoc to avoid conflict
 import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,20 +35,20 @@ interface ManagedStudentSelectItem {
 
 const rydRequestFormSchema = z.object({ 
   eventId: z.string().optional(), 
-  eventName: z.string().min(3, "Event name is too short").optional(),
+  eventName: z.string().min(3, "Event name must be at least 3 characters.").optional(), // Keep optional here, superRefine handles conditional requirement
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
-  passengerUids: z.array(z.string()).optional(), // For parents selecting students
+  passengerUids: z.array(z.string()).optional(), 
   notes: z.string().optional(),
 }).superRefine((data, ctx) => {
-    if (!data.eventId && !data.eventName) {
+    if (data.eventId === "custom" && (!data.eventName || data.eventName.trim().length < 3)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Either select an event or provide an event name if 'Other'.",
-        path: ["eventName"], 
+        message: "Event name must be at least 3 characters when 'Other' event is selected.",
+        path: ["eventName"],
       });
     }
 });
@@ -64,7 +64,7 @@ export default function RydRequestPage() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentSelectItem[]>([]);
-  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true); // Initialize as true
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(false); 
   const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
@@ -87,11 +87,11 @@ export default function RydRequestPage() {
         const eventsQuery = query(collection(db, "events"), orderBy("eventTimestamp", "asc"));
         const querySnapshot = await getDocs(eventsQuery);
         const fetchedEvents: EventData[] = [];
-        querySnapshot.forEach((doc) => {
-          const eventData = doc.data() as EventData;
+        querySnapshot.forEach((eventDoc) => { // Changed doc to eventDoc to avoid conflict
+          const eventData = eventDoc.data() as EventData;
           const eventDate = eventData.eventTimestamp instanceof Timestamp ? eventData.eventTimestamp.toDate() : new Date(0);
           if (eventDate >= new Date()) {
-            fetchedEvents.push({ id: doc.id, ...eventData });
+            fetchedEvents.push({ id: eventDoc.id, ...eventData });
           }
         });
         setAvailableEvents(fetchedEvents);
@@ -107,13 +107,12 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
-      setIsLoadingManagedStudents(true); // Start loading before checks
-
       if (userProfile && userProfile.role === UserRole.PARENT && userProfile.managedStudentIds && userProfile.managedStudentIds.length > 0) {
+        setIsLoadingManagedStudents(true);
         try {
           const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
-            const studentDocRef = doc(db, "users", studentId);
-            const studentDocSnap = await getDoc(studentDocRef);
+            const studentDocRef = doc(db, "users", studentId); // Use doc from firebase/firestore
+            const studentDocSnap = await getFirestoreDoc(studentDocRef); // Use imported getFirestoreDoc
             if (studentDocSnap.exists()) {
               const studentData = studentDocSnap.data() as UserProfileData;
               return { id: studentDocSnap.id, fullName: studentData.fullName };
@@ -127,31 +126,32 @@ export default function RydRequestPage() {
           toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
           setManagedStudentsList([]);
         } finally {
-          setIsLoadingManagedStudents(false); // Set to false after try/catch
+          setIsLoadingManagedStudents(false);
         }
       } else {
-        // Not a parent, or no managed students, or userProfile not loaded enough yet for these checks
         setManagedStudentsList([]);
-        setIsLoadingManagedStudents(false); // Crucial: set to false if no fetch attempt needed or criteria not met
+        setIsLoadingManagedStudents(false); // Ensure it's set to false if no fetch needed
       }
     };
 
-    if (!authLoading && !isLoadingProfile) { // Only proceed if auth and context profile are resolved
+    if (!authLoading && !isLoadingProfile) { 
       if (userProfile && userProfile.role === UserRole.PARENT) {
         fetchManagedStudents();
       } else {
-        // Not a parent or no userProfile, so no students to load.
         setManagedStudentsList([]);
-        setIsLoadingManagedStudents(false); // Ensure loading state is false
+        setIsLoadingManagedStudents(false);
       }
     }
-    // If authLoading or isLoadingProfile is true, this effect might not run yet, or might run with an incomplete userProfile.
-    // The button's disabled state relies on these flags.
   }, [userProfile, authLoading, isLoadingProfile, toast]);
 
 
   async function onSubmit(data: RydRequestFormValues) { 
+    console.log("RydRequestPage: onSubmit triggered");
+    console.log("RydRequestPage: Form data:", data);
+    console.log("RydRequestPage: Form validation errors:", form.formState.errors);
+
     if (!authUser || !userProfile) {
+      console.error("RydRequestPage: Auth user or profile missing in onSubmit.");
       toast({ title: "Authentication Error", description: "You must be logged in to request a ryd.", variant: "destructive" });
       return;
     }
@@ -159,6 +159,7 @@ export default function RydRequestPage() {
     let finalPassengerUids: string[] = [];
     if (userProfile.role === UserRole.PARENT) {
       if (!data.passengerUids || data.passengerUids.length === 0) {
+        console.log("RydRequestPage: Parent submitted without selecting students.");
         toast({ title: "Selection Required", description: "Please select at least one student for this ryd.", variant: "destructive" });
         form.setError("passengerUids", { type: "manual", message: "Please select at least one student." });
         return;
@@ -167,11 +168,13 @@ export default function RydRequestPage() {
     } else if (userProfile.role === UserRole.STUDENT) {
       finalPassengerUids = [authUser.uid];
     } else {
+      console.error("RydRequestPage: User role not permitted for ryd request in this manner.");
       toast({ title: "Role Error", description: "Your user role does not permit ryd requests in this manner.", variant: "destructive" });
       return;
     }
 
     setIsSubmitting(true);
+    console.log("RydRequestPage: isSubmitting set to true");
 
     const [eventHours, eventMinutes] = data.time.split(':').map(Number);
     const eventStartDateTime = new Date(data.date);
@@ -197,22 +200,27 @@ export default function RydRequestPage() {
       createdAt: serverTimestamp() as Timestamp, 
     };
 
+    console.log("RydRequestPage: Ryd request payload:", rydRequestPayload);
+
     try {
+      console.log("RydRequestPage: Attempting to add document to 'rydz' collection.");
       const docRef = await addDoc(collection(db, "rydz"), rydRequestPayload);
+      console.log("RydRequestPage: Document added with ID:", docRef.id);
       toast({
         title: "Ryd Requested!", 
         description: `Your request (ID: ${docRef.id}) for a ryd to ${rydRequestPayload.eventName || rydRequestPayload.destination} has been submitted.`, 
       });
       form.reset();
     } catch (error) {
-        console.error("Error submitting ryd request:", error);
+        console.error("RydRequestPage: Error submitting ryd request to Firestore:", error);
         toast({
             title: "Request Failed",
-            description: "Could not submit your ryd request. Please try again.",
+            description: "Could not submit your ryd request. Please try again. Check console for details.",
             variant: "destructive",
         });
     } finally {
         setIsSubmitting(false);
+        console.log("RydRequestPage: isSubmitting set to false");
     }
   }
 
@@ -249,6 +257,15 @@ export default function RydRequestPage() {
     student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase())
   );
   const currentSelectedStudentUids = form.watch("passengerUids") || [];
+
+  // Logging loading states for debugging the button
+  console.log("RydRequestPage Button Disabled States:", {
+    isSubmitting,
+    authLoading,
+    isLoadingProfile,
+    isLoadingEvents,
+    isLoadingManagedStudents,
+  });
 
 
   return (
@@ -317,7 +334,7 @@ export default function RydRequestPage() {
                     name="eventName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Event Name (if "Other")</FormLabel>
+                        <FormLabel>Event Name (if "Other" or no event selected)</FormLabel>
                         <FormControl>
                           <Input placeholder="e.g., Birthday Party, Study Group" {...field} />
                         </FormControl>
@@ -546,7 +563,11 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvents || isLoadingManagedStudents}>
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvents || isLoadingManagedStudents}
+              >
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
                 ) : (
