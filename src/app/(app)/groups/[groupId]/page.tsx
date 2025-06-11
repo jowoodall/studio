@@ -276,14 +276,14 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
                         <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
-                        <p className="font-medium">
+                        <div className="font-medium flex items-center">
                           {member.name}
                           {!member.hasAcceptedInvitation && (
                             <Badge variant="outline" className="ml-2 text-xs border-yellow-500 text-yellow-600">
                               Pending
                             </Badge>
                           )}
-                        </p>
+                        </div>
                          <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
                       </div>
                        {member.canDrive && member.hasAcceptedInvitation && <Car className="ml-auto h-4 w-4 text-blue-500" title="Can Drive" />}
@@ -311,4 +311,5 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
 }
 
     
+
 
