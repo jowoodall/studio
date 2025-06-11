@@ -73,17 +73,15 @@ export function SignupForm() {
         });
 
         const userRef = doc(db, "users", userCredential.user.uid);
-
-        await setDoc(userRef, {
+        const userProfileData = {
           uid: userCredential.user.uid,
           fullName: data.fullName,
           email: data.email,
           role: data.role,
           createdAt: serverTimestamp(), // Use serverTimestamp here
           avatarUrl: userCredential.user.photoURL || "",
+          dataAiHint: "", // Ensure dataAiHint is included
           canDrive: false,
-          // The following fields are simplified to ensure basic profile creation works
-          // You can expand this later and adjust security rules accordingly
           bio: "",
           phone: "",
           preferences: {
@@ -104,35 +102,41 @@ export function SignupForm() {
           },
           managedStudentIds: [],
           associatedParentIds: [],
-        });
+        };
+        
+        console.log("Attempting to set user profile data:", userProfileData);
+        await setDoc(userRef, userProfileData);
       }
 
       toast({
         title: "Account Created!",
         description: "You have been successfully signed up.",
       });
-      setIsLoading(false);
       router.push("/dashboard"); 
     } catch (error: any) {
       console.error("Signup error:", error);
+      console.error("Signup error code:", error.code);
+      console.error("Signup error message:", error.message);
+
       let errorMessage = "An unexpected error occurred. Please try again.";
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email address is already in use.";
       } else if (error.code === "auth/weak-password") {
         errorMessage = "The password is too weak. It must be at least 8 characters long.";
-      } else if (error.message && error.message.includes("permission-denied") || error.message && error.message.includes("Missing or insufficient permissions")) {
-        errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore rules.";
+      } else if (error.code === "permission-denied" || (error.message && error.message.toLowerCase().includes("permission denied")) || (error.message && error.message.toLowerCase().includes("missing or insufficient permissions"))) {
+        errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore security rules to ensure all fields being written are allowed and have correct types. Detailed error: " + error.message;
       } else if (error.code && error.code.startsWith('firestore/')) {
         errorMessage = `Firestore error: ${error.message}`;
       }
-
 
       toast({
         title: "Signup Failed",
         description: errorMessage,
         variant: "destructive",
+        duration: 9000, // Longer duration for detailed error messages
       });
-      setIsLoading(false); 
+    } finally {
+      setIsLoading(false);
     }
   }
 
