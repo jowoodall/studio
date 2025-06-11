@@ -5,61 +5,119 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Archive, Loader2, AlertTriangle } from "lucide-react";
+import { PlusCircle, Users, Edit, Trash2, Archive, Loader2, AlertTriangle, LogIn, CheckCircle } from "lucide-react"; // Added LogIn, CheckCircle
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
-import type { GroupData } from '@/types';
+import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, arrayUnion } from 'firebase/firestore'; // Added doc, updateDoc, arrayUnion
+import type { GroupData, UserProfileData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
+import { Separator } from '@/components/ui/separator';
 
 export default function GroupsPage() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const { toast } = useToast();
-  const [groupsList, setGroupsList] = useState<GroupData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  const [joinedGroupsList, setJoinedGroupsList] = useState<GroupData[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<GroupData[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAccepting, setIsAccepting] = useState<Record<string, boolean>>({});
 
-  const fetchGroups = useCallback(async () => {
-    if (!authUser) {
-      // Wait for authUser to be available, or handle unauthenticated state
-      setIsLoading(false); 
-      // setError("Please log in to view groups."); // Or simply show no groups
-      setGroupsList([]); // Clear list if user logs out
+
+  const fetchGroupsAndInvitations = useCallback(async () => {
+    if (!authUser || !userProfile) { // Ensure authUser and userProfile are loaded
+      if (!authLoading && !isLoadingProfile) { // If auth context is done loading but no user/profile
+        setIsLoadingGroups(false);
+        setJoinedGroupsList([]);
+        setPendingInvitations([]);
+        // setError("Please log in to view groups and invitations.");
+      }
       return;
     }
 
-    setIsLoading(true);
+    setIsLoadingGroups(true);
     setError(null);
     try {
-      // For now, fetching all groups. Later, you might filter by memberIds.
       const groupsQuery = query(collection(db, "groups"), orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(groupsQuery);
       const fetchedGroups: GroupData[] = [];
       querySnapshot.forEach((doc) => {
-        // Ensure createdAt is converted from Firestore Timestamp to a serializable format if needed,
-        // but for display, it's fine. If passing to other client components, ensure serializability.
         fetchedGroups.push({ id: doc.id, ...doc.data() } as GroupData);
       });
-      setGroupsList(fetchedGroups);
+
+      const currentJoinedGroupIds = userProfile?.joinedGroupIds || [];
+      const newJoined: GroupData[] = [];
+      const newPending: GroupData[] = [];
+
+      fetchedGroups.forEach(group => {
+        if (currentJoinedGroupIds.includes(group.id)) {
+          newJoined.push(group);
+        } else if (group.memberIds.includes(authUser.uid)) {
+          newPending.push(group);
+        }
+      });
+
+      setJoinedGroupsList(newJoined);
+      setPendingInvitations(newPending);
+
     } catch (e) {
       console.error("Error fetching groups:", e);
-      setError("Failed to load groups. Please try again.");
+      setError("Failed to load groups and invitations. Please try again.");
       toast({
         title: "Error",
-        description: "Could not fetch groups from the database.",
+        description: "Could not fetch groups information.",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsLoadingGroups(false);
     }
-  }, [authUser, toast]);
+  }, [authUser, userProfile, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
+    // Fetch groups only when auth context is fully loaded and user/profile are available
+    if (!authLoading && !isLoadingProfile) {
+        fetchGroupsAndInvitations();
+    }
+  }, [authLoading, isLoadingProfile, fetchGroupsAndInvitations]);
+
+
+  const handleAcceptInvitation = async (groupIdToAccept: string, groupName: string) => {
+    if (!authUser || !userProfile) {
+      toast({ title: "Error", description: "You must be logged in to accept invitations.", variant: "destructive" });
+      return;
+    }
+    setIsAccepting(prev => ({ ...prev, [groupIdToAccept]: true }));
+    try {
+      const userDocRef = doc(db, "users", authUser.uid);
+      await updateDoc(userDocRef, {
+        joinedGroupIds: arrayUnion(groupIdToAccept)
+      });
+
+      toast({
+        title: "Invitation Accepted!",
+        description: `You have successfully joined the group: ${groupName}.`,
+      });
+
+      // Optimistically update UI or refetch
+      setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToAccept));
+      const acceptedGroup = pendingInvitations.find(g => g.id === groupIdToAccept);
+      if (acceptedGroup) {
+        setJoinedGroupsList(prev => [acceptedGroup, ...prev]);
+      }
+      // Ideally, also update the userProfile in AuthContext if it's used elsewhere immediately for joinedGroupIds
+      // For now, a page refresh or re-fetch on next navigation would pick it up.
+      // Or we can manually update it here if AuthContext provides a setter for userProfile.
+
+    } catch (error) {
+      console.error("Error accepting invitation:", error);
+      toast({ title: "Acceptance Failed", description: "Could not join the group. Please try again.", variant: "destructive" });
+    } finally {
+      setIsAccepting(prev => ({ ...prev, [groupIdToAccept]: false }));
+    }
+  };
 
 
   const handleArchiveAction = (groupId: string, groupName: string) => {
@@ -68,45 +126,56 @@ export default function GroupsPage() {
       title: "Archive Action",
       description: `Archive for "${groupName}" is not yet implemented.`,
     });
-    // Placeholder: In a real app, update group status in Firestore
   };
 
   const handleDeleteAction = (groupId: string, groupName: string) => {
     console.log(`Deleting group: ${groupName} (ID: ${groupId})`);
      toast({
       title: "Delete Action",
-      description: `Deletion for "${groupName}" is not yet implemented. Requires confirmation and careful handling.`,
+      description: `Deletion for "${groupName}" is not yet implemented. Requires confirmation.`,
       variant: "destructive"
     });
-    // Placeholder: In a real app, delete group document and handle related data in Firestore
   };
 
+  const isLoading = authLoading || isLoadingProfile || isLoadingGroups;
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Loading groups...</p>
+        <p className="text-muted-foreground">Loading groups data...</p>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
         <h2 className="text-xl font-semibold mb-2">Error Loading Groups</h2>
         <p className="text-muted-foreground px-4">{error}</p>
-        <Button onClick={fetchGroups} className="mt-4">Try Again</Button>
+        <Button onClick={fetchGroupsAndInvitations} className="mt-4">Try Again</Button>
       </div>
     );
   }
+  
+  if (!authUser && !authLoading) { // If auth context has loaded and there's no user
+     return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <LogIn className="h-12 w-12 text-muted-foreground mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Please Log In</h2>
+        <p className="text-muted-foreground px-4 mb-4">You need to be logged in to view your groups and invitations.</p>
+        <Button asChild><Link href="/login">Log In</Link></Button>
+      </div>
+    );
+  }
+
 
   return (
     <>
       <PageHeader
         title="Carpool Groups"
-        description="Manage your carpool groups or create new ones."
+        description="Manage your carpool groups, accept invitations, or create new ones."
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
@@ -123,90 +192,137 @@ export default function GroupsPage() {
         }
       />
 
-      {groupsList.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {groupsList.map((group) => (
-            <Card key={group.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-              <Link href={`/groups/${group.id}`} className="block hover:opacity-90 transition-opacity">
-                <CardHeader className="relative h-40 p-0">
-                   <Image 
-                    src={group.imageUrl || "https://placehold.co/400x200.png?text=Group"} 
-                    alt={group.name} 
-                    fill 
-                    className="rounded-t-lg object-cover" 
-                    data-ai-hint={group.dataAiHint || "group image"}
-                   />
-                </CardHeader>
-              </Link>
-              <CardContent className="flex-grow pt-4">
-                <Link href={`/groups/${group.id}`} className="hover:underline">
-                    <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>
+      {pendingInvitations.length > 0 && (
+        <section className="mb-10">
+          <h2 className="font-headline text-2xl font-semibold text-accent mb-2">Pending Invitations</h2>
+          <p className="text-sm text-muted-foreground mb-4">You have been invited to join these groups. Accept to become a full member.</p>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {pendingInvitations.map((group) => (
+              <Card key={`pending-${group.id}`} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow border-accent/50">
+                <Link href={`/groups/${group.id}`} className="block hover:opacity-90 transition-opacity">
+                  <CardHeader className="relative h-40 p-0">
+                    <Image 
+                      src={group.imageUrl || "https://placehold.co/400x200.png?text=Group+Invite"} 
+                      alt={group.name} 
+                      fill 
+                      className="rounded-t-lg object-cover" 
+                      data-ai-hint={group.dataAiHint || "group image"}
+                    />
+                  </CardHeader>
                 </Link>
-                <div className="flex items-center text-sm text-muted-foreground mb-2">
-                  <Users className="mr-1.5 h-4 w-4" /> {group.memberIds?.length || 0} members
-                </div>
-                <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
-              </CardContent>
-              <CardFooter className="border-t pt-4 flex flex-wrap justify-end items-center gap-2">
-                <div className="flex space-x-1">
-                    <Link
-                        href={`/groups/${group.id}/manage`}
-                        className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
-                        aria-label="Manage group members"
-                        title="Manage Members"
-                    >
-                        <Users className="h-4 w-4" />
-                    </Link>
-                    <Link
-                        href={`/groups/${group.id}/edit`}
-                        className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
-                        aria-label="Edit group"
-                        title="Edit Group"
-                    >
-                        <Edit className="h-4 w-4" />
-                    </Link>
-                    <Button 
-                        variant="outline" 
-                        size="icon" 
-                        aria-label="Archive group" 
-                        title="Archive Group"
-                        onClick={() => handleArchiveAction(group.id, group.name)}
-                        className="text-blue-600 hover:bg-blue-500/10 hover:text-blue-700"
-                    >
-                        <Archive className="h-4 w-4" />
-                    </Button>
+                <CardContent className="flex-grow pt-4">
+                  <Link href={`/groups/${group.id}`} className="hover:underline">
+                    <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>
+                  </Link>
+                  <div className="flex items-center text-sm text-muted-foreground mb-2">
+                    <Users className="mr-1.5 h-4 w-4" /> {group.memberIds?.length || 0} members
+                  </div>
+                  <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
+                </CardContent>
+                <CardFooter className="border-t pt-4">
                   <Button 
-                    variant="destructive" 
-                    size="icon" 
-                    aria-label="Delete group" 
-                    title="Delete Group"
-                    onClick={() => handleDeleteAction(group.id, group.name)}
+                    className="w-full bg-green-600 hover:bg-green-700" 
+                    onClick={() => handleAcceptInvitation(group.id, group.name)}
+                    disabled={isAccepting[group.id]}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {isAccepting[group.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                    Accept Invitation
                   </Button>
-                </div>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Groups Yet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              No carpool groups found. Be the first to create one!
-            </CardDescription>
-            <Button asChild>
-              <Link href="/groups/create">
-                <PlusCircle className="mr-2 h-4 w-4" /> Create Your First Group
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+          <Separator className="my-8" />
+        </section>
       )}
+
+      <section>
+        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Joined Groups</h2>
+        {joinedGroupsList.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {joinedGroupsList.map((group) => (
+              <Card key={group.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
+                <Link href={`/groups/${group.id}`} className="block hover:opacity-90 transition-opacity">
+                  <CardHeader className="relative h-40 p-0">
+                    <Image 
+                      src={group.imageUrl || "https://placehold.co/400x200.png?text=Group"} 
+                      alt={group.name} 
+                      fill 
+                      className="rounded-t-lg object-cover" 
+                      data-ai-hint={group.dataAiHint || "group image"}
+                    />
+                  </CardHeader>
+                </Link>
+                <CardContent className="flex-grow pt-4">
+                  <Link href={`/groups/${group.id}`} className="hover:underline">
+                      <CardTitle className="font-headline text-xl mb-1">{group.name}</CardTitle>
+                  </Link>
+                  <div className="flex items-center text-sm text-muted-foreground mb-2">
+                    <Users className="mr-1.5 h-4 w-4" /> {group.memberIds?.length || 0} members
+                  </div>
+                  <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
+                </CardContent>
+                <CardFooter className="border-t pt-4 flex flex-wrap justify-end items-center gap-2">
+                  <div className="flex space-x-1">
+                      <Link
+                          href={`/groups/${group.id}/manage`}
+                          className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
+                          aria-label="Manage group members"
+                          title="Manage Members"
+                      >
+                          <Users className="h-4 w-4" />
+                      </Link>
+                      <Link
+                          href={`/groups/${group.id}/edit`}
+                          className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
+                          aria-label="Edit group"
+                          title="Edit Group"
+                      >
+                          <Edit className="h-4 w-4" />
+                      </Link>
+                      <Button 
+                          variant="outline" 
+                          size="icon" 
+                          aria-label="Archive group" 
+                          title="Archive Group"
+                          onClick={() => handleArchiveAction(group.id, group.name)}
+                          className="text-blue-600 hover:bg-blue-500/10 hover:text-blue-700"
+                      >
+                          <Archive className="h-4 w-4" />
+                      </Button>
+                    <Button 
+                      variant="destructive" 
+                      size="icon" 
+                      aria-label="Delete group" 
+                      title="Delete Group"
+                      onClick={() => handleDeleteAction(group.id, group.name)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="text-center py-12 shadow-md">
+            <CardHeader>
+              <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <CardTitle className="font-headline text-2xl">No Groups Joined</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-6">
+                You haven't joined or created any carpool groups yet.
+              </CardDescription>
+              <Button asChild>
+                <Link href="/groups/create">
+                  <PlusCircle className="mr-2 h-4 w-4" /> Create Your First Group
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </>
   );
 }
