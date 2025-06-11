@@ -16,8 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore'; // Added updateDoc, arrayUnion
-import { useToast } from '@/hooks/use-toast'; // Added useToast
+import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 // Define a type for the user profile data from Firestore
 interface UserProfileData {
@@ -61,12 +61,11 @@ const exampleLinkedApps = [
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // States for UI interaction, to be driven by userProfile once loaded
   const [canDrive, setCanDrive] = useState(false);
   const [driverDetails, setDriverDetails] = useState({
     ageRange: "",
@@ -77,7 +76,7 @@ export default function ProfilePage() {
   const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
   const [studentIdentifierInput, setStudentIdentifierInput] = useState("");
-  const [isAddingStudent, setIsAddingStudent] = useState(false); // Loading state for adding student
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [managedStudents, setManagedStudents] = useState<string[]>([]); 
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
@@ -104,6 +103,37 @@ export default function ProfilePage() {
           } else {
             console.log("No such user profile document!");
             setProfileError("User profile not found. Please complete your profile.");
+            // Attempt to create a basic profile if it doesn't exist, using authUser details
+            if (authUser.displayName && authUser.email) {
+                try {
+                    const newUserProfile: UserProfileData = {
+                        uid: authUser.uid,
+                        fullName: authUser.displayName,
+                        email: authUser.email,
+                        role: UserRole.STUDENT, // Default role
+                        createdAt: Timestamp.now(),
+                        avatarUrl: authUser.photoURL || "",
+                        canDrive: false,
+                        bio: "",
+                        phone: "",
+                        preferences: { notifications: "email", preferredPickupRadius: "5 miles" },
+                        address: { street: "", city: "", state: "", zip: "" },
+                        driverDetails: { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: ""},
+                        managedStudentIds: [],
+                        associatedParentIds: [],
+                    };
+                    await setDoc(doc(db, "users", authUser.uid), newUserProfile);
+                    setUserProfile(newUserProfile);
+                    setSelectedRoleForView(newUserProfile.role);
+                    setProfileError(null); // Clear previous error
+                    toast({ title: "Profile Initialized", description: "A basic profile has been created for you." });
+                } catch (initError) {
+                    console.error("Error initializing user profile:", initError);
+                    setProfileError("Failed to initialize profile. Please try refreshing.");
+                }
+            } else {
+                 setProfileError("User profile not found and could not initialize basic profile (missing display name or email).");
+            }
           }
         } catch (error) {
           console.error("Error fetching user profile:", error);
@@ -113,13 +143,14 @@ export default function ProfilePage() {
         }
       } else if (!authLoading) {
         setIsLoadingProfile(false);
+        // If not loading and no authUser, consider redirecting or showing login prompt
       }
     }
 
     if (!authLoading) {
         fetchUserProfile();
     }
-  }, [authUser, authLoading]);
+  }, [authUser, authLoading, toast]);
 
 
   const handleAddStudent = async () => {
@@ -127,37 +158,79 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
-    if (studentIdentifierInput.trim() === "") {
-      toast({ title: "Input Required", description: "Please enter a student identifier.", variant: "destructive" });
+    const studentIdToAdd = studentIdentifierInput.trim();
+    if (studentIdToAdd === "") {
+      toast({ title: "Input Required", description: "Please enter a student identifier (UID).", variant: "destructive" });
+      return;
+    }
+    if (studentIdToAdd === authUser.uid) {
+      toast({ title: "Invalid Action", description: "You cannot add yourself as a managed student.", variant: "destructive" });
       return;
     }
 
     setIsAddingStudent(true);
     try {
+      // Check if student exists (optional, but good practice)
+      const studentDocRef = doc(db, "users", studentIdToAdd);
+      const studentDocSnap = await getDoc(studentDocRef);
+
+      if (!studentDocSnap.exists()) {
+        toast({ title: "Student Not Found", description: `No user found with UID: ${studentIdToAdd}. Please ensure the student has an account.`, variant: "destructive" });
+        setIsAddingStudent(false);
+        return;
+      }
+      
+      // Student exists, proceed to update both documents in a batch
+      const batch = writeBatch(db);
+
+      // 1. Update parent's document
       const parentDocRef = doc(db, "users", authUser.uid);
-      await updateDoc(parentDocRef, {
-        managedStudentIds: arrayUnion(studentIdentifierInput.trim())
+      batch.update(parentDocRef, {
+        managedStudentIds: arrayUnion(studentIdToAdd)
       });
 
+      // 2. Update student's document
+      batch.update(studentDocRef, {
+        associatedParentIds: arrayUnion(authUser.uid)
+      });
+
+      await batch.commit();
+
       // Optimistically update local state
-      setManagedStudents(prev => [...new Set([...prev, studentIdentifierInput.trim()])]); 
+      setManagedStudents(prev => [...new Set([...prev, studentIdToAdd])]); 
       setStudentIdentifierInput("");
-      toast({ title: "Student Associated", description: "Student identifier has been added to your managed list." });
+      toast({ title: "Student Associated", description: `Student ${studentIdToAdd} is now managed and linked.` });
+
     } catch (error) {
       console.error("Error associating student:", error);
-      toast({ title: "Association Failed", description: "Could not associate student. Please check the identifier and try again.", variant: "destructive" });
+      toast({ title: "Association Failed", description: "Could not associate student. Check permissions or student ID and try again.", variant: "destructive" });
     } finally {
       setIsAddingStudent(false);
     }
   };
 
   const handleAddParent = () => {
-    if (parentIdentifierInput.trim() !== "") {
-      setAssociatedParents(prev => [...prev, parentIdentifierInput.trim()]);
-      setParentIdentifierInput("");
-      // TODO: Persist this change to Firestore for userProfile.associatedParentIds (on student's document)
-      toast({ title: "Parent Added (Mock)", description: "Parent association mock updated."});
+    if (!authUser) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
     }
+    const parentIdToAdd = parentIdentifierInput.trim();
+    if (parentIdToAdd === "") {
+      toast({ title: "Input Required", description: "Please enter a parent/guardian identifier (UID).", variant: "destructive" });
+      return;
+    }
+     if (parentIdToAdd === authUser.uid) {
+      toast({ title: "Invalid Action", description: "You cannot add yourself as an associated parent to your own account.", variant: "destructive" });
+      return;
+    }
+
+    // This would be a more complex operation if done from student's profile:
+    // Student requests parent, parent accepts. Or parent adds student, student gets notification.
+    // For now, let's assume a simplified direct add for demonstration if rules allow student to update their own associatedParentIds.
+    // This mock will just update local state. A real implementation needs Firestore updates and proper security rules.
+    setAssociatedParents(prev => [...new Set([...prev, parentIdToAdd])]);
+    setParentIdentifierInput("");
+    toast({ title: "Parent Association (Mock)", description: `Mock association with ${parentIdToAdd}. Real implementation needs Firestore logic and rules.`});
   };
   
   const currentDisplayRole = userProfile?.role || selectedRoleForView;
@@ -185,9 +258,11 @@ export default function ProfilePage() {
   }
   
   if (!authUser || !userProfile) {
+    // This case is now less likely due to the profile initialization logic,
+    // but kept as a safeguard or if initialization fails critically.
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-            <p className="text-muted-foreground">Please log in to view your profile.</p>
+            <p className="text-muted-foreground">Please log in to view your profile or profile initialization failed.</p>
              <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
         </div>
     );
@@ -327,12 +402,12 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">Manage My Students</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals. Enter the Student's User ID.</p>
+                  <p className="text-xs text-muted-foreground">Link students you are responsible for by entering their User ID (UID). This will allow you to manage their ryd approvals if they also link you as a parent.</p>
                   <div className="flex flex-col gap-2">
                       <Label htmlFor="studentIdentifier" className="sr-only">Student User ID</Label>
                       <Input
                       id="studentIdentifier"
-                      placeholder="Enter Student's User ID"
+                      placeholder="Enter Student's User ID (UID)"
                       value={studentIdentifierInput}
                       onChange={(e) => setStudentIdentifierInput(e.target.value)}
                       className="mt-1"
@@ -344,7 +419,7 @@ export default function ProfilePage() {
                   </div>
                   {managedStudents.length > 0 && (
                       <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User IDs):</h5>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Managed Students (User IDs):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
                           {managedStudents.map((studentId, index) => (
                           <li key={index} className="text-sm">{studentId}</li>
@@ -359,23 +434,23 @@ export default function ProfilePage() {
                 <div className="space-y-6 pl-4 border-l-2 border-blue-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-blue-600 mb-2">
                       <Users className="h-5 w-5" />
-                      <h4 className="font-semibold">Manage My Parents/Guardians</h4>
+                      <h4 className="font-semibold">My Parents/Guardians</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals.</p>
+                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals by entering their User ID (UID).</p>
                   <div className="flex flex-col gap-2">
-                      <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Identifier</Label>
+                      <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian User ID</Label>
                       <Input
                       id="parentIdentifier"
-                      placeholder="Enter Parent/Guardian's User ID or Email (Mock Add)"
+                      placeholder="Enter Parent/Guardian's User ID (UID)"
                       value={parentIdentifierInput}
                       onChange={(e) => setParentIdentifierInput(e.target.value)}
                       className="mt-1"
                       />
-                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian (Mock)</Button>
+                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian (Updates Local View)</Button>
                   </div>
                   {associatedParents.length > 0 && (
                       <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Parents/Guardians (User Identifiers):</h5>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Associated Parents/Guardians (User IDs):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
                           {associatedParents.map((parentId, index) => (
                           <li key={index} className="text-sm">{parentId}</li>
@@ -522,3 +597,5 @@ export default function ProfilePage() {
     </>
   );
 }
+
+    
