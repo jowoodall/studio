@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2, Users, Check, X } from "lucide-react";
+import { CalendarIcon, PlusCircle, Loader2, Users, Check, X, MapPin } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
@@ -32,6 +32,10 @@ const eventFormSchema = z.object({
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
+  eventStreet: z.string().optional(),
+  eventCity: z.string().optional(),
+  eventState: z.string().optional(),
+  eventZip: z.string().optional(),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
   selectedGroups: z.array(z.string()).optional(),
@@ -60,15 +64,18 @@ export default function CreateEventPage() {
       eventTime: "10:00",
       eventType: "",
       selectedGroups: [],
+      eventLocation: "",
+      eventStreet: "",
+      eventCity: "",
+      eventState: "",
+      eventZip: "",
     },
   });
 
   useEffect(() => {
     const fetchUserGroups = async () => {
       if (authLoading || isLoadingProfile || !userProfile || !authUser) {
-        // Wait for auth context to be ready and user profile to be loaded
         if (!authLoading && !isLoadingProfile && !userProfile && authUser) {
-            // Profile might be missing or this user has no joined groups
             setIsLoadingGroups(false);
             setAvailableGroups([]);
         }
@@ -84,12 +91,10 @@ export default function CreateEventPage() {
           return;
         }
 
-        // Fetch all groups and then filter, or construct more targeted queries if needed for performance
-        const groupsQuery = query(collection(db, "groups"));
-        const querySnapshot = await getDocs(groupsQuery);
+        const groupsCollectionQuery = query(collection(db, "groups"));
+        const querySnapshot = await getDocs(groupsCollectionQuery);
         const fetchedGroups: GroupSelectItem[] = [];
         querySnapshot.forEach((doc) => {
-          // Only add the group if the user is a member (ID is in userJoinedGroupIds)
           if (userJoinedGroupIds.includes(doc.id)) {
             const groupData = doc.data() as GroupData;
             fetchedGroups.push({ id: doc.id, name: groupData.name });
@@ -127,10 +132,31 @@ export default function CreateEventPage() {
       combinedDateTime.setHours(hours, minutes, 0, 0);
       const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
 
+      let finalLocation: string;
+      const street = data.eventStreet || "";
+      const city = data.eventCity || "";
+      const state = data.eventState || "";
+      const zip = data.eventZip || "";
+      
+      let detailedAddressParts = [street, city, state, zip].filter(Boolean);
+      if (detailedAddressParts.length > 0) {
+          let cityStateZip = [city, state].filter(Boolean).join(", ");
+          if (zip) cityStateZip = [cityStateZip, zip].filter(Boolean).join(" ");
+          finalLocation = [street, cityStateZip].filter(Boolean).join(", ");
+      } else {
+          finalLocation = data.eventLocation; 
+      }
+      if (finalLocation.trim() === "") {
+        toast({ title: "Location Missing", description: "Please provide either a general location or detailed address.", variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
+
+
       const newEventData: Omit<EventData, 'id' | 'createdAt'> & { createdAt: any } = {
         name: data.eventName,
         eventTimestamp: eventFirestoreTimestamp,
-        location: data.eventLocation,
+        location: finalLocation,
         description: data.description || "",
         eventType: data.eventType,
         createdBy: authUser.uid,
@@ -262,14 +288,77 @@ export default function CreateEventPage() {
                 name="eventLocation"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Event Location</FormLabel>
+                    <FormLabel>Event Location Name / General Area</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Northwood High Gymnasium" {...field} />
+                      <Input placeholder="e.g., Northwood High Gymnasium, City Park Downtown" {...field} />
                     </FormControl>
+                    <FormDescription>Enter a name for the venue or general location of the event.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              
+              <div className="space-y-3 p-4 border rounded-md bg-muted/20">
+                <FormLabel className="text-sm font-medium flex items-center">
+                    <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
+                    Detailed Event Address (Optional, improves matching)
+                </FormLabel>
+                <FormField
+                    control={form.control}
+                    name="eventStreet"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="text-xs">Street Address</FormLabel>
+                        <FormControl>
+                            <Input placeholder="123 Main St" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField
+                        control={form.control}
+                        name="eventCity"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">City</FormLabel>
+                            <FormControl>
+                            <Input placeholder="Anytown" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="eventState"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">State / Province</FormLabel>
+                            <FormControl>
+                            <Input placeholder="CA" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="eventZip"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">Zip / Postal Code</FormLabel>
+                            <FormControl>
+                            <Input placeholder="90210" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                </div>
+              </div>
+
 
               <FormField
                 control={form.control}
