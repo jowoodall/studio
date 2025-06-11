@@ -17,7 +17,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, doc, writeBatch } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import type { GroupData } from "@/types";
+import type { GroupData, UserProfileData } from "@/types"; // Added UserProfileData for typing newGroupData
 
 const createGroupFormSchema = z.object({
   groupName: z.string().min(3, "Group name must be at least 3 characters.").max(50, "Group name cannot exceed 50 characters."),
@@ -60,7 +60,8 @@ export default function CreateGroupPage() {
       const groupsCollectionRef = collection(db, "groups");
       
       // Data for the new group document
-      const newGroupData = {
+      // Explicitly typing newGroupData for clarity and ensuring it matches Omit<GroupData, 'id'>
+      const newGroupData: Omit<GroupData, 'id' | 'createdAt'> & { createdAt: any } = {
         name: data.groupName,
         description: data.description,
         imageUrl: data.imageUrl || "",
@@ -73,12 +74,15 @@ export default function CreateGroupPage() {
 
       // Add new group document to a batch
       const newGroupRef = doc(groupsCollectionRef); // Create a ref with a new auto-generated ID
+      console.log("Attempting to write new group data:", JSON.stringify(newGroupData, null, 2), "to path:", newGroupRef.path);
       batch.set(newGroupRef, newGroupData);
 
       // Update user's profile to include this new group ID
       const userDocRef = doc(db, "users", authUser.uid);
       const updatedJoinedGroupIds = [...(userProfile.joinedGroupIds || []), newGroupRef.id];
-      batch.update(userDocRef, { joinedGroupIds: updatedJoinedGroupIds });
+      const userUpdatePayload = { joinedGroupIds: updatedJoinedGroupIds };
+      console.log("Attempting to update user profile data:", JSON.stringify(userUpdatePayload, null, 2), "for user:", authUser.uid, "at path:", userDocRef.path);
+      batch.update(userDocRef, userUpdatePayload);
       
       await batch.commit();
 
@@ -88,11 +92,17 @@ export default function CreateGroupPage() {
       });
       router.push(`/groups/${newGroupRef.id}`); // Redirect to the new group's page
     } catch (error) {
-      console.error("Error creating group:", error);
+      console.error("Detailed error creating group:", error);
+      let errorMessage = "An unexpected error occurred. Please check the console for details and verify Firestore security rules.";
+      if (error instanceof Error && 'code' in error) {
+        const firebaseError = error as any; // Cast to access Firebase specific error codes
+        errorMessage = `Error: ${firebaseError.message} (Code: ${firebaseError.code}). Please check console and Firestore rules.`;
+      }
       toast({
         title: "Failed to Create Group",
-        description: "An error occurred while creating the group. Please try again.",
+        description: errorMessage,
         variant: "destructive",
+        duration: 9000,
       });
     } finally {
       setIsSubmitting(false);
