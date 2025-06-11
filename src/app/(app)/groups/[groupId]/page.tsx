@@ -1,8 +1,7 @@
-
 // src/app/(app)/groups/[groupId]/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, use } from 'react'; // Added use
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -10,7 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CalendarDays, Car, Edit, Users, MapPin, AlertTriangle, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
+// Static metadata for now, as dynamic generation is complex with client-side fetching.
+// To have dynamic metadata, a parent Server Component (e.g., layout.tsx) would need to fetch it.
 import { Separator } from "@/components/ui/separator";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -27,18 +27,14 @@ interface FetchedGroupMember {
   role: UserRole;
 }
 
-// Static metadata for now, as dynamic generation is complex with client-side fetching.
-// export const metadata: Metadata = {
-//   title: 'View Group', // Generic title
-// };
-// To have dynamic metadata, a parent Server Component (e.g., layout.tsx) would need to fetch it.
-
 interface GroupViewPageProps {
-  params: { groupId: string };
+  params: Promise<{ groupId: string }>; // Updated: params is a Promise
 }
 
-export default function GroupViewPage({ params }: GroupViewPageProps) {
-  const { groupId } = params;
+export default function GroupViewPage({ params: paramsPromise }: GroupViewPageProps) { // Renamed to paramsPromise
+  const resolvedParams = use(paramsPromise); // Resolve the params promise
+  const { groupId } = resolvedParams; // Destructure groupId from resolved params
+
   const { user: authUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
 
@@ -50,8 +46,6 @@ export default function GroupViewPage({ params }: GroupViewPageProps) {
 
   const fetchGroupAndMembers = useCallback(async () => {
     if (!authUser) {
-      // Wait for authUser to be available if auth is still loading.
-      // If auth is done and no user, no need to fetch.
       if (!authLoading) setIsLoading(false);
       return;
     }
@@ -114,7 +108,7 @@ export default function GroupViewPage({ params }: GroupViewPageProps) {
   }, [groupId, authUser, authLoading, toast]);
 
   useEffect(() => {
-    if (!authLoading) { // Only fetch if auth state is resolved
+    if (!authLoading) { 
         fetchGroupAndMembers();
     }
   }, [groupId, authLoading, fetchGroupAndMembers]);
@@ -145,10 +139,6 @@ export default function GroupViewPage({ params }: GroupViewPageProps) {
   }
   
   if (!group) {
-    // This case should ideally be caught by the error state if fetch failed,
-    // or loading state if still fetching. If group is null and no error/loading,
-    // it implies group ID might be invalid or fetch logic has an issue.
-    // The `fetchGroupAndMembers` should set an error if groupDocSnap doesn't exist.
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
