@@ -35,7 +35,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Welcome to RydzConnect!"
+        title="Welcome to MyRydz!"
         description="Manage your rydz, groups, and events all in one place."
         actions={
           <Button asChild>
