@@ -144,21 +144,13 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     
     const memberName = members.find(m => m.id === memberIdToRemove)?.name || 'Member';
     try {
-      const batch = writeBatch(db);
       const groupDocRef = doc(db, "groups", groupId);
-      batch.update(groupDocRef, {
+      // Admin only updates the group document. 
+      // The removed user's joinedGroupIds is NOT updated by the admin here.
+      await updateDoc(groupDocRef, {
         memberIds: arrayRemove(memberIdToRemove),
         adminIds: arrayRemove(memberIdToRemove) 
       });
-
-      const userDocRef = doc(db, "users", memberIdToRemove);
-      // Explicitly define the payload to only touch 'joinedGroupIds'
-      const userUpdatePayload = {
-        joinedGroupIds: arrayRemove(groupId)
-      };
-      batch.update(userDocRef, userUpdatePayload);
-
-      await batch.commit();
 
       setMembers(prevMembers => prevMembers.filter(member => member.id !== memberIdToRemove));
       setGroup(prev => prev ? ({...prev, 
@@ -168,13 +160,13 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
       toast({
         title: "Member Removed",
-        description: `${memberName} has been removed from the group.`,
+        description: `${memberName} has been removed from the group list.`,
       });
     } catch (e: any) {
       console.error("Error removing member:", e);
       let description = "Could not remove member. Please check console for details.";
        if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members and update their profiles (specifically joinedGroupIds).`;
+            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members from the group document.`;
       } else if (e.message) {
             description = e.message;
       }
@@ -217,21 +209,11 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
             return;
         }
 
-        const batch = writeBatch(db);
         const groupDocRef = doc(db, "groups", groupId);
-        batch.update(groupDocRef, { memberIds: arrayUnion(newMemberId) });
-
-        const userDocRef = doc(db, "users", newMemberId);
-        // Explicitly define the payload to only touch 'joinedGroupIds'
-        // This is crucial for the Firestore security rule: resource.data.diff(request.resource.data).affectedKeys().hasOnly(['joinedGroupIds'])
-        const userUpdatePayload = {
-            joinedGroupIds: arrayUnion(groupId)
-        };
-        console.log("Attempting to update user's joinedGroupIds:", JSON.stringify(userUpdatePayload, null, 2), "for user:", newMemberId);
-        batch.update(userDocRef, userUpdatePayload); 
+        // Admin only updates the group document.
+        // The new member's joinedGroupIds is NOT updated by the admin here.
+        await updateDoc(groupDocRef, { memberIds: arrayUnion(newMemberId) });
         
-        await batch.commit();
-
         const newDisplayMember: DisplayGroupMember = {
             id: newMemberId,
             name: newMemberData.fullName,
@@ -244,17 +226,17 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         setMembers(prev => [...prev, newDisplayMember]);
         setGroup(prev => prev ? ({ ...prev, memberIds: [...prev.memberIds, newMemberId]}) : null);
         
-        toast({ title: "Member Invited", description: `${newMemberData.fullName} has been added to the group.`});
+        toast({ title: "Member Added to Group", description: `${newMemberData.fullName} has been added to the group list.`});
         setNewMemberEmail("");
     } catch (e: any) {
         console.error("Error adding member:", e);
-        let description = "Could not add member. Please check console for details.";
+        let description = "Could not add member to group. Please check console for details.";
         if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to add members to the group AND to update the new member's 'joinedGroupIds'. Check that only 'joinedGroupIds' is being modified on the user's document.`;
+            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to update the group's memberIds.`;
         } else if (e.message) {
             description = e.message;
         }
-        toast({ title: "Invitation Failed", description, variant: "destructive", duration: 9000});
+        toast({ title: "Add Member Failed", description, variant: "destructive", duration: 9000});
     } finally {
         setIsAddingMember(false);
     }
@@ -404,7 +386,6 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
-
     
 
     
