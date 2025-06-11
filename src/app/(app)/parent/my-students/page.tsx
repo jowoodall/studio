@@ -13,7 +13,40 @@ import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import type { UserProfileData } from '@/app/(app)/profile/page'; // Assuming UserProfileData is exported or moved
+
+// Assuming UserProfileData is exported from profile/page.tsx or a types file
+// If it's not exported or you have a dedicated types file, adjust the import path
+// For now, let's define it here for clarity if not available elsewhere
+interface UserProfileData {
+  uid: string;
+  fullName: string;
+  email: string;
+  role: string; // Should ideally be UserRole enum
+  avatarUrl?: string;
+  dataAiHint?: string;
+  bio?: string;
+  phone?: string;
+  preferences?: {
+    notifications?: string;
+    preferredPickupRadius?: string;
+  };
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
+  canDrive?: boolean;
+  driverDetails?: {
+    ageRange?: string;
+    drivingExperience?: string;
+    primaryVehicle?: string;
+    passengerCapacity?: string;
+  };
+  managedStudentIds?: string[];
+  associatedParentIds?: string[];
+}
+
 
 interface ManagedStudentForList {
   id: string; // student's uid
@@ -27,7 +60,6 @@ interface AssociatedParentDetail {
     uid: string;
     fullName: string;
     email?: string;
-    // relationship: string; // Relationship is not a standard field currently
 }
 
 interface SelectedStudentFullInfo extends ManagedStudentForList {
@@ -41,7 +73,7 @@ interface UpcomingRyd {
   eventName: string;
   date: string;
   time: string;
-  destination?: string; 
+  destination?: string;
 }
 
 const mockStudentUpcomingRydz: UpcomingRyd[] = [
@@ -88,6 +120,10 @@ export default function MyStudentsPage() {
           });
           const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentForList[];
           setManagedStudentsList(students);
+          if (students.length > 0 && !selectedStudentId) {
+            // Optionally pre-select the first student if none is selected
+            // handleStudentSelect(students[0].id);
+          }
         } else {
           setManagedStudentsList([]);
         }
@@ -100,7 +136,7 @@ export default function MyStudentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [authUser]);
+  }, [authUser, selectedStudentId]); // Added selectedStudentId to dependencies
 
   useEffect(() => {
     if (!authLoading && authUser) {
@@ -168,7 +204,7 @@ export default function MyStudentsPage() {
     }
   };
 
-  if (authLoading || (isLoading && !selectedStudentId)) { // Initial page load or auth loading
+  if (authLoading || (isLoading && managedStudentsList.length === 0 && !error)) { 
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -204,7 +240,8 @@ export default function MyStudentsPage() {
     <>
       <PageHeader
         title="My Students"
-        description="Select a student to view their profile, linked guardians, and ryd information."
+        // Temporarily removing description prop to simplify
+        // description="Select a student to view their profile, linked guardians, and ryd information."
       />
 
       <Card className="mb-6 shadow-lg">
@@ -221,7 +258,7 @@ export default function MyStudentsPage() {
               <SelectContent>
                 {managedStudentsList.map((student) => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.fullName} ({student.email})
+                    {student.fullName} ({student.email || 'No email'})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -232,7 +269,7 @@ export default function MyStudentsPage() {
         </CardContent>
       </Card>
 
-      {isLoading && selectedStudentId && ( // Loading details for a selected student
+      {isLoading && selectedStudentId && ( 
            <div className="flex flex-col items-center justify-center py-10">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
             <p className="text-muted-foreground">Loading student details...</p>
@@ -253,7 +290,7 @@ export default function MyStudentsPage() {
               </CardHeader>
               <CardContent>
                 <Button className="w-full" asChild>
-                    <Link href={`/profile/edit?userId=${selectedStudentDetails.id}`}> 
+                    <Link href={`/profile/edit?userId=${selectedStudentDetails.id}`}>
                         <User className="mr-2 h-4 w-4" /> View/Edit Student Profile
                     </Link>
                 </Button>
@@ -277,13 +314,13 @@ export default function MyStudentsPage() {
                       <li key={parent.uid} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
                         <div>
                           <p className="font-medium">{parent.fullName}</p>
-                          <p className="text-xs text-muted-foreground">{parent.email}</p>
+                          <p className="text-xs text-muted-foreground">{parent.email || 'No email'}</p>
                         </div>
                         {parent.uid === authUser?.uid ? (
                            <span className="text-xs text-primary font-semibold">This is you</span>
                         ) : (
                             <Button variant="ghost" size="sm" asChild>
-                                <Link href={`/profile/view/${parent.uid}`}> 
+                                <Link href={`/profile/view/${parent.uid}`}>
                                     View Profile <ExternalLink className="ml-1.5 h-3 w-3" />
                                 </Link>
                             </Button>
@@ -325,7 +362,7 @@ export default function MyStudentsPage() {
           </div>
         </div>
       ) : (
-        !isLoading && !selectedStudentId && managedStudentsList.length > 0 && ( // No student selected yet, but list is loaded
+        !isLoading && !selectedStudentId && managedStudentsList.length > 0 && ( 
             <Card className="text-center py-12 shadow-md">
             <CardHeader>
                 <User className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -356,5 +393,6 @@ export default function MyStudentsPage() {
     </>
   );
 }
+    
 
     
