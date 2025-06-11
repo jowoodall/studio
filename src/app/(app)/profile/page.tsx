@@ -57,6 +57,12 @@ interface ManagedStudentDisplayInfo {
   email: string;
 }
 
+interface AssociatedParentDisplayInfo {
+  uid: string;
+  fullName: string;
+  email: string;
+}
+
 
 const exampleLinkedApps = [
   { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
@@ -86,7 +92,8 @@ export default function ProfilePage() {
   const [managedStudents, setManagedStudents] = useState<ManagedStudentDisplayInfo[]>([]); 
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
-  const [associatedParents, setAssociatedParents] = useState<string[]>([]);
+  const [displayedAssociatedParents, setDisplayedAssociatedParents] = useState<AssociatedParentDisplayInfo[]>([]);
+  const [isAddingParent, setIsAddingParent] = useState(false); // For the mock student-initiated add parent
 
   useEffect(() => {
     async function fetchUserProfile() {
@@ -103,10 +110,9 @@ export default function ProfilePage() {
             setCanDrive(data.canDrive || false);
             setDriverDetails(data.driverDetails || { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" });
             setSelectedRoleForView(data.role); 
-            setAssociatedParents(data.associatedParentIds || []);
-
-            // Fetch details for managed students
-            if (data.managedStudentIds && data.managedStudentIds.length > 0) {
+            
+            // Fetch details for managed students (if parent)
+            if (data.role === UserRole.PARENT && data.managedStudentIds && data.managedStudentIds.length > 0) {
               const studentPromises = data.managedStudentIds.map(async (studentId) => {
                 try {
                   const studentDocRef = doc(db, "users", studentId);
@@ -127,6 +133,30 @@ export default function ProfilePage() {
             } else {
               setManagedStudents([]);
             }
+
+            // Fetch details for associated parents (if student)
+            if (data.role === UserRole.STUDENT && data.associatedParentIds && data.associatedParentIds.length > 0) {
+              const parentPromises = data.associatedParentIds.map(async (parentId) => {
+                try {
+                  const parentDocRef = doc(db, "users", parentId);
+                  const parentDocSnap = await getDoc(parentDocRef);
+                  if (parentDocSnap.exists()) {
+                    const parentData = parentDocSnap.data() as UserProfileData;
+                    return { uid: parentId, fullName: parentData.fullName, email: parentData.email };
+                  }
+                  console.warn(`Associated parent with ID ${parentId} not found.`);
+                  return null;
+                } catch (parentFetchError) {
+                  console.error(`Error fetching parent ${parentId}:`, parentFetchError);
+                  return null;
+                }
+              });
+              const resolvedParents = (await Promise.all(parentPromises)).filter(Boolean) as AssociatedParentDisplayInfo[];
+              setDisplayedAssociatedParents(resolvedParents);
+            } else {
+              setDisplayedAssociatedParents([]);
+            }
+
 
           } else {
             console.log("No such user profile document!");
@@ -196,7 +226,7 @@ export default function ProfilePage() {
 
     setIsAddingStudent(true);
     console.log("handleAddStudent: Attempting to add student with email:", studentEmailToAdd);
-    console.log("handleAddStudent: Current authUser UID:", authUser?.uid);
+    console.log("handleAddStudent: Current authUser (Parent) UID:", authUser?.uid);
 
     try {
       const usersRef = collection(db, "users");
@@ -225,14 +255,14 @@ export default function ProfilePage() {
 
       if (studentData.role === UserRole.PARENT || studentData.role === UserRole.ADMIN) {
         console.warn("handleAddStudent: User is not a student:", studentEmailToAdd, studentData.role);
-        toast({ title: "Invalid Role", description: `User with email ${studentEmailToAdd} is not a student.`, variant: "destructive" });
+        toast({ title: "Invalid Role", description: `User with email ${studentEmailToAdd} is not a student and cannot be managed.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
       }
       
-      const isAlreadyManaged = managedStudents.some(s => s.uid === studentIdToAdd) || userProfile?.managedStudentIds?.includes(studentIdToAdd);
-      if (isAlreadyManaged) {
-        console.log("handleAddStudent: Student already managed:", studentIdToAdd);
+      const isAlreadyManagedByCurrentUser = managedStudents.some(s => s.uid === studentIdToAdd);
+      if (isAlreadyManagedByCurrentUser) {
+        console.log("handleAddStudent: Student already managed by current user:", studentIdToAdd);
         toast({ title: "Already Managed", description: `${studentData.fullName || 'Student'} (${studentEmailToAdd}) is already in your managed list.` });
         setStudentEmailInput("");
         setIsAddingStudent(false);
@@ -263,6 +293,13 @@ export default function ProfilePage() {
         if (studentExistsInDisplay) return prev;
         return [...prev, { uid: studentIdToAdd, fullName: studentData.fullName, email: studentData.email }];
       });
+      
+      // Update userProfile state to reflect the new managedStudentId immediately
+      setUserProfile(prevProfile => prevProfile ? ({
+        ...prevProfile,
+        managedStudentIds: arrayUnion(studentIdToAdd) as unknown as string[] // Casting for simplicity
+      }) : null);
+
       setStudentEmailInput("");
       toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now linked.` });
 
@@ -283,28 +320,78 @@ export default function ProfilePage() {
     }
   };
 
-  const handleAddParent = () => {
-    if (!authUser) {
-      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+  // Mock function: For a student to add a parent, a more complex flow would be needed
+  // (e.g., parent confirms, or student sends request parent accepts).
+  // This currently only updates local state for demonstration.
+  const handleAddParent = async () => {
+    if (!authUser || !userProfile || userProfile.role !== UserRole.STUDENT) {
+      toast({ title: "Error", description: "Only students can add parents/guardians.", variant: "destructive" });
       return;
     }
-    const parentIdToAdd = parentIdentifierInput.trim();
-    if (parentIdToAdd === "") {
-      toast({ title: "Input Required", description: "Please enter a parent/guardian identifier (UID).", variant: "destructive" });
+    const parentEmailToAdd = parentIdentifierInput.trim().toLowerCase();
+    if (parentEmailToAdd === "") {
+      toast({ title: "Input Required", description: "Please enter the parent's email address.", variant: "destructive" });
       return;
     }
-     if (parentIdToAdd === authUser.uid) {
-      toast({ title: "Invalid Action", description: "You cannot add yourself as an associated parent to your own account.", variant: "destructive" });
-      return;
+    setIsAddingParent(true);
+    // Simulate looking up parent by email
+    try {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", parentEmailToAdd));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        toast({ title: "Parent Not Found", description: `No user found with email: ${parentEmailToAdd}.`, variant: "destructive" });
+        setIsAddingParent(false);
+        return;
+      }
+       const parentDocSnap = querySnapshot.docs[0];
+       const parentIdToAdd = parentDocSnap.id;
+       const parentData = parentDocSnap.data() as UserProfileData;
+
+      if (parentData.role !== UserRole.PARENT && parentData.role !== UserRole.ADMIN) {
+         toast({ title: "Invalid Role", description: `User with email ${parentEmailToAdd} is not a parent/guardian.`, variant: "destructive" });
+         setIsAddingParent(false);
+         return;
+      }
+      
+      const isAlreadyAssociated = displayedAssociatedParents.some(p => p.uid === parentIdToAdd);
+      if (isAlreadyAssociated) {
+        toast({ title: "Already Associated", description: `${parentData.fullName || 'Parent'} is already associated.` });
+        setParentIdentifierInput("");
+        setIsAddingParent(false);
+        return;
+      }
+
+      // For full functionality, this would update:
+      // 1. Student's doc: add parentIdToAdd to associatedParentIds
+      // 2. Parent's doc: add authUser.uid (student's UID) to managedStudentIds
+      // This requires careful rule setup or a Cloud Function.
+      // For now, we just update the local display for the student.
+      
+      setDisplayedAssociatedParents(prev => [...prev, {uid: parentIdToAdd, fullName: parentData.fullName, email: parentData.email}]);
+      
+      // Update student's document in Firestore
+      const studentDocRef = doc(db, "users", authUser.uid);
+      await updateDoc(studentDocRef, {
+        associatedParentIds: arrayUnion(parentIdToAdd)
+      });
+      
+      // Optionally (if rules permit, or via Cloud Function): Update parent's document
+      // const parentDocRefToUpdate = doc(db, "users", parentIdToAdd);
+      // await updateDoc(parentDocRefToUpdate, {
+      //   managedStudentIds: arrayUnion(authUser.uid)
+      // });
+
+      setParentIdentifierInput("");
+      toast({ title: "Parent Associated (Mock)", description: `${parentData.fullName || 'Parent'} has been (locally) associated. Full linking requires backend logic or specific Firestore rules.` });
+
+    } catch (error) {
+        console.error("Error in mock handleAddParent:", error);
+        toast({ title: "Error", description: "Could not mock add parent.", variant: "destructive"});
+    } finally {
+        setIsAddingParent(false);
     }
-    // This function currently only updates local state.
-    // A full implementation would involve querying Firestore to verify the parentId,
-    // then updating the current student's document (authUser.uid if current user is student)
-    // and potentially the parent's document (to add this student to their managedStudentIds).
-    // This requires careful consideration of security rules.
-    setAssociatedParents(prev => [...new Set([...prev, parentIdToAdd])]);
-    setParentIdentifierInput("");
-    toast({ title: "Parent Association (Local Update)", description: `Mock association with ${parentIdToAdd}. Real implementation needs Firestore logic for both student and parent documents, and appropriate security rules.`});
   };
   
   const currentDisplayRole = userProfile?.role || selectedRoleForView;
@@ -365,7 +452,7 @@ export default function ProfilePage() {
               </Avatar>
               <CardTitle className="font-headline text-2xl">{userProfile.fullName}</CardTitle>
               <CardDescription className="capitalize">
-                {currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole}
+                {currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole === UserRole.STUDENT ? "Student" : currentDisplayRole}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -512,27 +599,34 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">My Parents/Guardians</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals by entering their User ID (UID).</p>
+                  <p className="text-xs text-muted-foreground">Link parents or guardians who can manage your ryd approvals by entering their User ID (UID) or Email.</p>
                   <div className="flex flex-col gap-2">
-                      <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian User ID</Label>
+                      <Label htmlFor="parentIdentifier" className="sr-only">Parent/Guardian Email or User ID</Label>
                       <Input
                       id="parentIdentifier"
-                      placeholder="Enter Parent/Guardian's User ID (UID)"
+                      placeholder="Enter Parent/Guardian's Email or User ID"
                       value={parentIdentifierInput}
                       onChange={(e) => setParentIdentifierInput(e.target.value)}
                       className="mt-1"
                       />
-                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian (Updates Local View)</Button>
+                      <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start" disabled={isAddingParent}>
+                        {isAddingParent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Add Parent/Guardian (Mock)
+                      </Button>
                   </div>
-                  {associatedParents.length > 0 && (
+                  {displayedAssociatedParents.length > 0 ? (
                       <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Associated Parents/Guardians (User IDs):</h5>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Associated Parents/Guardians:</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
-                          {associatedParents.map((parentId, index) => (
-                          <li key={index} className="text-sm">{parentId}</li>
+                          {displayedAssociatedParents.map((parent) => (
+                          <li key={parent.uid} className="text-sm">
+                            <span className="font-medium">{parent.fullName}</span> ({parent.email})
+                          </li>
                           ))}
                       </ul>
                       </div>
+                  ) : (
+                     <p className="text-xs text-muted-foreground mt-2">No parents/guardians are currently associated with your account in the database.</p>
                   )}
                 </div>
               )}
@@ -624,3 +718,6 @@ export default function ProfilePage() {
     </>
   );
 }
+
+
+    
