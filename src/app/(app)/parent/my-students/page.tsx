@@ -12,8 +12,8 @@ import { User, Users, ExternalLink, Car, CalendarDays, Clock, Loader2, AlertTria
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { type UserProfileData, UserRole } from '@/types'; // Import UserProfileData
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'; // Added collection, query, where, getDocs
+import { type UserProfileData, UserRole, type GroupData } from '@/types'; 
 
 interface ManagedStudentForList {
   id: string;
@@ -29,16 +29,21 @@ interface AssociatedParentDetail {
     email?: string;
 }
 
+interface ActiveGroupInfo {
+  id: string;
+  name: string;
+}
+
 interface SelectedStudentFullInfo extends ManagedStudentForList {
     associatedParentIds?: string[];
     associatedParentsDetails: AssociatedParentDetail[];
+    activeGroups: ActiveGroupInfo[]; // Added for active groups
 }
 
 export default function MyStudentsPage() {
   const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth();
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentForList[]>([]);
   const [selectedStudentDetails, setSelectedStudentDetails] = useState<SelectedStudentFullInfo | null>(null);
-  // isLoading now combines context loading state with local fetching state
   const [isFetchingStudentDetails, setIsFetchingStudentDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -51,7 +56,7 @@ export default function MyStudentsPage() {
       }
       return;
     }
-    setIsFetchingStudentDetails(true); // Indicates we are starting to fetch student list
+    setIsFetchingStudentDetails(true); 
     setError(null);
     try {
       if (authUserProfile.managedStudentIds && authUserProfile.managedStudentIds.length > 0) {
@@ -84,11 +89,9 @@ export default function MyStudentsPage() {
   }, [authUserProfile]);
 
   useEffect(() => {
-    // Only try to fetch if context is done loading and we have a parent profile
     if (!authLoading && !isLoadingContextProfile && authUserProfile) {
       fetchManagedStudentsList();
     } else if (!authLoading && !isLoadingContextProfile && !authUserProfile && authUser) {
-      // User authenticated but no profile (could be new user, error, or not a parent)
       setError("Profile not loaded or you might not have parent permissions.");
     } else if (!authLoading && !authUser) {
       setError("Please log in to view your students.");
@@ -133,10 +136,25 @@ export default function MyStudentsPage() {
                 associatedParentsDetails = (await Promise.all(parentDetailPromises)).filter(Boolean) as AssociatedParentDetail[];
             }
 
+            let activeGroups: ActiveGroupInfo[] = [];
+            if (studentData.joinedGroupIds && studentData.joinedGroupIds.length > 0) {
+                const groupPromises = studentData.joinedGroupIds.map(async (groupId) => {
+                    const groupDocRef = doc(db, "groups", groupId);
+                    const groupDocSnap = await getDoc(groupDocRef);
+                    if (groupDocSnap.exists()) {
+                        const groupData = groupDocSnap.data() as GroupData;
+                        return { id: groupDocSnap.id, name: groupData.name };
+                    }
+                    return null;
+                });
+                activeGroups = (await Promise.all(groupPromises)).filter(Boolean) as ActiveGroupInfo[];
+            }
+
             setSelectedStudentDetails({
                 ...basicInfo,
                 associatedParentIds: studentData.associatedParentIds || [],
                 associatedParentsDetails,
+                activeGroups,
             });
         } else {
             setError("Selected student details not found.");
@@ -151,7 +169,6 @@ export default function MyStudentsPage() {
     }
   };
 
-  // Combined loading state
   const isLoading = authLoading || isLoadingContextProfile || isFetchingStudentDetails;
 
   if (isLoading && managedStudentsList.length === 0 && !error) {
@@ -174,7 +191,7 @@ export default function MyStudentsPage() {
     );
   }
 
-  if (!authUser && !authLoading) { // Should be caught by AuthContext's loader, but as a fallback
+  if (!authUser && !authLoading) { 
       return (
           <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
               <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
@@ -195,12 +212,11 @@ export default function MyStudentsPage() {
      );
   }
 
-
   return (
     <>
       <PageHeader
         title="My Students"
-        description="Select a student to view their profile, linked guardians, and ryd information."
+        description="Select a student to view their profile, linked guardians, active groups, and ryd information."
       />
 
       <Card className="mb-6 shadow-lg">
@@ -228,7 +244,7 @@ export default function MyStudentsPage() {
         </CardContent>
       </Card>
 
-      {isFetchingStudentDetails && selectedStudentId && ( // Show loader specifically for selected student details
+      {isFetchingStudentDetails && selectedStudentId && ( 
            <div className="flex flex-col items-center justify-center py-10">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
             <p className="text-muted-foreground">Loading student details...</p>
@@ -275,7 +291,7 @@ export default function MyStudentsPage() {
                           <p className="font-medium">{parent.fullName}</p>
                           <p className="text-xs text-muted-foreground">{parent.email || 'No email'}</p>
                         </div>
-                        {parent.uid === authUserProfile?.uid ? ( // Check against authUserProfile
+                        {parent.uid === authUserProfile?.uid ? ( 
                            <span className="text-xs text-primary font-semibold">This is you</span>
                         ) : (
                             <Button variant="ghost" size="sm" asChild>
@@ -294,9 +310,37 @@ export default function MyStudentsPage() {
             </Card>
 
             <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle className="flex items-center">
+                        <Users className="mr-2 h-5 w-5 text-green-500" /> 
+                        Active Groups
+                    </CardTitle>
+                    <CardDescription>{selectedStudentDetails.fullName}'s joined carpool groups.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {selectedStudentDetails.activeGroups.length > 0 ? (
+                        <ul className="space-y-3">
+                            {selectedStudentDetails.activeGroups.map(group => (
+                                <li key={group.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
+                                    <p className="font-medium">{group.name}</p>
+                                    <Button variant="ghost" size="sm" asChild>
+                                        <Link href={`/groups/${group.id}`}>
+                                            View Group <ExternalLink className="ml-1.5 h-3 w-3" />
+                                        </Link>
+                                    </Button>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">This student is not a member of any active groups.</p>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Car className="mr-2 h-5 w-5 text-primary" />
+                  <Car className="mr-2 h-5 w-5 text-blue-500" />
                   Student's Rydz
                 </CardTitle>
                 <CardDescription>Quick overview of {selectedStudentDetails.fullName}'s upcoming rydz. (Mock Data)</CardDescription>
