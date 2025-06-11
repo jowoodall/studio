@@ -57,11 +57,11 @@ service cloud.firestore {
                        (request.resource.data.joinedGroupIds == null || request.resource.data.joinedGroupIds is list);
 
       allow update: if isAuthenticated() &&
-                       request.auth.uid == userId && 
-                       request.resource.data.uid == resource.data.uid && 
-                       request.resource.data.email == resource.data.email && 
-                       request.resource.data.role == resource.data.role && 
-                       request.resource.data.createdAt == resource.data.createdAt && 
+                       request.auth.uid == userId &&
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
                        request.resource.data.fullName is string &&
                        (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
                        (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
@@ -83,7 +83,7 @@ service cloud.firestore {
                        (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
                        (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list);
 
-      allow delete: if false; 
+      allow delete: if false;
     }
 
     // ======================================================================
@@ -107,17 +107,17 @@ service cloud.firestore {
                        request.resource.data.keys().size() == 8;
 
       allow update: if isAuthenticated() &&
-                       resource.data.adminIds.hasAny([request.auth.uid]) && 
-                       request.resource.data.createdBy == resource.data.createdBy && 
-                       request.resource.data.createdAt == resource.data.createdAt && 
+                       resource.data.adminIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.createdBy == resource.data.createdBy &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
                        request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 50 &&
                        request.resource.data.description is string && request.resource.data.description.size() >= 10 && request.resource.data.description.size() <= 200 &&
                        (request.resource.data.imageUrl == null || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 2048)) &&
                        (request.resource.data.dataAiHint == null || (request.resource.data.dataAiHint is string && request.resource.data.dataAiHint.size() <= 50)) &&
                        request.resource.data.memberIds is list &&
                        request.resource.data.adminIds is list &&
-                       request.resource.data.adminIds.toSet().difference(request.resource.data.memberIds.toSet()).size() == 0 && 
-                       (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() >= 1); 
+                       request.resource.data.adminIds.toSet().difference(request.resource.data.memberIds.toSet()).size() == 0 &&
+                       (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() >= 1);
 
       allow delete: if isAuthenticated() && resource.data.adminIds.hasAny([request.auth.uid]);
     }
@@ -126,7 +126,7 @@ service cloud.firestore {
     // Events (Collection: "events")
     // ======================================================================
     match /events/{eventId} {
-      allow read: if isAuthenticated(); // Covers get and list
+      allow read: if isAuthenticated();
 
       allow create: if isAuthenticated() &&
                        request.resource.data.createdBy == request.auth.uid &&
@@ -140,9 +140,9 @@ service cloud.firestore {
                        request.resource.data.keys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds']);
 
       allow update: if isAuthenticated() &&
-                       resource.data.createdBy == request.auth.uid && 
-                       request.resource.data.createdBy == resource.data.createdBy && 
-                       request.resource.data.createdAt == resource.data.createdAt && 
+                       resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.createdBy == resource.data.createdBy &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
                        request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 100 &&
                        request.resource.data.eventTimestamp is timestamp &&
                        request.resource.data.location is string && request.resource.data.location.size() >= 5 && request.resource.data.location.size() <= 200 &&
@@ -151,7 +151,7 @@ service cloud.firestore {
                        request.resource.data.associatedGroupIds is list &&
                        request.resource.data.keys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds']);
 
-      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid; 
+      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
     }
 
     // ======================================================================
@@ -159,32 +159,35 @@ service cloud.firestore {
     // Document ID format: {eventId}_{driverId}
     // ======================================================================
     match /eventDriverStates/{stateId} {
-      // Allow any authenticated user to read states (e.g., for displaying on event page)
       allow read: if isAuthenticated();
 
-      // Allow a driver to create their own state for an event
-      allow create: if isAuthenticated() &&
-                       request.auth.uid == request.resource.data.driverId &&
-                       request.resource.data.eventId == stateId.split("_")[0] && // Ensure eventId in doc matches path
-                       request.resource.data.driverId == stateId.split("_")[1] && // Ensure driverId in doc matches path
-                       request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
-                       (request.resource.data.status == 'driving' || request.resource.data.status == 'full_car' ? request.resource.data.seatsAvailable is number : request.resource.data.seatsAvailable == null) &&
-                       request.resource.data.updatedAt == request.time &&
-                       request.resource.data.keys().hasOnly(['eventId', 'driverId', 'status', 'seatsAvailable', 'updatedAt']);
-      
-      // Allow a driver to update their own state for an event
-      allow update: if isAuthenticated() &&
-                       request.auth.uid == resource.data.driverId && // Only the driver can update their status
-                       request.resource.data.eventId == resource.data.eventId && // EventId cannot change
-                       request.resource.data.driverId == resource.data.driverId && // DriverId cannot change
-                       request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
-                       (request.resource.data.status == 'driving' || request.resource.data.status == 'full_car' ? request.resource.data.seatsAvailable is number : request.resource.data.seatsAvailable == null) &&
-                       request.resource.data.updatedAt == request.time &&
-                       request.resource.data.keys().hasOnly(['eventId', 'driverId', 'status', 'seatsAvailable', 'updatedAt']);
+      function isDriverForState() {
+        // stateId is composite: eventId_driverId
+        return request.auth.uid == stateId.split('_')[1];
+      }
 
-      // Allow a driver to delete their own state (e.g., retract response)
-      allow delete: if isAuthenticated() &&
-                       request.auth.uid == resource.data.driverId;
+      function isValidEventDriverStateData(data) {
+        return data.eventId is string &&
+               data.driverId is string &&
+               data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
+               (data.seatsAvailable == null || data.seatsAvailable is number) && // Allow null or number
+               data.updatedAt == request.time;
+      }
+
+      allow create: if isAuthenticated() &&
+                       isDriverForState() &&
+                       request.resource.data.driverId == request.auth.uid &&
+                       isValidEventDriverStateData(request.resource.data);
+
+      allow update: if isAuthenticated() &&
+                       isDriverForState() &&
+                       request.resource.data.driverId == resource.data.driverId && // DriverId cannot change
+                       request.resource.data.eventId == resource.data.eventId &&   // EventId cannot change
+                       isValidEventDriverStateData(request.resource.data);
+
+      allow delete: if isAuthenticated() && isDriverForState();
     }
   }
 }
+
+    
