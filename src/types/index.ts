@@ -1,11 +1,11 @@
 
 import type React from 'react';
-import type { Timestamp } from 'firebase/firestore'; // Added Timestamp
+import type { Timestamp } from 'firebase/firestore'; 
 
 export enum UserRole {
   STUDENT = 'student',
   PARENT = 'parent',
-  DRIVER = 'driver', // Though not explicitly used everywhere yet
+  DRIVER = 'driver', 
   ADMIN = 'admin',
 }
 
@@ -17,11 +17,10 @@ export type NavItem = {
   disabled?: boolean;
   external?: boolean;
   roles?: UserRole[];
-  items?: NavItem[]; // For nested navigation
+  items?: NavItem[]; 
   collapsible?: boolean;
 };
 
-// Added UserProfileData interface here
 export interface UserProfileData {
   uid: string;
   fullName: string;
@@ -50,19 +49,31 @@ export interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
-  joinedGroupIds?: string[]; // Added for tracking groups a user is part of
+  joinedGroupIds?: string[]; 
   createdAt?: Timestamp;
 }
 
 export interface GroupData {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
   description: string;
   imageUrl?: string;
   dataAiHint?: string;
-  createdBy: string; // User UID
+  createdBy: string; 
   createdAt: Timestamp;
-  memberIds: string[]; // Array of User UIDs
-  adminIds: string[]; // Array of User UIDs (subset of memberIds)
-  // associatedEventIds?: string[]; // Optional: if groups link to events
+  memberIds: string[]; 
+  adminIds: string[]; 
+}
+
+export interface EventData {
+  id: string; // Firestore document ID
+  name: string;
+  eventTimestamp: Timestamp; // Combined date and time
+  location: string;
+  description?: string;
+  eventType: string; // e.g., 'school', 'sports'
+  createdBy: string; // User UID of the event creator
+  createdAt: Timestamp; // Firestore server timestamp
+  associatedGroupIds: string[]; // Array of Group UIDs
+  // importSource?: string; // Optional: if we implement calendar import later
 }

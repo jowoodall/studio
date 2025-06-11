@@ -1,14 +1,14 @@
 
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, use, useCallback } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle 
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -18,27 +18,23 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import type { EventData, GroupData, UserProfileData } from "@/types";
+import { format } from 'date-fns';
+import { useAuth } from "@/context/AuthContext";
 
-// Mock data for rydz related to an event
+// Mock data for rydz related to an event (keep for now, will be replaced)
 const mockEventRydz = [
   { id: "rydM", eventId: "1", passengerName: "Alice Wonderland", pickupTime: "09:30 AM", driverName: "Bob The Builder", status: "Confirmed", image: "https://placehold.co/400x200.png?text=Event+Ryd+1", dataAiHint: "group children car" },
   { id: "rydN", eventId: "1", passengerName: "Charlie Brown", pickupTime: "09:45 AM", driverName: "Diana Prince", status: "Pending Driver", image: "https://placehold.co/400x200.png?text=Event+Ryd+2", dataAiHint: "teenager waiting" },
-  { id: "rydO", eventId: "2", passengerName: "Edward Scissorhands", pickupTime: "01:30 PM", driverName: "Fiona Gallagher", status: "Confirmed", image: "https://placehold.co/400x200.png?text=Event+Ryd+3", dataAiHint: "sports gear car" },
 ];
 
-const mockEventsData: { [key: string]: { name: string; location: string; associatedGroupIds: string[] } } = {
-  "1": { name: "School Annual Day", location: "Northwood High Auditorium", associatedGroupIds: ["group1"] },
-  "2": { name: "Community Soccer Match", location: "City Sports Complex", associatedGroupIds: ["group2", "group3"] },
-  "3": { name: "Tech Conference 2024", location: "Downtown Convention Center", associatedGroupIds: [] },
-};
-
-const mockAvailableGroups = [
-  { id: "group1", name: "Morning School Run" },
-  { id: "group2", name: "Soccer Practice Crew" },
-  { id: "group3", name: "Work Commute (Downtown)" },
-  { id: "group4", name: "Weekend Study Buddies" },
-  { id: "group5", name: "Art Club Carpool" },
-  { id: "group6", name: "Debate Team Transport" },
+// Mock data for available groups and members (can be replaced with Firestore fetches later)
+const mockAvailableGroups: GroupData[] = [
+  { id: "group1", name: "Morning School Run", createdBy: "userA", createdAt: Timestamp.now(), memberIds: ["user1", "user2"], adminIds: ["user1"] },
+  { id: "group2", name: "Soccer Practice Crew", createdBy: "userB", createdAt: Timestamp.now(), memberIds: ["user4", "user5"], adminIds: ["user4"] },
+  { id: "group3", name: "Work Commute (Downtown)", createdBy: "userC", createdAt: Timestamp.now(), memberIds: ["user1", "user7"], adminIds: ["userC"] },
 ];
 
 interface GroupMember {
@@ -53,76 +49,80 @@ interface GroupMember {
 
 const mockGroupMembersDataForEventPage: { [groupId: string]: GroupMember[] } = {
   "group1": [
-    { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 },
-    { id: "user2", name: "Bob The Builder", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true, rating: 4.5, rydzCompleted: 85 },
-    { id: "user3", name: "Charlie Brown", avatarUrl: "https://placehold.co/100x100.png?text=CB", dataAiHint: "boy cartoon", canDrive: false },
+    { id: "user1", name: "Alice W.", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 },
+    { id: "user2", name: "Bob B.", avatarUrl: "https://placehold.co/100x100.png?text=BB", dataAiHint: "man construction", canDrive: true, rating: 4.5, rydzCompleted: 85 },
   ],
   "group2": [
-    { id: "user4", name: "Diana Prince", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true, rating: 4.9, rydzCompleted: 200 },
-    { id: "user5", name: "Edward Scissorhands", avatarUrl: "https://placehold.co/100x100.png?text=ES", dataAiHint: "man pale", canDrive: false },
-    { id: "user6", name: "Fiona Gallagher", avatarUrl: "https://placehold.co/100x100.png?text=FG", dataAiHint: "woman determined", canDrive: true, rating: 4.2, rydzCompleted: 50 },
+    { id: "user4", name: "Diana P.", avatarUrl: "https://placehold.co/100x100.png?text=DP", dataAiHint: "woman hero", canDrive: true, rating: 4.9, rydzCompleted: 200 },
   ],
-  "group3": [
-     { id: "user1", name: "Alice Wonderland", avatarUrl: "https://placehold.co/100x100.png?text=AW", dataAiHint: "woman smiling", canDrive: true, rating: 4.8, rydzCompleted: 120 }, 
-     { id: "user7", name: "Gus Fring", avatarUrl: "https://placehold.co/100x100.png?text=GF", dataAiHint: "man serious", canDrive: true, rating: 5.0, rydzCompleted: 30 },
-  ],
-  "group4": [
-    { id: "user8", name: "Hank Hill", avatarUrl: "https://placehold.co/100x100.png?text=HH", dataAiHint: "man cartoon", canDrive: false },
-  ],
-  "group5": [], 
-  "group6": [
-    { id: "user9", name: "Iris West", avatarUrl: "https://placehold.co/100x100.png?text=IW", dataAiHint: "woman journalist", canDrive: true },
-  ]
 };
 
 type DriverEventStatus = "not driving" | "has room" | "full car" | "not responded";
-
-interface EventDriverStatusInfo {
-  status: DriverEventStatus;
-  seatsAvailable?: number;
-}
-
+interface EventDriverStatusInfo { status: DriverEventStatus; seatsAvailable?: number; }
 const mockEventDriverStatuses: { [eventId: string]: { [driverId: string]: EventDriverStatusInfo } } = {
-  "1": { // Event ID for "School Annual Day"
-    "user1": { status: "has room", seatsAvailable: 2 }, // Alice Wonderland
-    "user2": { status: "full car" },                  // Bob The Builder
-  },
-  "2": { // Event ID for "Community Soccer Match"
-    "user4": { status: "not responded" },              // Diana Prince
-    "user6": { status: "not driving" },                // Fiona Gallagher
-    "user1": { status: "has room", seatsAvailable: 1 }, // Alice Wonderland (also in this event's group)
-    "user7": { status: "not responded"},               // Gus Fring
-  },
+  "EVENT_ID_PLACEHOLDER_1": { "user1": { status: "has room", seatsAvailable: 2 }, "user2": { status: "full car" } },
 };
 
-interface ResolvedPageParams {
-  eventId: string;
-}
+interface ResolvedPageParams { eventId: string; }
 
 export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
   const resolvedParams = use(params); 
-  const { toast } = useToast();
   const { eventId } = resolvedParams || {}; 
+  const { toast } = useToast();
+  const { user: authUser, loading: authLoading } = useAuth();
 
-  const eventDetails = eventId ? mockEventsData[eventId] : null;
-  const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : [];
+  const [eventDetails, setEventDetails] = useState<EventData | null>(null);
+  const [isLoadingEvent, setIsLoadingEvent] = useState(true);
+  const [eventError, setEventError] = useState<string | null>(null);
+
+  const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : []; // Keep mock rydz for now
 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
   const [potentialDrivers, setPotentialDrivers] = useState<GroupMember[]>([]);
+  const [isUpdatingGroups, setIsUpdatingGroups] = useState(false);
 
-  useEffect(() => {
-    if (eventDetails) {
-      setCurrentAssociatedGroups(eventDetails.associatedGroupIds || []);
+
+  const fetchEventDetails = useCallback(async () => {
+    if (!eventId) {
+      setEventError("Event ID is missing.");
+      setIsLoadingEvent(false);
+      return;
     }
-  }, [eventDetails]);
+    setIsLoadingEvent(true);
+    setEventError(null);
+    try {
+      const eventDocRef = doc(db, "events", eventId);
+      const eventDocSnap = await getDoc(eventDocRef);
+      if (eventDocSnap.exists()) {
+        const data = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
+        setEventDetails(data);
+        setCurrentAssociatedGroups(data.associatedGroupIds || []);
+      } else {
+        setEventError(`Event with ID "${eventId}" not found.`);
+        setEventDetails(null);
+      }
+    } catch (e) {
+      console.error("Error fetching event details:", e);
+      setEventError("Failed to load event details.");
+      toast({ title: "Error", description: "Could not load event information.", variant: "destructive" });
+    } finally {
+      setIsLoadingEvent(false);
+    }
+  }, [eventId, toast]);
 
   useEffect(() => {
+    fetchEventDetails();
+  }, [fetchEventDetails]);
+
+  useEffect(() => {
+    // This effect updates potential drivers based on currently associated groups
+    // For now, it uses mockGroupMembersDataForEventPage.
+    // In a real app, this would fetch member details for each group ID in currentAssociatedGroups.
     if (currentAssociatedGroups.length > 0 && eventId) { 
       const drivers: GroupMember[] = [];
       const driverIds = new Set<string>();
-
       currentAssociatedGroups.forEach(groupId => {
         const members = mockGroupMembersDataForEventPage[groupId] || [];
         members.forEach(member => {
@@ -138,18 +138,34 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     }
   }, [currentAssociatedGroups, eventId]); 
 
-  const handleGroupSelection = (groupId: string) => {
-    const newSelectedGroups = currentAssociatedGroups.includes(groupId)
-      ? currentAssociatedGroups.filter(id => id !== groupId)
-      : [...currentAssociatedGroups, groupId];
-    setCurrentAssociatedGroups(newSelectedGroups);
-    if (eventId && mockEventsData[eventId]) { 
-        mockEventsData[eventId].associatedGroupIds = newSelectedGroups; 
+  const handleGroupSelection = async (groupIdToToggle: string) => {
+    if (!eventDetails || !authUser) {
+      toast({ title: "Error", description: "Event details not loaded or user not authenticated.", variant: "destructive" });
+      return;
     }
-     toast({
-      title: "Groups Updated",
-      description: `Event groups have been updated. (Mock update)`,
-    });
+    // For now, allow any authenticated user to manage groups for demo. 
+    // Add creator check: if (eventDetails.createdBy !== authUser.uid) { ... }
+
+    setIsUpdatingGroups(true);
+    const newSelectedGroups = currentAssociatedGroups.includes(groupIdToToggle)
+      ? currentAssociatedGroups.filter(id => id !== groupIdToToggle)
+      : [...currentAssociatedGroups, groupIdToToggle];
+    
+    try {
+      const eventDocRef = doc(db, "events", eventDetails.id);
+      await updateDoc(eventDocRef, { associatedGroupIds: newSelectedGroups });
+      setCurrentAssociatedGroups(newSelectedGroups);
+      setEventDetails(prev => prev ? { ...prev, associatedGroupIds: newSelectedGroups } : null);
+      toast({
+        title: "Groups Updated",
+        description: `Event groups have been updated.`,
+      });
+    } catch (error) {
+      console.error("Error updating associated groups:", error);
+      toast({ title: "Update Failed", description: "Could not update associated groups for the event.", variant: "destructive" });
+    } finally {
+      setIsUpdatingGroups(false);
+    }
   };
 
   const filteredGroupsForPopover = mockAvailableGroups.filter(group =>
@@ -167,24 +183,35 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
   };
 
-  if (!eventId || !eventDetails) { 
+  if (authLoading || isLoadingEvent) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+        <p className="text-muted-foreground">Loading event details...</p>
+      </div>
+    );
+  }
+
+  if (eventError || !eventDetails) { 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Event Not Found</h2>
-        <p className="text-muted-foreground">The event with ID "{resolvedParams?.eventId || 'unknown'}" could not be found.</p>
+        <h2 className="text-2xl font-semibold mb-2">{eventError ? "Error Loading Event" : "Event Not Found"}</h2>
+        <p className="text-muted-foreground px-4">{eventError || `The event with ID "${resolvedParams?.eventId || 'unknown'}" could not be found.`}</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
       </div>
     );
   }
+  
+  const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
 
   return (
     <>
       <PageHeader
         title={`Rydz for: ${eventDetails.name}`}
-        description={`View available rydz, request a new one, or offer to drive for this event at ${eventDetails.location}.`}
+        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP 'at' p")}. View rydz or manage associated groups.`}
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
@@ -194,7 +221,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 </span>
               </Link>
             </Button>
-            {/* "I can drive" button removed from here */}
           </div>
         }
       />
@@ -202,13 +228,13 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       <Card className="mb-6 shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Associated Groups</CardTitle>
-          <CardDescription>Groups currently linked to this event. Rydz might be prioritized for members of these groups.</CardDescription>
+          <CardDescription>Groups linked to this event. Rydz might be prioritized for members. (Event creator can manage)</CardDescription>
         </CardHeader>
         <CardContent>
           {currentAssociatedGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2 mb-4">
               {currentAssociatedGroups.map(groupId => {
-                const group = mockAvailableGroups.find(g => g.id === groupId);
+                const group = mockAvailableGroups.find(g => g.id === groupId); // Using mockAvailableGroups for display
                 return group ? (
                   <Badge key={groupId} variant="secondary">
                     {group.name}
@@ -217,11 +243,12 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                         className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                         onClick={() => handleGroupSelection(groupId)}
                         aria-label={`Remove ${group.name}`}
+                        disabled={isUpdatingGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
                     >
                         <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                     </button>
                   </Badge>
-                ) : null;
+                ) : <Badge key={groupId} variant="outline">Unknown Group ({groupId.substring(0,6)}...)</Badge>;
               })}
             </div>
           ) : (
@@ -235,6 +262,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 role="combobox"
                 aria-expanded={groupPopoverOpen}
                 className="w-full sm:w-auto"
+                disabled={isUpdatingGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
               >
                 <PlusCircle className="mr-2 h-4 w-4" />
                 {currentAssociatedGroups.length > 0 ? "Manage Associated Groups" : "Associate Groups"}
@@ -254,9 +282,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                       {filteredGroupsForPopover.map((group) => (
                         <CommandItem
                           key={group.id}
-                          value={group.id}
+                          value={group.id} // Use group ID
                           onSelect={() => {
-                            handleGroupSelection(group.id);
+                            handleGroupSelection(group.id); // Pass group ID
                           }}
                         >
                           <Check
@@ -276,13 +304,16 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
               </Command>
             </PopoverContent>
           </Popover>
+          {authUser && eventDetails.createdBy !== authUser.uid && (
+            <p className="text-xs text-muted-foreground mt-2">Only the event creator can manage associated groups.</p>
+          )}
         </CardContent>
       </Card>
 
       <Card className="mb-6 shadow-lg">
         <CardHeader>
             <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
-            <CardDescription>Drivers from the groups above and their status for this event.</CardDescription>
+            <CardDescription>Drivers from the groups above and their status for this event. (Mock data for now)</CardDescription>
         </CardHeader>
         <CardContent>
             {potentialDrivers.length > 0 ? (
@@ -334,13 +365,14 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
             ) : (
                 <div className="text-center py-4 text-muted-foreground">
                     <Info className="mx-auto h-8 w-8 mb-2" />
-                    <p>No potential drivers found in the currently associated groups.</p>
-                    <p className="text-xs mt-1">Try associating more groups or ensure members are marked as 'can drive'.</p>
+                    <p>No potential drivers found in the currently associated groups, or no groups associated.</p>
+                    <p className="text-xs mt-1">Try associating groups with known drivers.</p>
                 </div>
             )}
         </CardContent>
       </Card>
 
+      {/* Mock Rydz List - To be replaced with Firestore data later */}
       {rydzForThisEvent.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {rydzForThisEvent.map((ryd) => (
@@ -390,7 +422,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are currently no rydz listed for {eventDetails.name}. Be the first to request one or consider inviting a driver from the associated groups.
+              There are currently no rydz listed for {eventDetails.name}. Be the first to request one.
             </CardDescription>
             <div className="flex justify-center gap-4">
                 <Button asChild>
@@ -407,6 +439,3 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
-    
-
-    

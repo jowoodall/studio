@@ -17,10 +17,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
+import { format, parse } from "date-fns";
 import { CalendarIcon, PlusCircle, Loader2, LinkIcon, Users, Check, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import { useAuth } from "@/context/AuthContext";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import type { EventData } from "@/types";
 
 const eventFormSchema = z.object({
   importSource: z.string().optional(),
@@ -30,11 +35,12 @@ const eventFormSchema = z.object({
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
-  selectedGroups: z.array(z.string()).optional(),
+  selectedGroups: z.array(z.string()).optional(), // Stores group IDs
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
+// Mock data for available groups to associate with an event
 const mockAvailableGroups = [
   { id: "group1", name: "Morning School Run" },
   { id: "group2", name: "Soccer Practice Crew" },
@@ -46,7 +52,9 @@ const mockAvailableGroups = [
 
 export default function CreateEventPage() {
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const { user: authUser } = useAuth();
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -60,26 +68,54 @@ export default function CreateEventPage() {
     },
   });
 
-  function onSubmit(data: EventFormValues) {
+  async function onSubmit(data: EventFormValues) {
+    if (!authUser) {
+      toast({
+        title: "Authentication Error",
+        description: "You must be logged in to create an event.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
-    console.log("Create Event Data:", data);
-    setTimeout(() => {
+    try {
+      // Combine date and time into a single Date object, then convert to Firestore Timestamp
+      const [hours, minutes] = data.eventTime.split(':').map(Number);
+      const combinedDateTime = new Date(data.eventDate);
+      combinedDateTime.setHours(hours, minutes, 0, 0); // Set hours and minutes, seconds and ms to 0
+      const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
+
+      const newEventData: Omit<EventData, 'id' | 'createdAt'> & { createdAt: any } = {
+        name: data.eventName,
+        eventTimestamp: eventFirestoreTimestamp,
+        location: data.eventLocation,
+        description: data.description || "",
+        eventType: data.eventType,
+        createdBy: authUser.uid,
+        createdAt: serverTimestamp(),
+        associatedGroupIds: data.selectedGroups || [],
+        // importSource: data.importSource, // Can add this if needed
+      };
+
+      const docRef = await addDoc(collection(db, "events"), newEventData);
+
       toast({
         title: "Event Created!",
-        description: `The event "${data.eventName}" has been successfully created. ${data.selectedGroups && data.selectedGroups.length > 0 ? `Associated with ${data.selectedGroups.length} group(s).` : ''}`,
+        description: `The event "${data.eventName}" has been successfully created.`,
       });
-      if (data.importSource && data.importSource !== "manual") {
-        toast({
-            title: "Import Note",
-            description: `Ideally, event details from ${data.importSource} would have been pre-filled. (This is a placeholder).`,
-            variant: "default",
-            duration: 4000,
-        });
-      }
+      router.push(`/events/${docRef.id}/rydz`); // Redirect to the event's detail/rydz page
+      
+    } catch (error) {
+      console.error("Error creating event:", error);
+      toast({
+        title: "Failed to Create Event",
+        description: "An error occurred while saving the event. Please check Firestore rules and try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsSubmitting(false);
-      form.reset({ importSource: "manual", eventTime: "10:00", eventType: "", selectedGroups: [] });
-      setSearchTerm("");
-    }, 1500);
+    }
   }
 
   const selectedImportSource = form.watch("importSource");
@@ -318,11 +354,9 @@ export default function CreateEventPage() {
                                 {filteredGroups.map((group) => (
                                   <CommandItem
                                     key={group.id}
-                                    value={group.id}
+                                    value={group.id} // Use group ID as value
                                     onSelect={() => {
-                                      handleGroupSelection(group.id);
-                                      // Keep popover open for multi-select
-                                      // setPopoverOpen(false);
+                                      handleGroupSelection(group.id); // Pass group ID
                                     }}
                                   >
                                     <Check
@@ -373,13 +407,16 @@ export default function CreateEventPage() {
                 )}
               />
 
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || !authUser}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Event...</>
                 ) : (
                   <><PlusCircle className="mr-2 h-4 w-4" /> Create Event</>
                 )}
               </Button>
+               {!authUser && (
+                <p className="text-sm text-destructive text-center">You must be logged in to create an event.</p>
+              )}
             </form>
           </Form>
         </CardContent>
@@ -387,4 +424,3 @@ export default function CreateEventPage() {
     </>
   );
 }
-

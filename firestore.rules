@@ -1,0 +1,162 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Function to validate driverDetails structure
+    function isValidDriverDetails(details) {
+      return details == null ||
+             (details is map && details.size() == 0) ||
+             (
+               details is map &&
+               details.keys().hasOnly(['ageRange', 'drivingExperience', 'primaryVehicle', 'passengerCapacity']) &&
+               details.ageRange is string &&
+               details.drivingExperience is string &&
+               details.primaryVehicle is string &&
+               details.passengerCapacity is string
+             );
+    }
+
+    // ======================================================================
+    // User Profiles (Collection: "users")
+    // ======================================================================
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == userId &&
+                       request.resource.data.uid == request.auth.uid &&
+                       request.resource.data.email == request.auth.token.email &&
+                       request.resource.data.role in ['student', 'parent', 'admin'] &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.fullName is string &&
+                       (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
+                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
+                       (request.resource.data.bio == null || request.resource.data.bio is string) &&
+                       (request.resource.data.phone == null || request.resource.data.phone is string) &&
+                       (request.resource.data.preferences == null || (
+                         request.resource.data.preferences.notifications is string &&
+                         request.resource.data.preferences.preferredPickupRadius is string
+                       )) &&
+                       (request.resource.data.address == null || (
+                         request.resource.data.address.street is string &&
+                         request.resource.data.address.city is string &&
+                         request.resource.data.address.state is string &&
+                         request.resource.data.address.zip is string
+                       )) &&
+                       (request.resource.data.canDrive == null || request.resource.data.canDrive is bool) &&
+                       isValidDriverDetails(request.resource.data.driverDetails) &&
+                       (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
+                       (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list) &&
+                       (request.resource.data.joinedGroupIds == null || request.resource.data.joinedGroupIds is list);
+
+      allow update: if isAuthenticated() &&
+                       request.auth.uid == userId && 
+                       request.resource.data.uid == resource.data.uid && 
+                       request.resource.data.email == resource.data.email && 
+                       request.resource.data.role == resource.data.role && 
+                       request.resource.data.createdAt == resource.data.createdAt && 
+                       request.resource.data.fullName is string &&
+                       (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
+                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
+                       (request.resource.data.bio == null || request.resource.data.bio is string) &&
+                       (request.resource.data.phone == null || request.resource.data.phone is string) &&
+                       (request.resource.data.preferences == null || (
+                         request.resource.data.preferences.notifications is string &&
+                         request.resource.data.preferences.preferredPickupRadius is string
+                       )) &&
+                       (request.resource.data.address == null || (
+                         request.resource.data.address.street is string &&
+                         request.resource.data.address.city is string &&
+                         request.resource.data.address.state is string &&
+                         request.resource.data.address.zip is string
+                       )) &&
+                       (request.resource.data.canDrive == null || request.resource.data.canDrive is bool) &&
+                       isValidDriverDetails(request.resource.data.driverDetails) &&
+                       (request.resource.data.joinedGroupIds == null || request.resource.data.joinedGroupIds is list) &&
+                       (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
+                       (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list);
+
+      allow delete: if false; 
+    }
+
+    // ======================================================================
+    // Groups (Collection: "groups")
+    // ======================================================================
+    match /groups/{groupId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.adminIds.size() == 1 &&
+                       request.resource.data.adminIds[0] == request.auth.uid &&
+                       request.resource.data.memberIds.size() == 1 &&
+                       request.resource.data.memberIds[0] == request.auth.uid &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 50 &&
+                       request.resource.data.description is string && request.resource.data.description.size() >= 10 && request.resource.data.description.size() <= 200 &&
+                       (request.resource.data.imageUrl == null || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 2048)) &&
+                       (request.resource.data.dataAiHint == null || (request.resource.data.dataAiHint is string && request.resource.data.dataAiHint.size() <= 50)) &&
+                       request.resource.data.keys().hasAll(['name', 'description', 'imageUrl', 'dataAiHint', 'createdBy', 'createdAt', 'memberIds', 'adminIds']) &&
+                       request.resource.data.keys().size() == 8;
+
+      allow update: if isAuthenticated() &&
+                       resource.data.adminIds.hasAny([request.auth.uid]) && 
+                       request.resource.data.createdBy == resource.data.createdBy && 
+                       request.resource.data.createdAt == resource.data.createdAt && 
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 50 &&
+                       request.resource.data.description is string && request.resource.data.description.size() >= 10 && request.resource.data.description.size() <= 200 &&
+                       (request.resource.data.imageUrl == null || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 2048)) &&
+                       (request.resource.data.dataAiHint == null || (request.resource.data.dataAiHint is string && request.resource.data.dataAiHint.size() <= 50)) &&
+                       request.resource.data.memberIds is list &&
+                       request.resource.data.adminIds is list &&
+                       request.resource.data.adminIds.toSet().difference(request.resource.data.memberIds.toSet()).size() == 0 && 
+                       (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() >= 1); 
+
+      allow delete: if isAuthenticated() && resource.data.adminIds.hasAny([request.auth.uid]);
+    }
+
+    // ======================================================================
+    // Events (Collection: "events")
+    // ======================================================================
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 &&
+                       request.resource.data.location is string && request.resource.data.location.size() >= 5 &&
+                       request.resource.data.eventTimestamp is timestamp &&
+                       request.resource.data.eventType is string && request.resource.data.eventType.size() >= 1 &&
+                       (request.resource.data.description == null || request.resource.data.description is string) &&
+                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds is list) &&
+                       // Ensure all elements in associatedGroupIds are strings if the list exists
+                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds.size() == 0 || request.resource.data.associatedGroupIds[0] is string) &&
+                       // Add other necessary field validations
+                       request.resource.data.keys().hasAll(['name', 'eventTimestamp', 'location', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds', 'description']);
+                       // Allow 'description' to be optional, other fields mandatory for this example. Adjust keys().size() accordingly.
+
+      allow update: if isAuthenticated() && 
+                       resource.data.createdBy == request.auth.uid && // Only creator can update
+                       request.resource.data.createdBy == resource.data.createdBy &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 &&
+                       request.resource.data.location is string && request.resource.data.location.size() >= 5 &&
+                       request.resource.data.eventTimestamp is timestamp &&
+                       request.resource.data.eventType is string && request.resource.data.eventType.size() >= 1 &&
+                       (request.resource.data.description == null || request.resource.data.description is string) &&
+                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds is list) &&
+                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds.size() == 0 || request.resource.data.associatedGroupIds[0] is string);
+                       // Allow updates to associatedGroupIds and other fields by the creator.
+
+      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid; // Only creator can delete
+    }
+  }
+}

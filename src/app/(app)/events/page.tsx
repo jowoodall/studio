@@ -1,23 +1,80 @@
 
+"use client";
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink, Car } from "lucide-react";
+import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink, Car, Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Manage Events',
-};
-
-const mockEvents = [
-  { id: "1", name: "School Annual Day", date: "2024-12-15", time: "10:00 AM", location: "Northwood High Auditorium", attendees: 150, type: "School Event", image: "https://placehold.co/400x200.png?text=School+Event", dataAiHint: "school auditorium" },
-  { id: "2", name: "Community Soccer Match", date: "2024-11-30", time: "02:00 PM", location: "City Sports Complex", attendees: 45, type: "Sports", image: "https://placehold.co/400x200.png?text=Soccer+Match", dataAiHint: "soccer field" },
-  { id: "3", name: "Tech Conference 2024", date: "2025-01-20", time: "09:00 AM", location: "Downtown Convention Center", attendees: 500, type: "Conference", external: true, image: "https://placehold.co/400x200.png?text=Tech+Conference", dataAiHint: "conference hall" },
-];
+import { useAuth } from '@/context/AuthContext';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
+import type { EventData } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
 
 export default function EventsPage() {
+  const { user: authUser, loading: authLoading } = useAuth();
+  const { toast } = useToast();
+  
+  const [events, setEvents] = useState<EventData[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchEvents = useCallback(async () => {
+    setIsLoadingEvents(true);
+    setError(null);
+    try {
+      const eventsQuery = query(collection(db, "events"), orderBy("eventTimestamp", "desc"));
+      const querySnapshot = await getDocs(eventsQuery);
+      const fetchedEvents: EventData[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedEvents.push({ id: doc.id, ...doc.data() } as EventData);
+      });
+      setEvents(fetchedEvents);
+    } catch (e) {
+      console.error("Error fetching events:", e);
+      setError("Failed to load events. Please try again.");
+      toast({
+        title: "Error",
+        description: "Could not fetch events information.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (!authLoading) { // Fetch only when auth state is resolved
+        fetchEvents();
+    }
+  }, [authLoading, fetchEvents]);
+
+  const isLoading = authLoading || isLoadingEvents;
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading events...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Error Loading Events</h2>
+        <p className="text-muted-foreground px-4">{error}</p>
+        <Button onClick={fetchEvents} className="mt-4">Try Again</Button>
+      </div>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -32,26 +89,34 @@ export default function EventsPage() {
         }
       />
 
-      {mockEvents.length > 0 ? (
+      {events.length > 0 ? (
          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {mockEvents.map((event) => (
+          {events.map((event) => {
+            const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
+            return (
             <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">
-                 <Image src={event.image} alt={event.name} fill className="rounded-t-lg object-cover" data-ai-hint={event.dataAiHint} />
-                 {event.external && (
-                    <div className="absolute top-2 right-2 bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full flex items-center">
-                        <ExternalLink className="h-3 w-3 mr-1" /> External
-                    </div>
-                 )}
+                 <Image 
+                    src={"https://placehold.co/400x200.png?text=Event"} // Replace with event.imageUrl if available
+                    alt={event.name} 
+                    fill 
+                    className="rounded-t-lg object-cover" 
+                    data-ai-hint={"event image"} // Replace with event.dataAiHint if available
+                />
+                 {/* Add external link badge if applicable from event data */}
               </CardHeader>
               <CardContent className="flex-grow pt-4">
                 <CardTitle className="font-headline text-xl mb-1">{event.name}</CardTitle>
                 <div className="text-sm text-muted-foreground space-y-1 mb-2">
-                    <div className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> {event.date} at {event.time}</div>
+                    <div className="flex items-center">
+                        <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                        {format(eventDate, "PPP 'at' p")}
+                    </div>
                     <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> {event.location}</div>
-                    <div className="flex items-center"><Users className="mr-1.5 h-4 w-4" /> {event.attendees} attendees</div>
+                    {/* Placeholder for attendees, adjust if available in EventData */}
+                    {/* <div className="flex items-center"><Users className="mr-1.5 h-4 w-4" /> ... attendees</div> */}
                 </div>
-                <CardDescription className="text-xs bg-muted px-2 py-1 rounded-md inline-block">{event.type}</CardDescription>
+                <CardDescription className="text-xs bg-muted px-2 py-1 rounded-md inline-block capitalize">{event.eventType}</CardDescription>
               </CardContent>
               <CardFooter className="border-t pt-4">
                 <Button variant="default" className="w-full" asChild>
@@ -61,7 +126,7 @@ export default function EventsPage() {
                 </Button>
               </CardFooter>
             </Card>
-          ))}
+          )})}
         </div>
       ) : (
         <Card className="text-center py-12 shadow-md">
