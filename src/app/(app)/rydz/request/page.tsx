@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"; // Added getDoc
 import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
