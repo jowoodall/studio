@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch, query, where, getDocs, collection, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 // Define a type for the user profile data from Firestore
@@ -75,7 +75,7 @@ export default function ProfilePage() {
   });
   const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
-  const [studentIdentifierInput, setStudentIdentifierInput] = useState("");
+  const [studentEmailInput, setStudentEmailInput] = useState(""); // Changed from studentIdentifierInput
   const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [managedStudents, setManagedStudents] = useState<string[]>([]); 
 
@@ -103,14 +103,13 @@ export default function ProfilePage() {
           } else {
             console.log("No such user profile document!");
             setProfileError("User profile not found. Please complete your profile.");
-            // Attempt to create a basic profile if it doesn't exist, using authUser details
             if (authUser.displayName && authUser.email) {
                 try {
                     const newUserProfile: UserProfileData = {
                         uid: authUser.uid,
                         fullName: authUser.displayName,
                         email: authUser.email,
-                        role: UserRole.STUDENT, // Default role
+                        role: UserRole.STUDENT,
                         createdAt: Timestamp.now(),
                         avatarUrl: authUser.photoURL || "",
                         canDrive: false,
@@ -125,7 +124,7 @@ export default function ProfilePage() {
                     await setDoc(doc(db, "users", authUser.uid), newUserProfile);
                     setUserProfile(newUserProfile);
                     setSelectedRoleForView(newUserProfile.role);
-                    setProfileError(null); // Clear previous error
+                    setProfileError(null); 
                     toast({ title: "Profile Initialized", description: "A basic profile has been created for you." });
                 } catch (initError) {
                     console.error("Error initializing user profile:", initError);
@@ -143,7 +142,6 @@ export default function ProfilePage() {
         }
       } else if (!authLoading) {
         setIsLoadingProfile(false);
-        // If not loading and no authUser, consider redirecting or showing login prompt
       }
     }
 
@@ -158,52 +156,78 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
-    const studentIdToAdd = studentIdentifierInput.trim();
-    if (studentIdToAdd === "") {
-      toast({ title: "Input Required", description: "Please enter a student identifier (UID).", variant: "destructive" });
+    const studentEmailToAdd = studentEmailInput.trim().toLowerCase();
+    if (studentEmailToAdd === "") {
+      toast({ title: "Input Required", description: "Please enter the student's email address.", variant: "destructive" });
       return;
     }
-    if (studentIdToAdd === authUser.uid) {
+    if (studentEmailToAdd === authUser.email?.toLowerCase()) {
       toast({ title: "Invalid Action", description: "You cannot add yourself as a managed student.", variant: "destructive" });
       return;
     }
 
     setIsAddingStudent(true);
     try {
-      // Check if student exists (optional, but good practice)
-      const studentDocRef = doc(db, "users", studentIdToAdd);
-      const studentDocSnap = await getDoc(studentDocRef);
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", studentEmailToAdd));
+      const querySnapshot = await getDocs(q);
 
-      if (!studentDocSnap.exists()) {
-        toast({ title: "Student Not Found", description: `No user found with UID: ${studentIdToAdd}. Please ensure the student has an account.`, variant: "destructive" });
+      if (querySnapshot.empty) {
+        toast({ title: "Student Not Found", description: `No user found with email: ${studentEmailToAdd}. Please ensure the student has an account with this email.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
       }
       
-      // Student exists, proceed to update both documents in a batch
+      if (querySnapshot.docs.length > 1) {
+        toast({ title: "Multiple Accounts Found", description: `Multiple accounts found with email: ${studentEmailToAdd}. Please contact support.`, variant: "destructive" });
+        setIsAddingStudent(false);
+        return;
+      }
+
+      const studentDocSnap = querySnapshot.docs[0];
+      const studentIdToAdd = studentDocSnap.id; // This is the student's UID
+      const studentData = studentDocSnap.data() as UserProfileData;
+
+      if (studentData.role === UserRole.PARENT || studentData.role === UserRole.ADMIN) {
+        toast({ title: "Invalid Role", description: `User with email ${studentEmailToAdd} is not a student.`, variant: "destructive" });
+        setIsAddingStudent(false);
+        return;
+      }
+
+      if (managedStudents.includes(studentIdToAdd)) {
+        toast({ title: "Already Managed", description: `${studentData.fullName || 'Student'} (${studentEmailToAdd}) is already in your managed list.` });
+        setStudentEmailInput("");
+        setIsAddingStudent(false);
+        return;
+      }
+      
       const batch = writeBatch(db);
 
-      // 1. Update parent's document
       const parentDocRef = doc(db, "users", authUser.uid);
       batch.update(parentDocRef, {
         managedStudentIds: arrayUnion(studentIdToAdd)
       });
 
-      // 2. Update student's document
+      const studentDocRef = doc(db, "users", studentIdToAdd);
       batch.update(studentDocRef, {
         associatedParentIds: arrayUnion(authUser.uid)
       });
 
       await batch.commit();
 
-      // Optimistically update local state
       setManagedStudents(prev => [...new Set([...prev, studentIdToAdd])]); 
-      setStudentIdentifierInput("");
-      toast({ title: "Student Associated", description: `Student ${studentIdToAdd} is now managed and linked.` });
+      setStudentEmailInput("");
+      toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now managed and linked.` });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error associating student:", error);
-      toast({ title: "Association Failed", description: "Could not associate student. Check permissions or student ID and try again.", variant: "destructive" });
+      let errorMessage = "Could not associate student. Please try again.";
+      if (error.message?.includes("indexes")) {
+          errorMessage = "An index is required for this operation. Please check the browser console for a link to create it in Firebase."
+      } else if (error.message?.includes("permission-denied")) {
+          errorMessage = "Permission denied. Please check Firestore security rules."
+      }
+      toast({ title: "Association Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsAddingStudent(false);
     }
@@ -223,11 +247,6 @@ export default function ProfilePage() {
       toast({ title: "Invalid Action", description: "You cannot add yourself as an associated parent to your own account.", variant: "destructive" });
       return;
     }
-
-    // This would be a more complex operation if done from student's profile:
-    // Student requests parent, parent accepts. Or parent adds student, student gets notification.
-    // For now, let's assume a simplified direct add for demonstration if rules allow student to update their own associatedParentIds.
-    // This mock will just update local state. A real implementation needs Firestore updates and proper security rules.
     setAssociatedParents(prev => [...new Set([...prev, parentIdToAdd])]);
     setParentIdentifierInput("");
     toast({ title: "Parent Association (Mock)", description: `Mock association with ${parentIdToAdd}. Real implementation needs Firestore logic and rules.`});
@@ -258,8 +277,6 @@ export default function ProfilePage() {
   }
   
   if (!authUser || !userProfile) {
-    // This case is now less likely due to the profile initialization logic,
-    // but kept as a safeguard or if initialization fails critically.
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
             <p className="text-muted-foreground">Please log in to view your profile or profile initialization failed.</p>
@@ -402,14 +419,15 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">Manage My Students</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link students you are responsible for by entering their User ID (UID). This will allow you to manage their ryd approvals if they also link you as a parent.</p>
+                  <p className="text-xs text-muted-foreground">Link students you are responsible for by entering their email address. This will allow you to manage their ryd approvals if they also link you as a parent.</p>
                   <div className="flex flex-col gap-2">
-                      <Label htmlFor="studentIdentifier" className="sr-only">Student User ID</Label>
+                      <Label htmlFor="studentEmailInput" className="sr-only">Student's Email Address</Label>
                       <Input
-                      id="studentIdentifier"
-                      placeholder="Enter Student's User ID (UID)"
-                      value={studentIdentifierInput}
-                      onChange={(e) => setStudentIdentifierInput(e.target.value)}
+                      id="studentEmailInput"
+                      type="email"
+                      placeholder="Enter Student's Email Address"
+                      value={studentEmailInput}
+                      onChange={(e) => setStudentEmailInput(e.target.value)}
                       className="mt-1"
                       />
                       <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start" disabled={isAddingStudent}>
@@ -422,7 +440,8 @@ export default function ProfilePage() {
                       <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Managed Students (User IDs):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
                           {managedStudents.map((studentId, index) => (
-                          <li key={index} className="text-sm">{studentId}</li>
+                          // In a real app, you'd fetch student details (like name) using these IDs
+                          <li key={index} className="text-sm">{studentId}</li> 
                           ))}
                       </ul>
                       </div>
