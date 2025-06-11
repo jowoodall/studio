@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Ensure Label is imported
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
@@ -29,14 +29,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"; // <<<<<<<<<<<< ADDED THIS IMPORT BLOCK
+} from "@/components/ui/form";
 
 // Define a type for the user profile data from Firestore, matching profile/page.tsx
 interface UserProfileData {
   uid: string;
   fullName: string;
-  email: string; // Email is usually not editable directly by user for security
-  role: UserRole; // Role might also be non-editable by user
+  email: string; 
+  role: UserRole; 
   avatarUrl?: string;
   dataAiHint?: string;
   bio?: string;
@@ -65,7 +65,7 @@ const profileEditFormSchema = z.object({
   avatarUrl: z.string().url("Please enter a valid URL for the avatar.").or(z.literal("")).optional(),
   dataAiHint: z.string().optional(),
   bio: z.string().max(500, "Bio cannot exceed 500 characters.").optional(),
-  phone: z.string().optional(), // Add more specific validation if needed (e.g., regex for phone format)
+  phone: z.string().optional(), 
   
   prefNotifications: z.string().optional(),
   prefPickupRadius: z.string().optional(),
@@ -145,7 +145,7 @@ export default function EditProfilePage() {
             });
           } else {
             toast({ title: "Error", description: "User profile not found.", variant: "destructive" });
-            router.push("/profile"); // Redirect if profile doesn't exist
+            router.push("/profile"); 
           }
         } catch (error) {
           console.error("Error fetching user profile for edit:", error);
@@ -154,7 +154,7 @@ export default function EditProfilePage() {
           setIsLoadingProfile(false);
         }
       } else if (!authLoading) {
-        router.push("/login"); // Redirect if not authenticated
+        router.push("/login"); 
       }
     }
     if (!authLoading) {
@@ -170,7 +170,8 @@ export default function EditProfilePage() {
     setIsSubmitting(true);
     try {
       const userDocRef = doc(db, "users", authUser.uid);
-      const updatedData: Partial<UserProfileData> = {
+      // Note: Role is intentionally NOT included in updatedData
+      const updatedData: Partial<Omit<UserProfileData, 'role' | 'email' | 'uid' | 'createdAt'>> = {
         fullName: data.fullName,
         avatarUrl: data.avatarUrl,
         dataAiHint: data.dataAiHint,
@@ -192,7 +193,7 @@ export default function EditProfilePage() {
           drivingExperience: data.driverExperience,
           primaryVehicle: data.driverVehicle,
           passengerCapacity: data.driverCapacity,
-        } : {}, // Clear driver details if not driving
+        } : {}, 
       };
 
       await updateDoc(userDocRef, updatedData);
@@ -216,7 +217,6 @@ export default function EditProfilePage() {
   }
 
   if (!userProfile) {
-     // This case should be handled by the redirect in useEffect, but as a fallback:
     return (
         <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
             <p className="text-muted-foreground">Could not load profile data.</p>
@@ -240,11 +240,24 @@ export default function EditProfilePage() {
       <Card className="w-full max-w-2xl mx-auto shadow-xl">
         <CardHeader>
           <CardTitle className="font-headline text-xl">Your Information</CardTitle>
-          <CardDescription>Make changes to your profile below. Email and Role are not editable here.</CardDescription>
+          <CardDescription>Make changes to your profile below. Email and Role are not editable.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormItem>
+                  <FormLabel htmlFor="email-display">Email Address</FormLabel>
+                  <Input id="email-display" value={userProfile.email} readOnly className="bg-muted/50" />
+                  <FormDescription className="text-xs">Email cannot be changed.</FormDescription>
+                </FormItem>
+                <FormItem>
+                  <FormLabel htmlFor="role-display">Your Role</FormLabel>
+                  <Input id="role-display" value={userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)} readOnly className="bg-muted/50 capitalize" />
+                  <FormDescription className="text-xs">Role is set at signup and cannot be changed.</FormDescription>
+                </FormItem>
+              </div>
+
               <FormField
                 control={form.control}
                 name="fullName"
@@ -431,4 +444,5 @@ export default function EditProfilePage() {
     </>
   );
 }
-    
+
+
