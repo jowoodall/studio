@@ -75,5 +75,15 @@ export interface EventData {
   createdBy: string; // User UID of the event creator
   createdAt: Timestamp; // Firestore server timestamp
   associatedGroupIds: string[]; // Array of Group UIDs
-  // importSource?: string; // Optional: if we implement calendar import later
+}
+
+export type EventDriverStatus = "driving" | "not_driving" | "pending_response" | "full_car";
+
+export interface EventDriverStateData {
+  id: string; // Composite key: `${eventId}_${driverId}`
+  eventId: string;
+  driverId: string;
+  status: EventDriverStatus;
+  seatsAvailable?: number; // Relevant if status is 'driving'
+  updatedAt: Timestamp;
 }

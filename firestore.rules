@@ -126,37 +126,65 @@ service cloud.firestore {
     // Events (Collection: "events")
     // ======================================================================
     match /events/{eventId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated(); // Covers get and list
 
       allow create: if isAuthenticated() &&
                        request.resource.data.createdBy == request.auth.uid &&
                        request.resource.data.createdAt == request.time &&
-                       request.resource.data.name is string && request.resource.data.name.size() >= 3 &&
-                       request.resource.data.location is string && request.resource.data.location.size() >= 5 &&
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 100 &&
                        request.resource.data.eventTimestamp is timestamp &&
-                       request.resource.data.eventType is string && request.resource.data.eventType.size() >= 1 &&
-                       (request.resource.data.description == null || request.resource.data.description is string) &&
-                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds is list) &&
-                       // Ensure all elements in associatedGroupIds are strings if the list exists
-                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds.size() == 0 || request.resource.data.associatedGroupIds[0] is string) &&
-                       // Add other necessary field validations
-                       request.resource.data.keys().hasAll(['name', 'eventTimestamp', 'location', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds', 'description']);
-                       // Allow 'description' to be optional, other fields mandatory for this example. Adjust keys().size() accordingly.
+                       request.resource.data.location is string && request.resource.data.location.size() >= 5 && request.resource.data.location.size() <= 200 &&
+                       (request.resource.data.description == null || (request.resource.data.description is string && request.resource.data.description.size() <= 500)) &&
+                       request.resource.data.eventType is string &&
+                       request.resource.data.associatedGroupIds is list &&
+                       request.resource.data.keys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds']);
 
-      allow update: if isAuthenticated() && 
-                       resource.data.createdBy == request.auth.uid && // Only creator can update
-                       request.resource.data.createdBy == resource.data.createdBy &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       request.resource.data.name is string && request.resource.data.name.size() >= 3 &&
-                       request.resource.data.location is string && request.resource.data.location.size() >= 5 &&
+      allow update: if isAuthenticated() &&
+                       resource.data.createdBy == request.auth.uid && 
+                       request.resource.data.createdBy == resource.data.createdBy && 
+                       request.resource.data.createdAt == resource.data.createdAt && 
+                       request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 100 &&
                        request.resource.data.eventTimestamp is timestamp &&
-                       request.resource.data.eventType is string && request.resource.data.eventType.size() >= 1 &&
-                       (request.resource.data.description == null || request.resource.data.description is string) &&
-                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds is list) &&
-                       (request.resource.data.associatedGroupIds == null || request.resource.data.associatedGroupIds.size() == 0 || request.resource.data.associatedGroupIds[0] is string);
-                       // Allow updates to associatedGroupIds and other fields by the creator.
+                       request.resource.data.location is string && request.resource.data.location.size() >= 5 && request.resource.data.location.size() <= 200 &&
+                       (request.resource.data.description == null || (request.resource.data.description is string && request.resource.data.description.size() <= 500)) &&
+                       request.resource.data.eventType is string &&
+                       request.resource.data.associatedGroupIds is list &&
+                       request.resource.data.keys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'createdBy', 'createdAt', 'associatedGroupIds']);
 
-      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid; // Only creator can delete
+      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid; 
+    }
+
+    // ======================================================================
+    // Event Driver States (Collection: "eventDriverStates")
+    // Document ID format: {eventId}_{driverId}
+    // ======================================================================
+    match /eventDriverStates/{stateId} {
+      // Allow any authenticated user to read states (e.g., for displaying on event page)
+      allow read: if isAuthenticated();
+
+      // Allow a driver to create their own state for an event
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.driverId &&
+                       request.resource.data.eventId == stateId.split("_")[0] && // Ensure eventId in doc matches path
+                       request.resource.data.driverId == stateId.split("_")[1] && // Ensure driverId in doc matches path
+                       request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
+                       (request.resource.data.status == 'driving' || request.resource.data.status == 'full_car' ? request.resource.data.seatsAvailable is number : request.resource.data.seatsAvailable == null) &&
+                       request.resource.data.updatedAt == request.time &&
+                       request.resource.data.keys().hasOnly(['eventId', 'driverId', 'status', 'seatsAvailable', 'updatedAt']);
+      
+      // Allow a driver to update their own state for an event
+      allow update: if isAuthenticated() &&
+                       request.auth.uid == resource.data.driverId && // Only the driver can update their status
+                       request.resource.data.eventId == resource.data.eventId && // EventId cannot change
+                       request.resource.data.driverId == resource.data.driverId && // DriverId cannot change
+                       request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
+                       (request.resource.data.status == 'driving' || request.resource.data.status == 'full_car' ? request.resource.data.seatsAvailable is number : request.resource.data.seatsAvailable == null) &&
+                       request.resource.data.updatedAt == request.time &&
+                       request.resource.data.keys().hasOnly(['eventId', 'driverId', 'status', 'seatsAvailable', 'updatedAt']);
+
+      // Allow a driver to delete their own state (e.g., retract response)
+      allow delete: if isAuthenticated() &&
+                       request.auth.uid == resource.data.driverId;
     }
   }
 }

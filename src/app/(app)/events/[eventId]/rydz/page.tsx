@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,10 +17,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData } from "@/types";
+import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where } from "firebase/firestore";
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
@@ -40,12 +41,6 @@ interface GroupMember {
   rydzCompleted?: number;
 }
 
-type DriverEventStatus = "not driving" | "has room" | "full car" | "not responded";
-interface EventDriverStatusInfo { status: DriverEventStatus; seatsAvailable?: number; }
-const mockEventDriverStatuses: { [eventId: string]: { [driverId: string]: EventDriverStatusInfo } } = {
-  "EVENT_ID_PLACEHOLDER_1": { "user1": { status: "has room", seatsAvailable: 2 }, "user2": { status: "full car" } },
-};
-
 interface ResolvedPageParams { eventId: string; }
 
 export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
@@ -58,7 +53,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
 
-  const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : []; // Keep mock rydz for now
+  const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : []; 
 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
@@ -69,6 +64,12 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
 
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
   const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
+
+  const [eventDriverStates, setEventDriverStates] = useState<EventDriverStateData[]>([]);
+  const [isLoadingDriverStates, setIsLoadingDriverStates] = useState(true);
+  const [isUpdatingDriverState, setIsUpdatingDriverState] = useState(false);
+  const [editingSeatsForDriver, setEditingSeatsForDriver] = useState<string | null>(null);
+  const [selectedSeats, setSelectedSeats] = useState<number | undefined>(undefined);
 
 
   const fetchEventDetails = useCallback(async () => {
@@ -121,10 +122,30 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     }
   }, [toast]);
 
+  const fetchEventDriverStates = useCallback(async () => {
+    if (!eventId) return;
+    setIsLoadingDriverStates(true);
+    try {
+      const statesQuery = query(collection(db, "eventDriverStates"), where("eventId", "==", eventId));
+      const querySnapshot = await getDocs(statesQuery);
+      const fetchedStates: EventDriverStateData[] = [];
+      querySnapshot.forEach((docSnap) => {
+        fetchedStates.push({ id: docSnap.id, ...docSnap.data() } as EventDriverStateData);
+      });
+      setEventDriverStates(fetchedStates);
+    } catch (error) {
+      console.error("Error fetching event driver states:", error);
+      toast({ title: "Error", description: "Could not load driver statuses.", variant: "destructive" });
+    } finally {
+      setIsLoadingDriverStates(false);
+    }
+  }, [eventId, toast]);
+
   useEffect(() => {
     fetchEventDetails();
     fetchAllGroups();
-  }, [fetchEventDetails, fetchAllGroups]);
+    fetchEventDriverStates();
+  }, [fetchEventDetails, fetchAllGroups, fetchEventDriverStates]);
 
   useEffect(() => {
     const fetchPotentialDriversFromGroups = async () => {
@@ -156,10 +177,8 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                             avatarUrl: userData.avatarUrl || `https://placehold.co/100x100.png?text=${(userData.fullName || "U").split(" ").map(n=>n[0]).join("")}`,
                                             dataAiHint: userData.dataAiHint || "driver photo",
                                             canDrive: true,
-                                            // Rating and rydzCompleted would ideally come from aggregated data or specific driver stats
-                                            // For now, we leave them optional or use placeholders if necessary
-                                            rating: undefined, // e.g., userData.driverProfile?.averageRating
-                                            rydzCompleted: undefined, // e.g., userData.driverProfile?.totalRydz
+                                            rating: undefined, 
+                                            rydzCompleted: undefined, 
                                         });
                                         driverIdsProcessed.add(memberId);
                                     }
@@ -191,7 +210,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       toast({ title: "Error", description: "Event details not loaded or user not authenticated.", variant: "destructive" });
       return;
     }
-    // For now, allow any authenticated user to manage groups for demo. 
     if (eventDetails.createdBy !== authUser.uid) { 
         toast({ title: "Permission Denied", description: "Only the event creator can manage associated groups.", variant: "destructive"});
         return;
@@ -223,18 +241,63 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
 
-  const getDriverEventStatus = (driverId: string): EventDriverStatusInfo => {
-    return eventId ? mockEventDriverStatuses[eventId]?.[driverId] || { status: "not responded" } : { status: "not responded" };
+  const getDriverEventStateInfo = (driverId: string): { status: EventDriverStatus, seatsAvailable?: number } => {
+    const driverState = eventDriverStates.find(s => s.driverId === driverId);
+    if (driverState) {
+      return { status: driverState.status, seatsAvailable: driverState.seatsAvailable };
+    }
+    return { status: "pending_response" };
   };
 
-  const statusConfig: Record<DriverEventStatus, { icon: React.ElementType, color: string, text: string }> = {
-    "has room": { icon: CheckCircle2, color: "text-green-600 bg-green-100 border-green-200", text: "Has Room" },
-    "full car": { icon: UserMinus, color: "text-orange-600 bg-orange-100 border-orange-200", text: "Car Full" },
-    "not driving": { icon: XCircle, color: "text-red-600 bg-red-100 border-red-200", text: "Not Driving" },
-    "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
+  const handleDriverStatusUpdate = async (newStatus: EventDriverStatus, seats?: number) => {
+    if (!authUser || !eventId) {
+      toast({ title: "Error", description: "User not authenticated or event ID missing.", variant: "destructive" });
+      return;
+    }
+    setIsUpdatingDriverState(true);
+    const driverId = authUser.uid;
+    const stateDocId = `${eventId}_${driverId}`;
+    const stateDocRef = doc(db, "eventDriverStates", stateDocId);
+
+    const newStateData: Omit<EventDriverStateData, 'id' | 'updatedAt'> & {updatedAt: any} = {
+      eventId,
+      driverId,
+      status: newStatus,
+      seatsAvailable: newStatus === "driving" || newStatus === "full_car" ? seats : undefined,
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(stateDocRef, newStateData, { merge: true }); // Use setDoc with merge to create or update
+      setEventDriverStates(prevStates => {
+        const existingStateIndex = prevStates.findIndex(s => s.id === stateDocId);
+        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() }; // Simulate timestamp for UI update
+        if (existingStateIndex > -1) {
+          const newStates = [...prevStates];
+          newStates[existingStateIndex] = updatedStateEntry;
+          return newStates;
+        }
+        return [...prevStates, updatedStateEntry];
+      });
+      toast({ title: "Status Updated", description: "Your driving status for this event has been updated." });
+      setEditingSeatsForDriver(null); // Close seat editor if open
+    } catch (error) {
+      console.error("Error updating driver status:", error);
+      toast({ title: "Update Failed", description: "Could not update your driving status.", variant: "destructive" });
+    } finally {
+      setIsUpdatingDriverState(false);
+    }
   };
 
-  if (authLoading || isLoadingEvent || isLoadingAllGroups) {
+
+  const statusConfig: Record<EventDriverStatus, { icon: React.ElementType, color: string, text: string }> = {
+    "driving": { icon: CheckCircle2, color: "text-green-600 bg-green-100 border-green-200", text: "Driving" },
+    "full_car": { icon: UserMinus, color: "text-orange-600 bg-orange-100 border-orange-200", text: "Car Full" },
+    "not_driving": { icon: XCircle, color: "text-red-600 bg-red-100 border-red-200", text: "Not Driving" },
+    "pending_response": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
+  };
+
+  if (authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingDriverStates) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -334,9 +397,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                       {filteredGroupsForPopover.map((group) => (
                         <CommandItem
                           key={group.id}
-                          value={group.id} // Use group ID
+                          value={group.id} 
                           onSelect={() => {
-                            handleGroupSelection(group.id); // Pass group ID
+                            handleGroupSelection(group.id); 
                           }}
                         >
                           <Check
@@ -365,30 +428,32 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       <Card className="mb-6 shadow-lg">
         <CardHeader>
             <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
-            <CardDescription>Drivers from the groups above and their status for this event. (Driver status is mock data for now)</CardDescription>
+            <CardDescription>Drivers from the groups above and their status for this event.</CardDescription>
         </CardHeader>
         <CardContent>
-            {isLoadingPotentialDrivers ? (
+            {isLoadingPotentialDrivers || isLoadingDriverStates ? (
                 <div className="flex items-center justify-center py-6">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <p className="ml-2 text-muted-foreground">Loading potential drivers...</p>
+                    <p className="ml-2 text-muted-foreground">Loading potential drivers & statuses...</p>
                 </div>
             ) : potentialDrivers.length > 0 ? (
-                <ul className="space-y-3">
+                <ul className="space-y-4">
                     {potentialDrivers.map(driver => {
-                        const driverStatusInfo = getDriverEventStatus(driver.id); // This uses mock data
-                        const currentStatusConfig = statusConfig[driverStatusInfo.status];
+                        const driverStateInfo = getDriverEventStateInfo(driver.id);
+                        const currentStatusConfig = statusConfig[driverStateInfo.status];
                         const StatusIcon = currentStatusConfig.icon;
+                        const isCurrentUserDriver = authUser?.uid === driver.id;
+
                         return (
-                            <li key={driver.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3 sm:gap-2">
+                            <li key={driver.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3">
                                 <div className="flex items-center gap-3 flex-grow">
                                     <Avatar className="h-10 w-10">
                                         <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
                                         <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                                     </Avatar>
                                     <div className="flex-1">
-                                      <span className="font-medium">{driver.name}</span>
-                                      {driver.rating !== undefined && ( // Show rating only if available
+                                      <span className="font-medium">{driver.name} {isCurrentUserDriver && "(You)"}</span>
+                                      {driver.rating !== undefined && ( 
                                         <div className="flex items-center text-xs text-muted-foreground mt-0.5">
                                           <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
                                           {driver.rating.toFixed(1)}
@@ -399,21 +464,84 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                       )}
                                     </div>
                                 </div>
-                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
-                                    <Badge variant="outline" className={cn("text-xs py-1 px-2.5 border capitalize", currentStatusConfig.color)}>
-                                        <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
-                                        {currentStatusConfig.text}
-                                        {driverStatusInfo.status === "has room" && driverStatusInfo.seatsAvailable !== undefined && (
-                                            <span className="ml-1.5">({driverStatusInfo.seatsAvailable} open)</span>
-                                        )}
-                                    </Badge>
-                                    <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
-                                        <Link href={`/profile/view/${driver.id}`}> 
-                                            <span className="flex items-center">
-                                                <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
-                                            </span>
-                                        </Link>
-                                    </Button>
+                                
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
+                                    {isCurrentUserDriver && (
+                                      <div className="flex flex-col sm:flex-row gap-2 items-stretch w-full sm:w-auto">
+                                        <Button 
+                                          variant={driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "default" : "outline"} 
+                                          size="sm" 
+                                          onClick={() => {
+                                            setEditingSeatsForDriver(driver.id);
+                                            setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 1);
+                                            // If currently not driving, set to driving with default seats
+                                            if (driverStateInfo.status === 'not_driving' || driverStateInfo.status === 'pending_response') {
+                                                handleDriverStatusUpdate("driving", 1);
+                                            }
+                                          }}
+                                          disabled={isUpdatingDriverState}
+                                          className="flex-grow sm:flex-grow-0"
+                                        >
+                                          {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? <CheckCircle2 className="mr-1.5 h-4 w-4" /> : <Car className="mr-1.5 h-4 w-4" />}
+                                          {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "Driving" : "I Can Drive"}
+                                        </Button>
+                                        <Button 
+                                          variant={driverStateInfo.status === 'not_driving' ? "destructive" : "outline"} 
+                                          size="sm" 
+                                          onClick={() => handleDriverStatusUpdate("not_driving")}
+                                          disabled={isUpdatingDriverState}
+                                          className="flex-grow sm:flex-grow-0"
+                                        >
+                                          {driverStateInfo.status === 'not_driving' ? <XCircle className="mr-1.5 h-4 w-4" /> : null}
+                                          Cannot Drive
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    {(isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver === driver.id) ? (
+                                      <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                                        <Select
+                                          value={String(selectedSeats)}
+                                          onValueChange={(value) => setSelectedSeats(Number(value))}
+                                          disabled={isUpdatingDriverState}
+                                        >
+                                          <SelectTrigger className="w-[80px] h-9 text-xs">
+                                            <SelectValue placeholder="Seats" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {[0, 1, 2, 3, 4, 5].map(s => (
+                                              <SelectItem key={s} value={String(s)}>{s} seat{s !== 1 ? 's' : ''}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <Button size="icon_sm" onClick={() => handleDriverStatusUpdate(selectedSeats === 0 ? 'full_car' : 'driving', selectedSeats)} disabled={isUpdatingDriverState} className="h-9 w-9">
+                                          {isUpdatingDriverState ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4"/>}
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Badge variant="outline" className={cn("text-xs py-1 px-2.5 border capitalize whitespace-nowrap", currentStatusConfig.color)}>
+                                          <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
+                                          {currentStatusConfig.text}
+                                          {(driverStateInfo.status === "driving" || driverStateInfo.status === "full_car") && driverStateInfo.seatsAvailable !== undefined && (
+                                              <span className="ml-1.5">({driverStateInfo.seatsAvailable} open)</span>
+                                          )}
+                                           {isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && (
+                                            <Button variant="ghost" size="icon_sm" className="ml-1 h-5 w-5 p-0" onClick={() => { setEditingSeatsForDriver(driver.id); setSelectedSeats(driverStateInfo.seatsAvailable); }}>
+                                                <Edit3 className="h-3 w-3" />
+                                            </Button>
+                                          )}
+                                      </Badge>
+                                    )}
+                                    
+                                    {!isCurrentUserDriver && (
+                                        <Button variant="outline" size="sm" asChild className="w-full sm:w-auto mt-2 sm:mt-0">
+                                            <Link href={`/profile/view/${driver.id}`}> 
+                                                <span className="flex items-center">
+                                                    <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
+                                                </span>
+                                            </Link>
+                                        </Button>
+                                    )}
                                 </div>
                             </li>
                         );
@@ -429,7 +557,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         </CardContent>
       </Card>
 
-      {/* Mock Rydz List - To be replaced with Firestore data later */}
       {rydzForThisEvent.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {rydzForThisEvent.map((ryd) => (
