@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parse } from "date-fns";
-import { CalendarIcon, PlusCircle, Loader2, LinkIcon, Users, Check, X } from "lucide-react";
+import { CalendarIcon, PlusCircle, Loader2, Users, Check, X } from "lucide-react"; // Removed LinkIcon
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
@@ -28,19 +28,18 @@ import { useRouter } from "next/navigation";
 import type { EventData } from "@/types";
 
 const eventFormSchema = z.object({
-  importSource: z.string().optional(),
+  // importSource removed
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
-  selectedGroups: z.array(z.string()).optional(), // Stores group IDs
+  selectedGroups: z.array(z.string()).optional(), 
 });
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
-// Mock data for available groups to associate with an event
 const mockAvailableGroups = [
   { id: "group1", name: "Morning School Run" },
   { id: "group2", name: "Soccer Practice Crew" },
@@ -61,7 +60,7 @@ export default function CreateEventPage() {
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
-      importSource: "manual",
+      // importSource removed from defaultValues
       eventTime: "10:00",
       eventType: "",
       selectedGroups: [],
@@ -80,10 +79,9 @@ export default function CreateEventPage() {
 
     setIsSubmitting(true);
     try {
-      // Combine date and time into a single Date object, then convert to Firestore Timestamp
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       const combinedDateTime = new Date(data.eventDate);
-      combinedDateTime.setHours(hours, minutes, 0, 0); // Set hours and minutes, seconds and ms to 0
+      combinedDateTime.setHours(hours, minutes, 0, 0);
       const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
 
       const newEventData: Omit<EventData, 'id' | 'createdAt'> & { createdAt: any } = {
@@ -95,7 +93,6 @@ export default function CreateEventPage() {
         createdBy: authUser.uid,
         createdAt: serverTimestamp(),
         associatedGroupIds: data.selectedGroups || [],
-        // importSource: data.importSource, // Can add this if needed
       };
 
       const docRef = await addDoc(collection(db, "events"), newEventData);
@@ -104,7 +101,7 @@ export default function CreateEventPage() {
         title: "Event Created!",
         description: `The event "${data.eventName}" has been successfully created.`,
       });
-      router.push(`/events/${docRef.id}/rydz`); // Redirect to the event's detail/rydz page
+      router.push(`/events/${docRef.id}/rydz`);
       
     } catch (error) {
       console.error("Error creating event:", error);
@@ -118,17 +115,7 @@ export default function CreateEventPage() {
     }
   }
 
-  const selectedImportSource = form.watch("importSource");
-
-  React.useEffect(() => {
-    if (selectedImportSource && selectedImportSource !== "manual") {
-        toast({
-            title: `Importing from ${selectedImportSource}`,
-            description: "If this were fully integrated, event fields might be auto-populated now.",
-            duration: 3000,
-        });
-    }
-  }, [selectedImportSource, toast, form]);
+  // Removed selectedImportSource and its useEffect
 
   const handleGroupSelection = (groupId: string) => {
     const currentSelectedGroups = form.getValues("selectedGroups") || [];
@@ -159,36 +146,7 @@ export default function CreateEventPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="importSource"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center">
-                      <LinkIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-                      Import from Calendar/App (Optional)
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a source to import from" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="manual">Manual Entry</SelectItem>
-                        <SelectItem value="google">Google Calendar</SelectItem>
-                        <SelectItem value="outlook">Outlook Calendar</SelectItem>
-                        <SelectItem value="teamsnap">TeamSnap</SelectItem>
-                        <SelectItem value="band">BAND App</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Selecting a source would (ideally) pre-fill event details. This is a conceptual feature for now.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Removed Import from Calendar/App FormField */}
 
               <FormField
                 control={form.control}
@@ -354,9 +312,9 @@ export default function CreateEventPage() {
                                 {filteredGroups.map((group) => (
                                   <CommandItem
                                     key={group.id}
-                                    value={group.id} // Use group ID as value
+                                    value={group.id} 
                                     onSelect={() => {
-                                      handleGroupSelection(group.id); // Pass group ID
+                                      handleGroupSelection(group.id); 
                                     }}
                                   >
                                     <Check
