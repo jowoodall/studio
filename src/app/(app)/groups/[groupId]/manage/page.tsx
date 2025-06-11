@@ -152,9 +152,11 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
       });
 
       const userDocRef = doc(db, "users", memberIdToRemove);
-      batch.update(userDocRef, {
+      // Explicitly define the payload to only touch 'joinedGroupIds'
+      const userUpdatePayload = {
         joinedGroupIds: arrayRemove(groupId)
-      });
+      };
+      batch.update(userDocRef, userUpdatePayload);
 
       await batch.commit();
 
@@ -172,7 +174,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
       console.error("Error removing member:", e);
       let description = "Could not remove member. Please check console for details.";
        if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = "Permission denied by Firestore rules. Ensure rules allow admins to remove members and update their profiles.";
+            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members and update their profiles (specifically joinedGroupIds).`;
       } else if (e.message) {
             description = e.message;
       }
@@ -219,15 +221,14 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         const groupDocRef = doc(db, "groups", groupId);
         batch.update(groupDocRef, { memberIds: arrayUnion(newMemberId) });
 
-        // IMPORTANT: Updating another user's document (userDocRef below)
-        // typically requires specific Firestore security rules.
-        // If this operation fails with "permission-denied", you need to adjust your
-        // Firestore rules to allow an admin of a group to add that groupId to
-        // the `joinedGroupIds` of the user being added.
-        // Alternatively, remove this line and handle the new member's `joinedGroupIds` update
-        // through a different mechanism (e.g., the user accepts an invitation).
         const userDocRef = doc(db, "users", newMemberId);
-        batch.update(userDocRef, { joinedGroupIds: arrayUnion(groupId) }); 
+        // Explicitly define the payload to only touch 'joinedGroupIds'
+        // This is crucial for the Firestore security rule: resource.data.diff(request.resource.data).affectedKeys().hasOnly(['joinedGroupIds'])
+        const userUpdatePayload = {
+            joinedGroupIds: arrayUnion(groupId)
+        };
+        console.log("Attempting to update user's joinedGroupIds:", JSON.stringify(userUpdatePayload, null, 2), "for user:", newMemberId);
+        batch.update(userDocRef, userUpdatePayload); 
         
         await batch.commit();
 
@@ -249,7 +250,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         console.error("Error adding member:", e);
         let description = "Could not add member. Please check console for details.";
         if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = "Permission denied by Firestore rules. Ensure rules allow admins to add members to the group and to update the new member's 'joinedGroupIds'. This might require specific cross-document write permissions in your rules.";
+            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to add members to the group AND to update the new member's 'joinedGroupIds'. Check that only 'joinedGroupIds' is being modified on the user's document.`;
         } else if (e.message) {
             description = e.message;
         }
@@ -403,5 +404,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
+
+    
 
     
