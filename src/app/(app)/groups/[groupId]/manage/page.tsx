@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft } from "lucide-react"; // Added ArrowLeft
+import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
@@ -155,7 +155,8 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         adminIds: arrayRemove(memberIdToRemove) 
       });
 
-      // User's joinedGroupIds is NOT updated here by admin, user must accept/leave themselves.
+      // User's joinedGroupIds is NOT updated here by admin, user must accept/leave themselves
+      // OR the system could clean up via a cloud function if member is removed entirely.
 
       await batch.commit();
 
@@ -200,7 +201,12 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-            toast({ title: "User Not Found", description: `No user found with email: ${emailToInvite}.`, variant: "destructive" });
+            toast({ 
+                title: "User Not Found", 
+                description: `No user found with email: ${emailToInvite}. (Note: Future versions could allow sending an invitation to join MyRydz if email notifications are enabled.)`, 
+                variant: "destructive",
+                duration: 7000,
+            });
             setIsAddingMember(false);
             return;
         }
@@ -219,8 +225,8 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         const groupDocRef = doc(db, "groups", groupId);
         await updateDoc(groupDocRef, { memberIds: arrayUnion(newMemberId) });
         
-        // Determine if the new member has already accepted an invitation to this group
-        // This is for display purposes when adding to the local 'members' state
+        // No update to newMemberData.joinedGroupIds by the admin here. User must accept.
+        
         const hasAlreadyAccepted = (newMemberData.joinedGroupIds || []).includes(groupId);
 
         const newDisplayMember: DisplayGroupMember = {
@@ -228,7 +234,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
             name: newMemberData.fullName,
             avatarUrl: newMemberData.avatarUrl,
             dataAiHint: newMemberData.dataAiHint,
-            roleInGroup: "member",
+            roleInGroup: "member", 
             canDrive: newMemberData.canDrive || false,
             email: newMemberData.email,
             hasAcceptedInvitation: hasAlreadyAccepted, 
@@ -236,7 +242,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         setMembers(prev => [...prev, newDisplayMember]);
         setGroup(prev => prev ? ({ ...prev, memberIds: [...prev.memberIds, newMemberId]}) : null);
         
-        toast({ title: "Member Invited", description: `${newMemberData.fullName} has been added to the group's member list. They will need to accept the invitation from the main groups page.`});
+        toast({ title: "Member Invited", description: `${newMemberData.fullName} has been added to the group's member list. They will see a pending invitation.`});
         setNewMemberEmail("");
     } catch (e: any) {
       console.error("Error inviting member:", e);
