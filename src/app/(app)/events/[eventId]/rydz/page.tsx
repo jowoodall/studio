@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs } from "firebase/firestore";
 import type { EventData, GroupData, UserProfileData } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
@@ -28,13 +28,6 @@ import { useAuth } from "@/context/AuthContext";
 const mockEventRydz = [
   { id: "rydM", eventId: "1", passengerName: "Alice Wonderland", pickupTime: "09:30 AM", driverName: "Bob The Builder", status: "Confirmed", image: "https://placehold.co/400x200.png?text=Event+Ryd+1", dataAiHint: "group children car" },
   { id: "rydN", eventId: "1", passengerName: "Charlie Brown", pickupTime: "09:45 AM", driverName: "Diana Prince", status: "Pending Driver", image: "https://placehold.co/400x200.png?text=Event+Ryd+2", dataAiHint: "teenager waiting" },
-];
-
-// Mock data for available groups and members (can be replaced with Firestore fetches later)
-const mockAvailableGroups: GroupData[] = [
-  { id: "group1", name: "Morning School Run", createdBy: "userA", createdAt: Timestamp.now(), memberIds: ["user1", "user2"], adminIds: ["user1"] },
-  { id: "group2", name: "Soccer Practice Crew", createdBy: "userB", createdAt: Timestamp.now(), memberIds: ["user4", "user5"], adminIds: ["user4"] },
-  { id: "group3", name: "Work Commute (Downtown)", createdBy: "userC", createdAt: Timestamp.now(), memberIds: ["user1", "user7"], adminIds: ["userC"] },
 ];
 
 interface GroupMember {
@@ -83,6 +76,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [potentialDrivers, setPotentialDrivers] = useState<GroupMember[]>([]);
   const [isUpdatingGroups, setIsUpdatingGroups] = useState(false);
 
+  const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
+  const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
+
 
   const fetchEventDetails = useCallback(async () => {
     if (!eventId) {
@@ -112,9 +108,32 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     }
   }, [eventId, toast]);
 
+  const fetchAllGroups = useCallback(async () => {
+    setIsLoadingAllGroups(true);
+    try {
+      const groupsCollectionQuery = query(collection(db, "groups"));
+      const querySnapshot = await getDocs(groupsCollectionQuery);
+      const fetchedGroups: GroupData[] = [];
+      querySnapshot.forEach((docSnap) => {
+        fetchedGroups.push({ id: docSnap.id, ...docSnap.data() } as GroupData);
+      });
+      setAllFetchedGroups(fetchedGroups);
+    } catch (error) {
+      console.error("Error fetching all groups:", error);
+      toast({
+        title: "Error",
+        description: "Could not fetch list of all groups for selection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingAllGroups(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     fetchEventDetails();
-  }, [fetchEventDetails]);
+    fetchAllGroups();
+  }, [fetchEventDetails, fetchAllGroups]);
 
   useEffect(() => {
     // This effect updates potential drivers based on currently associated groups
@@ -144,7 +163,10 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       return;
     }
     // For now, allow any authenticated user to manage groups for demo. 
-    // Add creator check: if (eventDetails.createdBy !== authUser.uid) { ... }
+    if (eventDetails.createdBy !== authUser.uid) { 
+        toast({ title: "Permission Denied", description: "Only the event creator can manage associated groups.", variant: "destructive"});
+        return;
+    }
 
     setIsUpdatingGroups(true);
     const newSelectedGroups = currentAssociatedGroups.includes(groupIdToToggle)
@@ -168,7 +190,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     }
   };
 
-  const filteredGroupsForPopover = mockAvailableGroups.filter(group =>
+  const filteredGroupsForPopover = allFetchedGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
 
@@ -183,11 +205,11 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     "not responded": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
   };
 
-  if (authLoading || isLoadingEvent) {
+  if (authLoading || isLoadingEvent || isLoadingAllGroups) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground">Loading event details...</p>
+        <p className="text-muted-foreground">Loading event and group data...</p>
       </div>
     );
   }
@@ -234,7 +256,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
           {currentAssociatedGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2 mb-4">
               {currentAssociatedGroups.map(groupId => {
-                const group = mockAvailableGroups.find(g => g.id === groupId); // Using mockAvailableGroups for display
+                const group = allFetchedGroups.find(g => g.id === groupId); 
                 return group ? (
                   <Badge key={groupId} variant="secondary">
                     {group.name}
@@ -248,7 +270,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                         <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                     </button>
                   </Badge>
-                ) : <Badge key={groupId} variant="outline">Unknown Group ({groupId.substring(0,6)}...)</Badge>;
+                ) : <Badge key={groupId} variant="outline">Loading Group... ({groupId.substring(0,6)}...)</Badge>;
               })}
             </div>
           ) : (
@@ -262,10 +284,10 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 role="combobox"
                 aria-expanded={groupPopoverOpen}
                 className="w-full sm:w-auto"
-                disabled={isUpdatingGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
+                disabled={isUpdatingGroups || isLoadingAllGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
               >
                 <PlusCircle className="mr-2 h-4 w-4" />
-                {currentAssociatedGroups.length > 0 ? "Manage Associated Groups" : "Associate Groups"}
+                {isLoadingAllGroups ? "Loading Groups..." : (currentAssociatedGroups.length > 0 ? "Manage Associated Groups" : "Associate Groups")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
@@ -277,8 +299,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                 />
                 <CommandList>
                   <ScrollArea className="h-48">
-                    <CommandEmpty>No groups found.</CommandEmpty>
-                    <CommandGroup>
+                    {isLoadingAllGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                    {!isLoadingAllGroups && filteredGroupsForPopover.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
+                    {!isLoadingAllGroups && <CommandGroup>
                       {filteredGroupsForPopover.map((group) => (
                         <CommandItem
                           key={group.id}
@@ -298,7 +321,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                           {group.name}
                         </CommandItem>
                       ))}
-                    </CommandGroup>
+                    </CommandGroup>}
                   </ScrollArea>
                 </CommandList>
               </Command>
@@ -439,3 +462,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
+
+
+    
