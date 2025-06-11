@@ -41,7 +41,10 @@ export default function GroupsPage() {
     setIsLoadingGroups(true);
     setError(null);
     try {
-      const groupsQuery = query(collection(db, "groups"), orderBy("createdAt", "desc"));
+      // Temporarily removed orderBy("createdAt", "desc") to avoid index error.
+      // User should create the index in Firebase console for sorting.
+      // The original query was: query(collection(db, "groups"), orderBy("createdAt", "desc"));
+      const groupsQuery = query(collection(db, "groups"));
       const querySnapshot = await getDocs(groupsQuery);
       const fetchedGroups: GroupData[] = [];
       querySnapshot.forEach((doc) => {
@@ -60,17 +63,60 @@ export default function GroupsPage() {
         }
       });
 
+      // If the index is created, you can restore sorting here:
+      // newJoined.sort((a, b) => (b.createdAt as Timestamp).toMillis() - (a.createdAt as Timestamp).toMillis());
+      // newPending.sort((a, b) => (b.createdAt as Timestamp).toMillis() - (a.createdAt as Timestamp).toMillis());
+
       setJoinedGroupsList(newJoined);
       setPendingInvitations(newPending);
 
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error fetching groups:", e);
-      setError("Failed to load groups and invitations. Please try again.");
-      toast({
-        title: "Error",
-        description: "Could not fetch groups information.",
-        variant: "destructive",
-      });
+      // Check if the error is due to a missing index
+      if (e.message && e.message.toLowerCase().includes("index")) {
+        setError("Firestore query requires an index. Please check the browser console for a link to create it in your Firebase project. The page will load groups without sorting for now.");
+        toast({
+          title: "Indexing Required",
+          description: "Groups are not sorted. Please create the recommended Firestore index (see console).",
+          variant: "default",
+          duration: 10000,
+        });
+         // Attempt to fetch without sorting as a fallback
+        try {
+            const groupsQueryNoSort = query(collection(db, "groups"));
+            const querySnapshotNoSort = await getDocs(groupsQueryNoSort);
+            const fetchedGroupsNoSort: GroupData[] = [];
+            querySnapshotNoSort.forEach((doc) => {
+                fetchedGroupsNoSort.push({ id: doc.id, ...doc.data() } as GroupData);
+            });
+
+            const currentJoinedGroupIdsNoSort = userProfile?.joinedGroupIds || [];
+            const newJoinedNoSort: GroupData[] = [];
+            const newPendingNoSort: GroupData[] = [];
+
+            fetchedGroupsNoSort.forEach(group => {
+                if (currentJoinedGroupIdsNoSort.includes(group.id)) {
+                newJoinedNoSort.push(group);
+                } else if (group.memberIds.includes(authUser.uid)) {
+                newPendingNoSort.push(group);
+                }
+            });
+            setJoinedGroupsList(newJoinedNoSort);
+            setPendingInvitations(newPendingNoSort);
+            setError(null); // Clear the index error as we've fetched without sorting
+        } catch (fallbackError) {
+             console.error("Error fetching groups without sorting (fallback):", fallbackError);
+             setError("Failed to load groups and invitations. Please try again.");
+        }
+
+      } else {
+        setError("Failed to load groups and invitations. Please try again.");
+        toast({
+          title: "Error",
+          description: "Could not fetch groups information.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoadingGroups(false);
     }
@@ -149,14 +195,20 @@ export default function GroupsPage() {
   }
 
   if (error && !isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Error Loading Groups</h2>
-        <p className="text-muted-foreground px-4">{error}</p>
-        <Button onClick={fetchGroupsAndInvitations} className="mt-4">Try Again</Button>
-      </div>
-    );
+    // Don't show a full-page error if it's just the index warning and groups were fetched
+    const isJustIndexWarning = error.includes("Firestore query requires an index");
+    if (isJustIndexWarning && (joinedGroupsList.length > 0 || pendingInvitations.length > 0)) {
+        // Groups are loaded, just show the toast (already handled in fetchGroupsAndInvitations)
+    } else {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+                <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Error Loading Groups</h2>
+                <p className="text-muted-foreground px-4">{error}</p>
+                <Button onClick={fetchGroupsAndInvitations} className="mt-4">Try Again</Button>
+            </div>
+        );
+    }
   }
   
   if (!authUser && !authLoading) { // If auth context has loaded and there's no user
@@ -326,3 +378,4 @@ export default function GroupsPage() {
     </>
   );
 }
+
