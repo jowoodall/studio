@@ -75,7 +75,7 @@ export default function ProfilePage() {
   });
   const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
-  const [studentEmailInput, setStudentEmailInput] = useState(""); // Changed from studentIdentifierInput
+  const [studentEmailInput, setStudentEmailInput] = useState("");
   const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [managedStudents, setManagedStudents] = useState<string[]>([]); 
 
@@ -109,7 +109,7 @@ export default function ProfilePage() {
                         uid: authUser.uid,
                         fullName: authUser.displayName,
                         email: authUser.email,
-                        role: UserRole.STUDENT,
+                        role: UserRole.STUDENT, // Default role
                         createdAt: Timestamp.now(),
                         avatarUrl: authUser.photoURL || "",
                         canDrive: false,
@@ -141,6 +141,7 @@ export default function ProfilePage() {
           setIsLoadingProfile(false);
         }
       } else if (!authLoading) {
+        // If auth is not loading and there's no authUser, implies logged out or initial state
         setIsLoadingProfile(false);
       }
     }
@@ -169,6 +170,7 @@ export default function ProfilePage() {
     setIsAddingStudent(true);
     try {
       const usersRef = collection(db, "users");
+      // Query for the user by email
       const q = query(usersRef, where("email", "==", studentEmailToAdd));
       const querySnapshot = await getDocs(q);
 
@@ -179,6 +181,7 @@ export default function ProfilePage() {
       }
       
       if (querySnapshot.docs.length > 1) {
+        // This case should ideally not happen if email is unique in your Auth and Firestore user creation
         toast({ title: "Multiple Accounts Found", description: `Multiple accounts found with email: ${studentEmailToAdd}. Please contact support.`, variant: "destructive" });
         setIsAddingStudent(false);
         return;
@@ -188,6 +191,7 @@ export default function ProfilePage() {
       const studentIdToAdd = studentDocSnap.id; // This is the student's UID
       const studentData = studentDocSnap.data() as UserProfileData;
 
+      // Check if the found user is actually a student
       if (studentData.role === UserRole.PARENT || studentData.role === UserRole.ADMIN) {
         toast({ title: "Invalid Role", description: `User with email ${studentEmailToAdd} is not a student.`, variant: "destructive" });
         setIsAddingStudent(false);
@@ -203,11 +207,13 @@ export default function ProfilePage() {
       
       const batch = writeBatch(db);
 
+      // Update parent's document
       const parentDocRef = doc(db, "users", authUser.uid);
       batch.update(parentDocRef, {
         managedStudentIds: arrayUnion(studentIdToAdd)
       });
 
+      // Update student's document
       const studentDocRef = doc(db, "users", studentIdToAdd);
       batch.update(studentDocRef, {
         associatedParentIds: arrayUnion(authUser.uid)
@@ -215,19 +221,20 @@ export default function ProfilePage() {
 
       await batch.commit();
 
+      // Optimistically update local state
       setManagedStudents(prev => [...new Set([...prev, studentIdToAdd])]); 
       setStudentEmailInput("");
-      toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now managed and linked.` });
+      toast({ title: "Student Associated", description: `Student ${studentData.fullName || studentEmailToAdd} is now managed and linked to your account.` });
 
     } catch (error: any) {
       console.error("Error associating student:", error);
       let errorMessage = "Could not associate student. Please try again.";
-      if (error.message?.includes("indexes")) {
-          errorMessage = "An index is required for this operation. Please check the browser console for a link to create it in Firebase."
+      if (error.message?.toLowerCase().includes("index") || error.message?.toLowerCase().includes("requires an index")) {
+          errorMessage = "Database operation failed: A required index is missing. Please check your browser's developer console (F12 -> Console). Firebase usually provides a direct link there to create the necessary index on the 'email' field in the 'users' collection. Click that link and create the index."
       } else if (error.message?.includes("permission-denied")) {
-          errorMessage = "Permission denied. Please check Firestore security rules."
+          errorMessage = "Permission denied. Please check Firestore security rules for querying users or updating profiles."
       }
-      toast({ title: "Association Failed", description: errorMessage, variant: "destructive" });
+      toast({ title: "Association Failed", description: errorMessage, variant: "destructive", duration: 9000 });
     } finally {
       setIsAddingStudent(false);
     }
@@ -277,9 +284,11 @@ export default function ProfilePage() {
   }
   
   if (!authUser || !userProfile) {
+    // This case handles when auth is not loading, but either authUser or userProfile is null.
+    // It could mean the user is logged out, or profile fetching failed silently after initial load.
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-            <p className="text-muted-foreground">Please log in to view your profile or profile initialization failed.</p>
+            <p className="text-muted-foreground">Please log in to view your profile or profile data could not be loaded.</p>
              <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
         </div>
     );
@@ -616,5 +625,3 @@ export default function ProfilePage() {
     </>
   );
 }
-
-    
