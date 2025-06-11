@@ -102,6 +102,7 @@ export function SignupForm() {
           },
           managedStudentIds: [],
           associatedParentIds: [],
+          joinedGroupIds: [], // Initialize joinedGroupIds as empty array
         };
         
         console.log("Attempting to set user profile data:", userProfileData);
@@ -210,7 +211,7 @@ export function SignupForm() {
                 <SelectContent>
                   <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
                   <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
-                  <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                  {/* <SelectItem value={UserRole.ADMIN}>Admin</SelectItem> */} {/* Admin option removed */}
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -230,3 +231,4 @@ export function SignupForm() {
     </Form>
   );
 }
+
