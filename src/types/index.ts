@@ -50,5 +50,19 @@ export interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
+  joinedGroupIds?: string[]; // Added for tracking groups a user is part of
   createdAt?: Timestamp;
+}
+
+export interface GroupData {
+  id: string; // Firestore document ID
+  name: string;
+  description: string;
+  imageUrl?: string;
+  dataAiHint?: string;
+  createdBy: string; // User UID
+  createdAt: Timestamp;
+  memberIds: string[]; // Array of User UIDs
+  adminIds: string[]; // Array of User UIDs (subset of memberIds)
+  // associatedEventIds?: string[]; // Optional: if groups link to events
 }
