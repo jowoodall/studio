@@ -12,16 +12,13 @@ import { User, Users, ExternalLink, Car, CalendarDays, Clock, Loader2, AlertTria
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
-// Assuming UserProfileData is exported from profile/page.tsx or a types file
-// If it's not exported or you have a dedicated types file, adjust the import path
-// For now, let's define it here for clarity if not available elsewhere
 interface UserProfileData {
   uid: string;
   fullName: string;
   email: string;
-  role: string; // Should ideally be UserRole enum
+  role: string;
   avatarUrl?: string;
   dataAiHint?: string;
   bio?: string;
@@ -47,9 +44,8 @@ interface UserProfileData {
   associatedParentIds?: string[];
 }
 
-
 interface ManagedStudentForList {
-  id: string; // student's uid
+  id: string;
   fullName: string;
   email?: string;
   avatarUrl?: string;
@@ -63,25 +59,23 @@ interface AssociatedParentDetail {
 }
 
 interface SelectedStudentFullInfo extends ManagedStudentForList {
-    associatedParentIds?: string[]; // Raw IDs from student's doc
-    associatedParentsDetails: AssociatedParentDetail[]; // Fetched details
+    associatedParentIds?: string[];
+    associatedParentsDetails: AssociatedParentDetail[];
 }
 
+// interface UpcomingRyd { // Commenting out as studentRydzToShow is commented
+//   id: string;
+//   eventName: string;
+//   date: string;
+//   time: string;
+//   destination?: string;
+// }
 
-interface UpcomingRyd {
-  id: string;
-  eventName: string;
-  date: string;
-  time: string;
-  destination?: string;
-}
-
-const mockStudentUpcomingRydz: UpcomingRyd[] = [
-    { id: "ryd1", eventName: "School Play Rehearsal", date: "2024-12-05", time: "15:00" },
-    { id: "ryd2", eventName: "Soccer Practice", date: "2024-12-07", time: "09:30" },
-    { id: "ryd3", eventName: "Library Study Group", date: "2024-12-10", time: "18:00" },
-];
-
+// const mockStudentUpcomingRydz: UpcomingRyd[] = [ // Commenting out as studentRydzToShow is commented
+//     { id: "ryd1", eventName: "School Play Rehearsal", date: "2024-12-05", time: "15:00" },
+//     { id: "ryd2", eventName: "Soccer Practice", date: "2024-12-07", time: "09:30" },
+//     { id: "ryd3", eventName: "Library Study Group", date: "2024-12-10", time: "18:00" },
+// ];
 
 export default function MyStudentsPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -90,7 +84,6 @@ export default function MyStudentsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-
 
   const fetchManagedStudents = useCallback(async () => {
     if (!authUser) return;
@@ -120,10 +113,6 @@ export default function MyStudentsPage() {
           });
           const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentForList[];
           setManagedStudentsList(students);
-          if (students.length > 0 && !selectedStudentId) {
-            // Optionally pre-select the first student if none is selected
-            // handleStudentSelect(students[0].id);
-          }
         } else {
           setManagedStudentsList([]);
         }
@@ -136,7 +125,7 @@ export default function MyStudentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [authUser, selectedStudentId]); // Added selectedStudentId to dependencies
+  }, [authUser]);
 
   useEffect(() => {
     if (!authLoading && authUser) {
@@ -147,7 +136,6 @@ export default function MyStudentsPage() {
     }
   }, [authUser, authLoading, fetchManagedStudents]);
 
-
   const handleStudentSelect = async (studentId: string) => {
     if (!studentId) {
         setSelectedStudentDetails(null);
@@ -155,7 +143,7 @@ export default function MyStudentsPage() {
         return;
     }
     setSelectedStudentId(studentId);
-    setIsLoading(true); // For loading student details
+    setIsLoading(true);
     setError(null);
 
     try {
@@ -185,7 +173,7 @@ export default function MyStudentsPage() {
                 });
                 associatedParentsDetails = (await Promise.all(parentDetailPromises)).filter(Boolean) as AssociatedParentDetail[];
             }
-            
+
             setSelectedStudentDetails({
                 ...basicInfo,
                 associatedParentIds: studentData.associatedParentIds || [],
@@ -204,7 +192,7 @@ export default function MyStudentsPage() {
     }
   };
 
-  if (authLoading || (isLoading && managedStudentsList.length === 0 && !error)) { 
+  if (authLoading || (isLoading && managedStudentsList.length === 0 && !error)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -223,7 +211,7 @@ export default function MyStudentsPage() {
       </div>
     );
   }
-  
+
   if (!authUser && !authLoading) {
       return (
           <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
@@ -234,14 +222,13 @@ export default function MyStudentsPage() {
       );
   }
 
-  const studentRydzToShow = selectedStudentDetails ? mockStudentUpcomingRydz.slice(0, 2) : [];
+  // const studentRydzToShow = selectedStudentDetails ? mockStudentUpcomingRydz.slice(0, 2) : []; // Commented out
 
   return (
     <>
       <PageHeader
         title="My Students"
-        // Temporarily removing description prop to simplify
-        // description="Select a student to view their profile, linked guardians, and ryd information."
+        description="Select a student to view their profile, linked guardians, and ryd information."
       />
 
       <Card className="mb-6 shadow-lg">
@@ -269,7 +256,7 @@ export default function MyStudentsPage() {
         </CardContent>
       </Card>
 
-      {isLoading && selectedStudentId && ( 
+      {isLoading && selectedStudentId && (
            <div className="flex flex-col items-center justify-center py-10">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
             <p className="text-muted-foreground">Loading student details...</p>
@@ -343,7 +330,7 @@ export default function MyStudentsPage() {
                 <CardDescription>Quick overview of {selectedStudentDetails.fullName}'s upcoming rydz. (Mock Data)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {studentRydzToShow.length > 0 ? (
+                {/* {studentRydzToShow.length > 0 ? ( // Commented out usage
                     studentRydzToShow.map(ryd => (
                         <div key={ryd.id} className="p-3 bg-muted/50 rounded-md">
                             <p className="font-semibold text-sm">{ryd.eventName}</p>
@@ -355,14 +342,15 @@ export default function MyStudentsPage() {
                     ))
                 ) : (
                     <p className="text-sm text-muted-foreground">No upcoming rydz scheduled (mock data).</p>
-                )}
+                )} */}
+                 <p className="text-sm text-muted-foreground">Rydz display temporarily commented out for debugging.</p>
                  <p className="text-xs text-muted-foreground pt-2">Note: Rydz data shown here is currently mock data and not live.</p>
               </CardContent>
             </Card>
           </div>
         </div>
-      ) : (
-        !isLoading && !selectedStudentId && managedStudentsList.length > 0 && ( 
+      )}
+      {!isLoading && !selectedStudentId && managedStudentsList.length > 0 && (
             <Card className="text-center py-12 shadow-md">
             <CardHeader>
                 <User className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -375,7 +363,7 @@ export default function MyStudentsPage() {
             </CardContent>
             </Card>
         )
-      )}
+      }
        {!isLoading && managedStudentsList.length === 0 && !error && (
          <Card className="text-center py-12 shadow-md">
             <CardHeader>
@@ -393,6 +381,4 @@ export default function MyStudentsPage() {
     </>
   );
 }
-    
-
     
