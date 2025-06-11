@@ -9,13 +9,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX } from "lucide-react";
+import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import type { GroupData, UserProfileData, UserRole as GlobalUserRole } from "@/types";
+import { Badge } from "@/components/ui/badge";
 
 
 type MemberRoleInGroup = "admin" | "member";
@@ -28,6 +29,7 @@ interface DisplayGroupMember {
   roleInGroup: MemberRoleInGroup;
   canDrive: boolean;
   email?: string;
+  hasAcceptedInvitation: boolean; // New field
 }
 
 interface ManageGroupPageParams {
@@ -76,6 +78,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as UserProfileData;
+            const hasAccepted = (userData.joinedGroupIds || []).includes(groupId);
             return {
               id: userDocSnap.id,
               name: userData.fullName,
@@ -84,6 +87,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
               roleInGroup: groupData.adminIds.includes(memberUid) ? "admin" : "member",
               canDrive: userData.canDrive || false,
               email: userData.email,
+              hasAcceptedInvitation: hasAccepted, // Set based on user's profile
             };
           }
           return null;
@@ -143,14 +147,21 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     }
     
     const memberName = members.find(m => m.id === memberIdToRemove)?.name || 'Member';
+    const batch = writeBatch(db);
     try {
       const groupDocRef = doc(db, "groups", groupId);
-      // Admin only updates the group document. 
-      // The removed user's joinedGroupIds is NOT updated by the admin here.
-      await updateDoc(groupDocRef, {
+      batch.update(groupDocRef, {
         memberIds: arrayRemove(memberIdToRemove),
         adminIds: arrayRemove(memberIdToRemove) 
       });
+
+      // Also remove the group from the user's joinedGroupIds if they are being removed by an admin
+      // This part is now safe due to simplified rules where only users modify their own profiles,
+      // so an admin removing them from the group list is the primary action.
+      // If the user themselves is leaving, they would handle their own joinedGroupIds update.
+      // For now, admin removal from group list is sufficient.
+
+      await batch.commit();
 
       setMembers(prevMembers => prevMembers.filter(member => member.id !== memberIdToRemove));
       setGroup(prev => prev ? ({...prev, 
@@ -160,7 +171,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
       toast({
         title: "Member Removed",
-        description: `${memberName} has been removed from the group list.`,
+        description: `${memberName} has been removed from the group.`,
       });
     } catch (e: any) {
       console.error("Error removing member:", e);
@@ -210,8 +221,9 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         }
 
         const groupDocRef = doc(db, "groups", groupId);
-        // Admin only updates the group document.
+        // Admin only updates the group document's memberIds.
         // The new member's joinedGroupIds is NOT updated by the admin here.
+        // The user will "accept" the invitation from the /groups page.
         await updateDoc(groupDocRef, { memberIds: arrayUnion(newMemberId) });
         
         const newDisplayMember: DisplayGroupMember = {
@@ -219,24 +231,25 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
             name: newMemberData.fullName,
             avatarUrl: newMemberData.avatarUrl,
             dataAiHint: newMemberData.dataAiHint,
-            roleInGroup: "member", 
+            roleInGroup: "member", // New members are always added as "member" initially
             canDrive: newMemberData.canDrive || false,
             email: newMemberData.email,
+            hasAcceptedInvitation: (newMemberData.joinedGroupIds || []).includes(groupId), // Check if already accepted (e.g. re-add)
         };
         setMembers(prev => [...prev, newDisplayMember]);
         setGroup(prev => prev ? ({ ...prev, memberIds: [...prev.memberIds, newMemberId]}) : null);
         
-        toast({ title: "Member Added to Group", description: `${newMemberData.fullName} has been added to the group list.`});
+        toast({ title: "Member Invited", description: `${newMemberData.fullName} has been invited to the group.`});
         setNewMemberEmail("");
     } catch (e: any) {
-        console.error("Error adding member:", e);
-        let description = "Could not add member to group. Please check console for details.";
-        if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to update the group's memberIds.`;
-        } else if (e.message) {
-            description = e.message;
-        }
-        toast({ title: "Add Member Failed", description, variant: "destructive", duration: 9000});
+      console.error("Error inviting member:", e);
+      let description = "Could not invite member to group. Please check console for details.";
+      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
+          description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to update the group's memberIds.`;
+      } else if (e.message) {
+          description = e.message;
+      }
+      toast({ title: "Invite Member Failed", description, variant: "destructive", duration: 9000});
     } finally {
         setIsAddingMember(false);
     }
@@ -288,7 +301,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
       <Card className="shadow-xl mb-6">
         <CardHeader>
             <CardTitle className="flex items-center"><UserPlus className="mr-2 h-5 w-5 text-primary" /> Add New Member</CardTitle>
-            <CardDescription>Invite someone to join this group by their email address.</CardDescription>
+            <CardDescription>Invite someone to join this group by their email address. They will need to accept the invitation.</CardDescription>
         </CardHeader>
         <CardContent>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -310,7 +323,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                 </Button>
             </div>
             {!group.adminIds.includes(authUser?.uid || '') && (
-                <p className="text-xs text-destructive mt-2">Only group admins can add new members.</p>
+                <p className="text-xs text-destructive mt-2">Only group admins can invite new members.</p>
             )}
         </CardContent>
       </Card>
@@ -330,8 +343,15 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                       <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint={member.dataAiHint}/>
                       <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
                     </Avatar>
-                    <div>
-                      <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
+                        {!member.hasAcceptedInvitation && (
+                            <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-600">
+                                <Info className="mr-1 h-3 w-3" /> Pending Acceptance
+                            </Badge>
+                        )}
+                      </div>
                        <p className="text-xs text-muted-foreground">{member.email}</p>
                       {member.canDrive && (
                         <Car className="inline-block h-4 w-4 ml-1.5 text-blue-500" title="Can drive" />
@@ -345,7 +365,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                     <Select
                       value={member.roleInGroup}
                       onValueChange={(value) => handleRoleChange(member.id, value as MemberRoleInGroup)}
-                      disabled={!group.adminIds.includes(authUser?.uid || '') || member.id === authUser?.uid}
+                      disabled={!group.adminIds.includes(authUser?.uid || '') || member.id === authUser?.uid || !member.hasAcceptedInvitation}
                     >
                       <SelectTrigger className="w-[120px] text-xs sm:text-sm">
                         <SelectValue placeholder="Select role" />
@@ -361,8 +381,8 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                       onClick={() => handleRemoveMember(member.id)}
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       aria-label={`Remove ${member.name}`}
-                      disabled={!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid || (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && group.memberIds.length > 1) }
-                      title={!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid ? "Only admins can remove others" : (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid) ? "Cannot remove self as last admin" : `Remove ${member.name}`}
+                      disabled={(!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid) || (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && group.memberIds.length > 1 && member.hasAcceptedInvitation) }
+                      title={!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid ? "Only admins can remove others" : (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid) ? "Cannot remove self as last admin if others are present & accepted" : `Remove ${member.name}`}
                     >
                       {member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
                     </Button>
@@ -386,6 +406,4 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
-    
-
     
