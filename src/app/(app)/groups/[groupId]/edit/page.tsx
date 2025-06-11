@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect, useState, use } from "react";
+import React, { useEffect, useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,135 +16,178 @@ import * as z from "zod";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-// Label import was confirmed to be present in previous steps, ensuring it's available.
-
-// Mock group data - in a real app, you'd fetch this
-// Added description and imageUrl to mock data
-const mockGroupsData: { [key: string]: { name: string; description: string; imageUrl: string; dataAiHint?: string; } } = {
-  "1": { name: "Morning School Run", description: "Daily carpool to Northwood High. Early birds get the aux!", imageUrl: "https://placehold.co/400x300.png?text=School+Run", dataAiHint: "school bus morning" },
-  "2": { name: "Soccer Practice Crew", description: "Carpool for weekend soccer practice. Don't forget your cleats!", imageUrl: "https://placehold.co/400x300.png?text=Soccer+Practice", dataAiHint: "soccer team kids" },
-  "3": { name: "Work Commute (Downtown)", description: "Shared rydz to downtown offices. Saving gas and sanity.", imageUrl: "https://placehold.co/400x300.png?text=Work+Commute", dataAiHint: "city skyline traffic" },
-};
+import { useParams, useRouter } from "next/navigation";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import type { GroupData } from "@/types";
 
 const groupEditFormSchema = z.object({
   groupName: z.string().min(3, "Group name must be at least 3 characters.").max(50, "Group name cannot exceed 50 characters."),
   description: z.string().max(200, "Description cannot exceed 200 characters.").optional(),
-  imageUrl: z.string().url({ message: "Please enter a valid URL." }).or(z.literal("")).optional(), // Allow empty string or valid URL
+  imageUrl: z.string().url({ message: "Please enter a valid URL." }).or(z.literal("")).optional(),
+  dataAiHint: z.string().max(50, "AI hint cannot exceed 50 characters.").optional(),
 });
 
 type GroupEditFormValues = z.infer<typeof groupEditFormSchema>;
 
-// Define the expected shape of the resolved params
-interface ResolvedPageParams {
-  groupId: string;
-}
-
-export default function EditGroupPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
-  const params = use(paramsPromise); 
-  const { groupId } = params || {}; 
-
+export default function EditGroupPage() {
+  const params = useParams();
+  const router = useRouter();
+  const groupId = params.groupId as string; // Get groupId from useParams
 
   const { toast } = useToast();
-  // Initialize groupDetails after groupId is resolved, or use null/undefined initially
-  const [groupDetails, setGroupDetails] = useState(() => groupId ? mockGroupsData[groupId] : null);
+  const [groupDetails, setGroupDetails] = useState<GroupData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [imagePreview, setImagePreview] = useState(groupDetails?.imageUrl || "");
+  const [imagePreview, setImagePreview] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm<GroupEditFormValues>({
     resolver: zodResolver(groupEditFormSchema),
     defaultValues: {
-      groupName: groupDetails?.name || "",
-      description: groupDetails?.description || "",
-      imageUrl: groupDetails?.imageUrl || "",
+      groupName: "",
+      description: "",
+      imageUrl: "",
+      dataAiHint: "",
     },
   });
 
   useEffect(() => {
-    // This effect runs when groupId changes (after promise resolves)
-    // or if form instance itself changes (less likely here)
-    if (groupId) {
-        const currentGroup = mockGroupsData[groupId];
-        if (currentGroup) {
-          setGroupDetails(currentGroup);
-          form.reset({
-              groupName: currentGroup.name,
-              description: currentGroup.description,
-              imageUrl: currentGroup.imageUrl,
-          });
-          setImagePreview(currentGroup.imageUrl);
-        } else {
-          // Group ID resolved, but no data found for it
-          setGroupDetails(null); 
-          form.reset({ groupName: "", description: "", imageUrl: "" });
-          setImagePreview("");
-        }
+    if (!groupId) {
+      setError("Group ID is missing from URL.");
+      setIsLoading(false);
+      return;
     }
-  }, [groupId, form]);
+
+    const fetchGroupData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const groupDocRef = doc(db, "groups", groupId);
+        const groupDocSnap = await getDoc(groupDocRef);
+
+        if (groupDocSnap.exists()) {
+          const data = groupDocSnap.data() as GroupData;
+          setGroupDetails(data);
+          form.reset({
+            groupName: data.name,
+            description: data.description,
+            imageUrl: data.imageUrl || "",
+            dataAiHint: data.dataAiHint || "",
+          });
+          setImagePreview(data.imageUrl || "");
+        } else {
+          setError(`Group with ID "${groupId}" not found.`);
+          setGroupDetails(null);
+        }
+      } catch (e) {
+        console.error("Error fetching group data:", e);
+        setError("Failed to load group data. Please try again.");
+        toast({
+            title: "Error",
+            description: "Could not load group information.",
+            variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchGroupData();
+  }, [groupId, form, toast]);
 
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'imageUrl') {
-        // Ensure value.imageUrl is not undefined before setting
         setImagePreview(value.imageUrl || "");
       }
     });
     return () => subscription.unsubscribe();
   }, [form]);
 
+  async function onSubmit(data: GroupEditFormValues) {
+    if (!groupId) {
+      toast({ title: "Error", description: "Group ID is missing.", variant: "destructive" });
+      return;
+    }
+    if (!groupDetails) {
+      toast({ title: "Error", description: "Group data not loaded.", variant: "destructive" });
+      return;
+    }
 
-  if (!groupId) {
-    // groupId is not yet resolved from the promise (React.use() is suspending)
+    setIsSubmitting(true);
+    try {
+      const groupDocRef = doc(db, "groups", groupId);
+      // Only update fields that are part of the form, retain other fields like createdBy, createdAt, memberIds, adminIds
+      const updateData: Partial<GroupData> = {
+        name: data.groupName,
+        description: data.description || "", // Ensure description is not undefined
+        imageUrl: data.imageUrl || "",
+        dataAiHint: data.dataAiHint || "",
+      };
+
+      await updateDoc(groupDocRef, updateData);
+
+      setGroupDetails(prev => prev ? { ...prev, ...updateData } : null);
+      toast({
+        title: "Group Updated!",
+        description: `The group "${data.groupName}" has been successfully updated.`,
+      });
+      router.push(`/groups/${groupId}`); // Navigate back to group view page or groups list
+    } catch (e) {
+      console.error("Error updating group:", e);
+      toast({
+        title: "Update Failed",
+        description: "Could not update group details. Please check your permissions and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (isLoading) {
     return (
-        <div className="flex flex-col items-center justify-center h-full text-center py-10">
-            <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
-            <p className="text-muted-foreground">Loading group details...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+        <p className="text-muted-foreground">Loading group details...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold mb-2">Error</h2>
+        <p className="text-muted-foreground px-4">{error}</p>
+        <Button asChild className="mt-4">
+          <Link href="/groups">Back to Groups</Link>
+        </Button>
+      </div>
     );
   }
   
-  // After groupId is resolved, check if groupDetails exist for that ID
-  // This check relies on groupDetails state being updated by the useEffect above
-  if (!groupDetails && groupId) { 
-    // This means groupId is valid, but mockGroupsData[groupId] was undefined,
-    // and setGroupDetails(null) has likely run.
+  if (!groupDetails && !isLoading) {
+     // This case means loading is finished but groupDetails is still null (and no error string was set prior)
+     // which implies the group was not found or another issue occurred.
     return (
     <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
-        <p className="text-muted-foreground">The group with ID "{groupId}" could not be found.</p>
+        <p className="text-muted-foreground">The group with ID "{groupId}" could not be loaded or found.</p>
         <Button asChild className="mt-4">
-        <Link href="/groups">Back to Groups</Link>
+          <Link href="/groups">Back to Groups</Link>
         </Button>
     </div>
     );
   }
 
 
-  function onSubmit(data: GroupEditFormValues) {
-    if (!groupId) { // Should not happen if loading state is correct
-        toast({ title: "Error", description: "Group ID is missing.", variant: "destructive"});
-        return;
-    }
-    setIsSubmitting(true);
-    console.log("Updated Group Data:", { groupId, ...data });
-    // Simulate API call
-    setTimeout(() => {
-      // Update mock data 
-      mockGroupsData[groupId] = { ...mockGroupsData[groupId], ...data, dataAiHint: mockGroupsData[groupId]?.dataAiHint };
-      setGroupDetails(mockGroupsData[groupId]); 
-
-      toast({
-        title: "Group Updated!",
-        description: `The group "${data.groupName}" has been successfully updated.`,
-      });
-      setIsSubmitting(false);
-    }, 1500);
-  }
-  
   return (
     <>
       <PageHeader
-        title={`Edit Group: ${groupDetails?.name || `Group ${groupId}`}`}
+        title={`Edit Group: ${groupDetails?.name || `Group`}`}
         description={`You are currently editing the details for ${groupDetails?.name || `Group ${groupId}`}.`}
       />
       <Card className="w-full max-w-xl mx-auto shadow-xl">
@@ -211,6 +254,21 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                   </FormItem>
                 )}
               />
+               <FormField
+                control={form.control}
+                name="dataAiHint"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group Image AI Hint (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., team logo, school mascot" {...field} />
+                    </FormControl>
+                    <FormDescription>Keywords describing the image (max 2 words), e.g., "soccer team".</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
 
               {imagePreview && (
                 <div className="relative w-full aspect-video max-w-sm mx-auto rounded-md overflow-hidden border bg-muted">
@@ -224,7 +282,7 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
                 ) : (
@@ -237,7 +295,7 @@ export default function EditGroupPage({ params: paramsPromise }: { params: Promi
       </Card>
       <div className="text-center mt-6">
         <Button variant="link" asChild>
-          <Link href="/groups">Back to Groups</Link>
+          <Link href={`/groups/${groupId}`}>Back to Group</Link>
         </Button>
       </div>
     </>
