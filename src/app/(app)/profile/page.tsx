@@ -16,7 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore'; // Added updateDoc, arrayUnion
+import { useToast } from '@/hooks/use-toast'; // Added useToast
 
 // Define a type for the user profile data from Firestore
 interface UserProfileData {
@@ -47,7 +48,7 @@ interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
-  createdAt?: Timestamp; // Assuming you store this
+  createdAt?: Timestamp;
 }
 
 
@@ -60,6 +61,7 @@ const exampleLinkedApps = [
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
+  const { toast } = useToast(); // Initialize toast
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -75,10 +77,11 @@ export default function ProfilePage() {
   const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
   const [studentIdentifierInput, setStudentIdentifierInput] = useState("");
-  const [managedStudents, setManagedStudents] = useState<string[]>([]); // Should be UserProfileData.managedStudentIds
+  const [isAddingStudent, setIsAddingStudent] = useState(false); // Loading state for adding student
+  const [managedStudents, setManagedStudents] = useState<string[]>([]); 
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
-  const [associatedParents, setAssociatedParents] = useState<string[]>([]); // Should be UserProfileData.associatedParentIds
+  const [associatedParents, setAssociatedParents] = useState<string[]>([]);
 
   useEffect(() => {
     async function fetchUserProfile() {
@@ -92,17 +95,15 @@ export default function ProfilePage() {
           if (userDocSnap.exists()) {
             const data = userDocSnap.data() as UserProfileData;
             setUserProfile(data);
-            // Initialize UI states from fetched profile
             setCanDrive(data.canDrive || false);
             setDriverDetails(data.driverDetails || { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" });
-            setSelectedRoleForView(data.role); // Set the role for view based on DB
+            setSelectedRoleForView(data.role); 
             setManagedStudents(data.managedStudentIds || []);
             setAssociatedParents(data.associatedParentIds || []);
 
           } else {
             console.log("No such user profile document!");
             setProfileError("User profile not found. Please complete your profile.");
-            // Potentially redirect to a profile creation/edit page if profile is mandatory
           }
         } catch (error) {
           console.error("Error fetching user profile:", error);
@@ -111,9 +112,7 @@ export default function ProfilePage() {
           setIsLoadingProfile(false);
         }
       } else if (!authLoading) {
-        // No authenticated user, and auth is not loading anymore
         setIsLoadingProfile(false);
-        // router.push('/login'); // Or handle as appropriate if profile page is accessed without auth
       }
     }
 
@@ -123,25 +122,44 @@ export default function ProfilePage() {
   }, [authUser, authLoading]);
 
 
-  const handleAddStudent = () => {
-    if (studentIdentifierInput.trim() !== "") {
-      // In a real app, this would involve searching for a student and then updating the parent's Firestore doc
-      setManagedStudents(prev => [...prev, studentIdentifierInput.trim()]);
+  const handleAddStudent = async () => {
+    if (!authUser) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    if (studentIdentifierInput.trim() === "") {
+      toast({ title: "Input Required", description: "Please enter a student identifier.", variant: "destructive" });
+      return;
+    }
+
+    setIsAddingStudent(true);
+    try {
+      const parentDocRef = doc(db, "users", authUser.uid);
+      await updateDoc(parentDocRef, {
+        managedStudentIds: arrayUnion(studentIdentifierInput.trim())
+      });
+
+      // Optimistically update local state
+      setManagedStudents(prev => [...new Set([...prev, studentIdentifierInput.trim()])]); 
       setStudentIdentifierInput("");
-      // TODO: Persist this change to Firestore for userProfile.managedStudentIds
+      toast({ title: "Student Associated", description: "Student identifier has been added to your managed list." });
+    } catch (error) {
+      console.error("Error associating student:", error);
+      toast({ title: "Association Failed", description: "Could not associate student. Please check the identifier and try again.", variant: "destructive" });
+    } finally {
+      setIsAddingStudent(false);
     }
   };
 
   const handleAddParent = () => {
     if (parentIdentifierInput.trim() !== "") {
-      // In a real app, this would involve searching for a parent and then updating the student's Firestore doc
       setAssociatedParents(prev => [...prev, parentIdentifierInput.trim()]);
       setParentIdentifierInput("");
-      // TODO: Persist this change to Firestore for userProfile.associatedParentIds
+      // TODO: Persist this change to Firestore for userProfile.associatedParentIds (on student's document)
+      toast({ title: "Parent Added (Mock)", description: "Parent association mock updated."});
     }
   };
   
-  // Use userProfile.role for displaying the role, selectedRoleForView is for UI logic
   const currentDisplayRole = userProfile?.role || selectedRoleForView;
 
   if (authLoading || isLoadingProfile) {
@@ -167,7 +185,6 @@ export default function ProfilePage() {
   }
   
   if (!authUser || !userProfile) {
-     // This case should ideally be handled by the AppLayout redirecting to /login
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
             <p className="text-muted-foreground">Please log in to view your profile.</p>
@@ -233,7 +250,7 @@ export default function ProfilePage() {
                     </Button>
                 }
                 <Button variant="destructive" className="w-full justify-start" asChild>
-                     <Link href="/"> {/* Link is to / which will trigger logout action if user is logged out */}
+                     <Link href="/"> 
                         <LogOut className="mr-2 h-4 w-4" /> Log Out
                      </Link>
                 </Button>
@@ -310,24 +327,24 @@ export default function ProfilePage() {
                       <Users className="h-5 w-5" />
                       <h4 className="font-semibold">Manage My Students</h4>
                   </div>
-                  <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals.</p>
+                  <p className="text-xs text-muted-foreground">Link students you are responsible for to manage their carpool approvals. Enter the Student's User ID.</p>
                   <div className="flex flex-col gap-2">
-                      <Label htmlFor="studentIdentifier" className="sr-only">Student Identifier</Label>
+                      <Label htmlFor="studentIdentifier" className="sr-only">Student User ID</Label>
                       <Input
                       id="studentIdentifier"
-                      placeholder="Enter Student's User ID or Email (Mock Add)"
+                      placeholder="Enter Student's User ID"
                       value={studentIdentifierInput}
                       onChange={(e) => setStudentIdentifierInput(e.target.value)}
                       className="mt-1"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">
-                          In a live system, you would search for and select an existing student user.
-                      </p>
-                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start">Add Student (Mock)</Button>
+                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start" disabled={isAddingStudent}>
+                        {isAddingStudent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Add Student
+                      </Button>
                   </div>
                   {managedStudents.length > 0 && (
                       <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User Identifiers):</h5>
+                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">Associated Students (User IDs):</h5>
                       <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md">
                           {managedStudents.map((studentId, index) => (
                           <li key={index} className="text-sm">{studentId}</li>
@@ -354,9 +371,6 @@ export default function ProfilePage() {
                       onChange={(e) => setParentIdentifierInput(e.target.value)}
                       className="mt-1"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">
-                          In a live system, you would search for and select an existing parent/guardian user.
-                      </p>
                       <Button onClick={handleAddParent} variant="outline" className="mt-1 self-start">Add Parent/Guardian (Mock)</Button>
                   </div>
                   {associatedParents.length > 0 && (
@@ -413,7 +427,6 @@ export default function ProfilePage() {
                         value={driverDetails.ageRange}
                         onValueChange={(value) => {
                           setDriverDetails(prev => ({ ...prev, ageRange: value }));
-                          // TODO: Persist driverDetails change
                         }}
                       >
                         <SelectTrigger id="ageRange" className="mt-1">
@@ -433,7 +446,6 @@ export default function ProfilePage() {
                         value={driverDetails.drivingExperience}
                         onValueChange={(value) => {
                           setDriverDetails(prev => ({ ...prev, drivingExperience: value }));
-                          // TODO: Persist driverDetails change
                         }}
                       >
                         <SelectTrigger id="drivingExperience" className="mt-1">
@@ -456,7 +468,6 @@ export default function ProfilePage() {
                         value={driverDetails.primaryVehicle}
                         onChange={(e) => {
                           setDriverDetails(prev => ({ ...prev, primaryVehicle: e.target.value }));
-                          // TODO: Persist driverDetails change
                         }}
                         placeholder="e.g., Toyota Camry 2020, Blue"
                         className="mt-1"
@@ -471,7 +482,6 @@ export default function ProfilePage() {
                         value={driverDetails.passengerCapacity}
                         onChange={(e) => {
                           setDriverDetails(prev => ({ ...prev, passengerCapacity: e.target.value }));
-                          // TODO: Persist driverDetails change
                         }}
                         placeholder="e.g., 4"
                         min="1"
@@ -497,7 +507,7 @@ export default function ProfilePage() {
                         <p className="font-medium">{app.name}</p>
                         <p className="text-xs text-muted-foreground">{app.description}</p>
                       </div>
-                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> {/* Button disabled for now */}
+                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> 
                         {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
                       </Button>
                     </div>
