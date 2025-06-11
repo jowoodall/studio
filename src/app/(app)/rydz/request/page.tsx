@@ -28,7 +28,7 @@ const rydRequestFormSchema = z.object({
   eventId: z.string().optional(), 
   eventName: z.string().min(3, "Event name is too short").optional(),
   destination: z.string().min(5, "Destination address is required."),
-  pickupLocation: z.string().min(5, "Pickup location is required."),
+  pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // This is Event Start Time
   earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // New field
