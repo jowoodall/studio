@@ -15,14 +15,21 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, Car, Loader2 } from "lucide-react";
+import { CalendarIcon, Car, Loader2, Users, Check, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp } from "firebase/firestore";
-import type { EventData, RydData, RydStatus } from "@/types";
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc } from "firebase/firestore";
+import type { EventData, RydData, RydStatus, UserProfileData, UserRole } from "@/types";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 
+interface ManagedStudentSelectItem {
+  id: string;
+  fullName: string;
+}
 
 const rydRequestFormSchema = z.object({ 
   eventId: z.string().optional(), 
@@ -30,12 +37,21 @@ const rydRequestFormSchema = z.object({
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
-  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // This is Event Start Time
-  earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // New field
+  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  passengerUids: z.array(z.string()).optional(), // For parents selecting students
   notes: z.string().optional(),
-}).refine(data => data.eventId || data.eventName, {
-    message: "Either select an event or provide an event name if 'Other'.",
-    path: ["eventName"], 
+}).superRefine((data, ctx) => {
+    if (!data.eventId && !data.eventName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Either select an event or provide an event name if 'Other'.",
+        path: ["eventName"], 
+      });
+    }
+    // Accessing userProfile here to check role is tricky in Zod's superRefine
+    // because it doesn't have direct access to component state/context.
+    // We will handle the "at least one student selected for parent" validation in the onSubmit handler.
 });
 
 type RydRequestFormValues = z.infer<typeof rydRequestFormSchema>; 
@@ -43,19 +59,25 @@ type RydRequestFormValues = z.infer<typeof rydRequestFormSchema>;
 
 export default function RydRequestPage() { 
   const { toast } = useToast();
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [availableEvents, setAvailableEvents] = useState<EventData[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+
+  const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentSelectItem[]>([]);
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(false);
+  const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
+  const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(rydRequestFormSchema), 
     defaultValues: {
       time: "09:00", 
-      earliestPickupTime: "08:00", // Default earliest pickup time
+      earliestPickupTime: "08:00",
       destination: "",
       eventName: "",
       pickupLocation: "",
+      passengerUids: [],
     }
   });
 
@@ -68,7 +90,9 @@ export default function RydRequestPage() {
         const fetchedEvents: EventData[] = [];
         querySnapshot.forEach((doc) => {
           const eventData = doc.data() as EventData;
-          if (eventData.eventTimestamp.toDate() >= new Date()) {
+          // Ensure eventTimestamp is a Firestore Timestamp and convert to Date for comparison
+          const eventDate = eventData.eventTimestamp instanceof Timestamp ? eventData.eventTimestamp.toDate() : new Date(0);
+          if (eventDate >= new Date()) {
             fetchedEvents.push({ id: doc.id, ...eventData });
           }
         });
@@ -83,11 +107,60 @@ export default function RydRequestPage() {
     fetchEvents();
   }, [toast]);
 
+  useEffect(() => {
+    const fetchManagedStudents = async () => {
+      if (userProfile && userProfile.role === UserRole.PARENT && userProfile.managedStudentIds && userProfile.managedStudentIds.length > 0) {
+        setIsLoadingManagedStudents(true);
+        try {
+          const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
+            const studentDocRef = doc(db, "users", studentId);
+            const studentDocSnap = await getDoc(studentDocRef);
+            if (studentDocSnap.exists()) {
+              const studentData = studentDocSnap.data() as UserProfileData;
+              return { id: studentDocSnap.id, fullName: studentData.fullName };
+            }
+            return null;
+          });
+          const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentSelectItem[];
+          setManagedStudentsList(students);
+        } catch (error) {
+          console.error("Error fetching managed students:", error);
+          toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
+        } finally {
+          setIsLoadingManagedStudents(false);
+        }
+      } else {
+        setManagedStudentsList([]);
+      }
+    };
+
+    if (!authLoading && !isLoadingProfile && userProfile) {
+      fetchManagedStudents();
+    }
+  }, [userProfile, authLoading, isLoadingProfile, toast]);
+
+
   async function onSubmit(data: RydRequestFormValues) { 
-    if (!authUser) {
+    if (!authUser || !userProfile) {
       toast({ title: "Authentication Error", description: "You must be logged in to request a ryd.", variant: "destructive" });
       return;
     }
+
+    let finalPassengerUids: string[] = [];
+    if (userProfile.role === UserRole.PARENT) {
+      if (!data.passengerUids || data.passengerUids.length === 0) {
+        toast({ title: "Selection Required", description: "Please select at least one student for this ryd.", variant: "destructive" });
+        form.setError("passengerUids", { type: "manual", message: "Please select at least one student." });
+        return;
+      }
+      finalPassengerUids = data.passengerUids;
+    } else if (userProfile.role === UserRole.STUDENT) {
+      finalPassengerUids = [authUser.uid];
+    } else {
+      toast({ title: "Role Error", description: "Your user role does not permit ryd requests in this manner.", variant: "destructive" });
+      return;
+    }
+
     setIsSubmitting(true);
 
     const [eventHours, eventMinutes] = data.time.split(':').map(Number);
@@ -96,22 +169,21 @@ export default function RydRequestPage() {
     const eventStartFirestoreTimestamp = Timestamp.fromDate(eventStartDateTime);
 
     const [pickupHours, pickupMinutes] = data.earliestPickupTime.split(':').map(Number);
-    const earliestPickupDateTime = new Date(data.date); // Assume pickup on the same day
+    const earliestPickupDateTime = new Date(data.date);
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
-
 
     const rydRequestPayload: Omit<RydData, 'id'> = { 
       requestedBy: authUser.uid,
       eventId: data.eventId === "custom" ? undefined : data.eventId,
-      eventName: data.eventId === "custom" ? data.eventName : undefined,
+      eventName: data.eventId === "custom" ? data.eventName : availableEvents.find(e => e.id === data.eventId)?.name,
       destination: data.destination,
       pickupLocation: data.pickupLocation,
-      rydTimestamp: eventStartFirestoreTimestamp, // This is the event start time
-      earliestPickupTimestamp: earliestPickupFirestoreTimestamp, // New field for earliest pickup
+      rydTimestamp: eventStartFirestoreTimestamp,
+      earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
       notes: data.notes || "",
       status: 'requested' as RydStatus,
-      passengerIds: [authUser.uid],
+      passengerIds: finalPassengerUids,
       createdAt: serverTimestamp() as Timestamp, 
     };
 
@@ -119,7 +191,7 @@ export default function RydRequestPage() {
       const docRef = await addDoc(collection(db, "rydz"), rydRequestPayload);
       toast({
         title: "Ryd Requested!", 
-        description: `Your request (ID: ${docRef.id}) for a ryd to ${data.eventId && data.eventId !== "custom" ? availableEvents.find(e=>e.id===data.eventId)?.name : data.eventName || data.destination} has been submitted.`, 
+        description: `Your request (ID: ${docRef.id}) for a ryd to ${rydRequestPayload.eventName || rydRequestPayload.destination} has been submitted.`, 
       });
       form.reset();
     } catch (error) {
@@ -145,14 +217,28 @@ export default function RydRequestPage() {
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
             form.setValue("date", eventDate);
-            form.setValue("time", format(eventDate, "HH:mm")); // Sets Event Start Time
+            form.setValue("time", format(eventDate, "HH:mm"));
         }
       }
     } else if (selectedEventId === "custom") {
       form.setValue("destination", ""); 
-      form.setValue("time", "09:00"); // Reset event start time if custom
+      form.setValue("time", "09:00");
+      form.setValue("eventName", "");
     }
   }, [selectedEventId, form, availableEvents]);
+
+  const handleStudentSelection = (studentId: string) => {
+    const currentSelectedStudents = form.getValues("passengerUids") || [];
+    const newSelectedStudents = currentSelectedStudents.includes(studentId)
+      ? currentSelectedStudents.filter(id => id !== studentId)
+      : [...currentSelectedStudents, studentId];
+    form.setValue("passengerUids", newSelectedStudents, { shouldValidate: true });
+  };
+
+  const filteredStudentsForPopover = managedStudentsList.filter(student =>
+    student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase())
+  );
+  const currentSelectedStudentUids = form.watch("passengerUids") || [];
 
 
   return (
@@ -190,8 +276,8 @@ export default function RydRequestPage() {
                                 }
                             } else {
                                 form.setValue("destination", ""); 
-                                form.setValue("time", "09:00"); // Reset time if custom
-                                form.setValue("eventName", ""); // Clear eventName if switching to custom
+                                form.setValue("time", "09:00");
+                                form.setValue("eventName", "");
                             }
                         }} 
                         defaultValue={field.value}
@@ -204,7 +290,7 @@ export default function RydRequestPage() {
                       </FormControl>
                       <SelectContent>
                         {!isLoadingEvents && availableEvents.map(event => (
-                          <SelectItem key={event.id} value={event.id}>{event.name} ({format(event.eventTimestamp.toDate(), "MMM d, p")})</SelectItem>
+                          <SelectItem key={event.id} value={event.id}>{event.name} ({event.eventTimestamp instanceof Timestamp ? format(event.eventTimestamp.toDate(), "MMM d, p") : 'Invalid Date'})</SelectItem>
                         ))}
                          <SelectItem value="custom">Other (Specify Below)</SelectItem>
                       </SelectContent>
@@ -259,6 +345,110 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
+
+              {/* "This ryd is for" section */}
+              {(authLoading || isLoadingProfile) && (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              )}
+
+              {!authLoading && !isLoadingProfile && userProfile && (
+                <FormField
+                  control={form.control}
+                  name="passengerUids"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel className="text-base flex items-center">
+                        <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+                        This ryd is for
+                      </FormLabel>
+                      {userProfile.role === UserRole.STUDENT && (
+                        <p className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">Me</p>
+                      )}
+                      {userProfile.role === UserRole.PARENT && (
+                        <>
+                          <Popover open={studentPopoverOpen} onOpenChange={setStudentPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={studentPopoverOpen}
+                                className="w-full justify-between"
+                                disabled={isLoadingManagedStudents}
+                              >
+                                {isLoadingManagedStudents ? "Loading your students..." : (
+                                  currentSelectedStudentUids.length > 0
+                                    ? `${currentSelectedStudentUids.length} student(s) selected`
+                                    : "Select student(s)..."
+                                )}
+                                <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                              <Command>
+                                <CommandInput
+                                  placeholder="Search students..."
+                                  value={studentSearchTerm}
+                                  onValueChange={setStudentSearchTerm}
+                                  disabled={isLoadingManagedStudents}
+                                />
+                                <CommandList>
+                                  <ScrollArea className="h-48">
+                                    {isLoadingManagedStudents && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                                    {!isLoadingManagedStudents && filteredStudentsForPopover.length === 0 && <CommandEmpty>No students found or none managed.</CommandEmpty>}
+                                    <CommandGroup>
+                                      {!isLoadingManagedStudents && filteredStudentsForPopover.map((student) => (
+                                        <CommandItem
+                                          key={student.id}
+                                          value={student.id}
+                                          onSelect={() => handleStudentSelection(student.id)}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              currentSelectedStudentUids.includes(student.id)
+                                                ? "opacity-100"
+                                                : "opacity-0"
+                                            )}
+                                          />
+                                          {student.fullName}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </ScrollArea>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          {currentSelectedStudentUids.length > 0 && (
+                            <div className="pt-2 space-x-1 space-y-1">
+                              {currentSelectedStudentUids.map(studentId => {
+                                const student = managedStudentsList.find(s => s.id === studentId);
+                                return student ? (
+                                  <Badge key={studentId} variant="secondary" className="mr-1">
+                                    {student.fullName}
+                                    <button
+                                      type="button"
+                                      className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                      onClick={() => handleStudentSelection(studentId)}
+                                    >
+                                      <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                    </button>
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                          <FormMessage /> 
+                        </>
+                      )}
+                    </FormItem>
+                  )}
+                />
+              )}
+
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
@@ -347,7 +537,7 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingEvents}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvents || isLoadingManagedStudents}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
                 ) : (
@@ -361,3 +551,4 @@ export default function RydRequestPage() {
     </>
   );
 }
+
