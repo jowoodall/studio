@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Loader2, AlertTriangle, Users, Check, X } from "lucide-react";
+import { CalendarIcon, Loader2, AlertTriangle, Users, Check, X, MapPin } from "lucide-react"; // Added MapPin
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,10 +33,14 @@ import { findMatchingCarpoolsAction } from "@/actions/carpool";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs } from "firebase/firestore";
 import type { GroupData } from "@/types";
-import { useAuth } from "@/context/AuthContext"; // Import useAuth
+import { useAuth } from "@/context/AuthContext";
 
 const findCarpoolFormSchema = z.object({
   eventLocation: z.string().min(5, { message: "Event location must be at least 5 characters." }),
+  eventStreet: z.string().optional(),
+  eventCity: z.string().optional(),
+  eventState: z.string().optional(),
+  eventZip: z.string().optional(),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Invalid time format (HH:MM)."}),
   userLocation: z.string().min(5, { message: "Your location must be at least 5 characters." }),
@@ -55,6 +59,10 @@ interface FindCarpoolFormProps {
 
 const defaultFormValues = {
   eventLocation: "",
+  eventStreet: "",
+  eventCity: "",
+  eventState: "",
+  eventZip: "",
   eventTime: "17:00",
   userLocation: "",
   trafficConditions: "moderate",
@@ -73,7 +81,7 @@ export function FindCarpoolForm({
   initialAssociatedGroupIds,
 }: FindCarpoolFormProps) {
   const { toast } = useToast();
-  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth(); // Use AuthContext
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const [isPending, startTransition] = useTransition();
   const [results, setResults] = useState<CarpoolMatchingOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +116,7 @@ export function FindCarpoolForm({
       setIsLoadingGroups(true);
       try {
         const userJoinedGroupIds = userProfile.joinedGroupIds || [];
-        if (userJoinedGroupIds.length === 0 && !isEventPreFilled) { // Only set to empty if not pre-filling, as pre-filled might reference non-member groups
+        if (userJoinedGroupIds.length === 0 && !isEventPreFilled) {
           setAvailableGroups([]);
           setIsLoadingGroups(false);
           return;
@@ -127,17 +135,7 @@ export function FindCarpoolForm({
             fetchedGroups.push(groupItem);
           }
         });
-
-        setAvailableGroups(fetchedGroups); // These are the groups the user can select from
-
-        // If event is pre-filled, ensure initialAssociatedGroupIds are set correctly,
-        // even if they are not part of the user's joined groups.
-        // The form.reset below handles setting form.values, this ensures AI gets correct names.
-        if (isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0) {
-           const preFilledGroupNamesForAI = initialAssociatedGroupIds
-            .map(id => allFetchedGroupsForPreFillCheck.find(g => g.id === id)?.name || id);
-           // The form values are already set via form.reset, this is more about ensuring names are available for AI
-        }
+        setAvailableGroups(fetchedGroups);
 
       } catch (err) {
         console.error("Error fetching user's groups:", err);
@@ -154,18 +152,21 @@ export function FindCarpoolForm({
   }, [toast, authUser, userProfile, authLoading, isLoadingProfile, isEventPreFilled, initialAssociatedGroupIds]);
 
   useEffect(() => {
-    // This effect ensures that if initial props change (e.g., user selects a different event from the parent page),
-    // the form resets to reflect those new initial values, including the user's location.
     const currentUserLocation = form.getValues("userLocation");
     const currentTrafficConditions = form.getValues("trafficConditions");
     form.reset({
-      ...defaultFormValues, // Start with base defaults
-      userLocation: currentUserLocation || defaultFormValues.userLocation, // Preserve user's input if they typed something
-      trafficConditions: currentTrafficConditions || defaultFormValues.trafficConditions, // Preserve user's input
+      ...defaultFormValues,
+      userLocation: currentUserLocation || defaultFormValues.userLocation,
+      trafficConditions: currentTrafficConditions || defaultFormValues.trafficConditions,
       eventLocation: initialEventLocation || defaultFormValues.eventLocation,
-      eventDate: initialEventDate, // This can be undefined if no event is pre-selected
+      // Clear detailed address fields if the main location changes due to prop update
+      eventStreet: initialEventLocation ? "" : (form.getValues("eventStreet") || ""),
+      eventCity: initialEventLocation ? "" : (form.getValues("eventCity") || ""),
+      eventState: initialEventLocation ? "" : (form.getValues("eventState") || ""),
+      eventZip: initialEventLocation ? "" : (form.getValues("eventZip") || ""),
+      eventDate: initialEventDate,
       eventTime: initialEventTime || defaultFormValues.eventTime,
-      associatedGroupIds: initialAssociatedGroupIds || [], // Reset associated groups based on new event
+      associatedGroupIds: initialAssociatedGroupIds || [],
     });
   }, [initialEventLocation, initialEventDate, initialEventTime, initialAssociatedGroupIds, form]);
 
@@ -178,7 +179,7 @@ export function FindCarpoolForm({
     form.setValue("associatedGroupIds", newSelectedGroups, { shouldValidate: true });
   };
 
-  const filteredGroupsForPopover = availableGroups.filter(group => // Only show user's groups in popover
+  const filteredGroupsForPopover = availableGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
   const currentSelectedGroups = form.watch("associatedGroupIds") || [];
@@ -193,20 +194,28 @@ export function FindCarpoolForm({
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       eventDateTime.setHours(hours, minutes);
 
-      // For AI, we need all groups (user's + pre-filled event's groups)
-      // Fetch all group names once to map IDs to names for AI
+      let finalEventLocationForAI = data.eventLocation; // Fallback to the general location field
+      const addressParts = [data.eventStreet, data.eventCity, data.eventState, data.eventZip].filter(Boolean);
+      if (addressParts.length > 1) { // Require at least two parts for a "detailed" address
+        finalEventLocationForAI = `${data.eventStreet || ''}${data.eventStreet && (data.eventCity || data.eventState || data.eventZip) ? ', ' : ''}${data.eventCity || ''}${data.eventCity && (data.eventState || data.eventZip) ? ', ' : ''}${data.eventState || ''}${data.eventState && data.eventZip ? ' ' : ''}${data.eventZip || ''}`;
+        if (data.eventLocation && data.eventLocation !== initialEventLocation) { // If general location was also manually entered and different from prefill
+            finalEventLocationForAI = `${data.eventLocation} (${finalEventLocationForAI})`; // Prepend name/general location
+        }
+      }
+
+
       const allGroupsSnapshot = await getDocs(query(collection(db, "groups")));
       const allGroupDetails: GroupSelectItem[] = [];
       allGroupsSnapshot.forEach(doc => allGroupDetails.push({id: doc.id, name: (doc.data() as GroupData).name}));
 
       const groupIdsToConsiderForAI = data.associatedGroupIds || [];
       const groupNamesForAI = groupIdsToConsiderForAI
-        .map(id => allGroupDetails.find(g => g.id === id)?.name || id) // Fallback to ID if name not found
+        .map(id => allGroupDetails.find(g => g.id === id)?.name || id)
         .filter(Boolean);
 
 
       const inputForAI: CarpoolMatchingInput = {
-        eventLocation: data.eventLocation,
+        eventLocation: finalEventLocationForAI.trim(),
         eventDateTime: eventDateTime.toISOString(),
         userLocation: data.userLocation,
         trafficConditions: data.trafficConditions,
@@ -263,20 +272,83 @@ export function FindCarpoolForm({
               name="eventLocation"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Event Location</FormLabel>
+                  <FormLabel>Event Name / General Location</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="e.g., 123 Main St, Anytown, USA or School Auditorium"
+                      placeholder="e.g., School Auditorium, City Park Soccer Fields"
                       {...field}
                       disabled={isEventPreFilled}
                       className={isEventPreFilled ? "bg-muted/50" : ""}
                     />
                   </FormControl>
-                  {isEventPreFilled && <FormDescription className="text-xs">Pre-filled from selected event.</FormDescription>}
+                  {isEventPreFilled && <FormDescription className="text-xs">Pre-filled from selected event. Add specific address below if needed.</FormDescription>}
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            <div className="space-y-3 p-4 border rounded-md bg-muted/20">
+                <FormLabel className="text-sm font-medium flex items-center">
+                    <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
+                    Detailed Event Address (Optional, but recommended for accuracy)
+                </FormLabel>
+                <FormField
+                    control={form.control}
+                    name="eventStreet"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="text-xs">Street Address</FormLabel>
+                        <FormControl>
+                            <Input placeholder="123 Main St" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField
+                        control={form.control}
+                        name="eventCity"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">City</FormLabel>
+                            <FormControl>
+                            <Input placeholder="Anytown" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="eventState"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">State / Province</FormLabel>
+                            <FormControl>
+                            <Input placeholder="CA" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="eventZip"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="text-xs">Zip / Postal Code</FormLabel>
+                            <FormControl>
+                            <Input placeholder="90210" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                </div>
+            </div>
+
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -377,12 +449,10 @@ export function FindCarpoolForm({
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                     Associate Your Groups (AI will prioritize these)
                   </FormLabel>
-                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 ? (
+                  {isEventPreFilled && initialAssociatedGroupIds && initialAssociatedGroupIds.length > 0 && (
                      <>
                         <div className="pt-2 space-x-1 space-y-1">
                            {initialAssociatedGroupIds.map(groupId => {
-                              // Display name if available, otherwise ID. This might need all groups data if not already fetched.
-                              // For simplicity, we'll rely on the availableGroups (user's groups) or fallback to ID.
                               const group = availableGroups.find(g => g.id === groupId) || {id: groupId, name: `Group (ID: ${groupId.substring(0,6)}... )`};
                               return (
                                  <Badge key={groupId} variant="secondary" className="mr-1">
@@ -393,7 +463,7 @@ export function FindCarpoolForm({
                         </div>
                         <FormDescription>Groups pre-filled from event. Add more of your groups below if needed.</FormDescription>
                      </>
-                  ) : null }
+                  ) }
                  
                   <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
                     <PopoverTrigger asChild>
@@ -405,7 +475,7 @@ export function FindCarpoolForm({
                         disabled={isLoadingGroups || authLoading || isLoadingProfile}
                       >
                         {isLoadingGroups ? "Loading your groups..." : (
-                          currentSelectedGroups.filter(id => availableGroups.some(g => g.id === id)).length > 0 // Count only selectable groups
+                          currentSelectedGroups.filter(id => availableGroups.some(g => g.id === id)).length > 0
                           ? `${currentSelectedGroups.filter(id => availableGroups.some(g => g.id === id)).length} of your group(s) selected`
                           : "Select from your groups..."
                         )}
@@ -457,7 +527,7 @@ export function FindCarpoolForm({
                       <div className="pt-2 space-x-1 space-y-1">
                           {currentSelectedGroups.map(groupId => {
                               const group = availableGroups.find(g => g.id === groupId) || (isEventPreFilled && initialAssociatedGroupIds?.includes(groupId) ? { id: groupId, name: `Pre-selected Group (ID: ${groupId.substring(0,6)}... )`} : null);
-                              if (!group) return null; // Skip if group not found (e.g. pre-selected and not in user's list)
+                              if (!group) return null;
                               return (
                                   <Badge
                                       key={groupId}
@@ -465,7 +535,6 @@ export function FindCarpoolForm({
                                       className="mr-1"
                                   >
                                       {group.name}
-                                      {/* Only allow removing if it's one of the user's selectable groups */}
                                       {availableGroups.some(g => g.id === groupId) && (
                                         <button
                                             type="button"
