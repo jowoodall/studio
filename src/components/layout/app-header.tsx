@@ -1,7 +1,7 @@
 
 'use client';
 import Link from 'next/link';
-import { Bell, UserCircle, Menu, LogOut, Settings } from 'lucide-react'; // Added LogOut, Settings
+import { Bell, UserCircle, Menu, LogOut, Settings, Loader2 } from 'lucide-react'; // Added Loader2
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,16 +16,16 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { siteConfig, userAccountMenu } from '@/config/site';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { signOut } from 'firebase/auth'; // Import Firebase signOut
-import { auth } from '@/lib/firebase'; // Import auth instance
-import { useAuth } from '@/context/AuthContext'; // Import useAuth
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // For user avatar
+import { signOut } from 'firebase/auth'; 
+import { auth } from '@/lib/firebase'; 
+import { useAuth } from '@/context/AuthContext'; 
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; 
 
 export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, loading: authLoading } = useAuth(); // Get user and loading state from context
+  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth(); // Get userProfile and isLoadingProfile
 
   const handleLogout = async (event: Event) => {
     event.preventDefault(); 
@@ -45,6 +45,8 @@ export function AppHeader() {
       });
     }
   };
+
+  const isLoading = authLoading || isLoadingProfile;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -79,10 +81,14 @@ export function AppHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
                   <Avatar className="h-9 w-9">
-                    {user?.photoURL && <AvatarImage src={user.photoURL} alt={user.displayName || 'User avatar'} />}
+                    {userProfile?.avatarUrl || user?.photoURL ? (
+                      <AvatarImage src={userProfile?.avatarUrl || user?.photoURL || undefined} alt={userProfile?.fullName || user?.displayName || 'User avatar'} />
+                    ): null}
                     <AvatarFallback>
-                      {authLoading ? (
-                        <UserCircle className="h-5 w-5 text-muted-foreground" />
+                      {isLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : userProfile?.fullName ? (
+                        userProfile.fullName.charAt(0).toUpperCase()
                       ) : user?.displayName ? (
                         user.displayName.charAt(0).toUpperCase()
                       ) : (
@@ -93,55 +99,77 @@ export function AppHeader() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                {user && !authLoading && (
+                {isLoading ? (
+                  <DropdownMenuItem disabled>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading...
+                  </DropdownMenuItem>
+                ) : userProfile ? (
                   <>
                     <DropdownMenuLabel className="font-normal">
                       <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{user.displayName || "User"}</p>
+                        <p className="text-sm font-medium leading-none">{userProfile.fullName}</p>
                         <p className="text-xs leading-none text-muted-foreground">
-                          {user.email}
+                          {userProfile.email}
                         </p>
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    {userAccountMenu
+                      .filter(item => {
+                        if (!item.roles || item.roles.length === 0) return true; // Always show if no roles defined
+                        if (!userProfile || !userProfile.role) {
+                           // If profile or role is missing, only allow logout/login/signup, or items without role restrictions.
+                           // This case should be rare if isLoadingProfile is handled correctly.
+                           return item.title === 'Log Out' || (!item.roles || item.roles.length === 0);
+                        }
+                        return item.roles.includes(userProfile.role);
+                      })
+                      .map((item) => {
+                        if (item.title === 'Log Out') {
+                          return (
+                            <DropdownMenuItem key={item.title} onSelect={handleLogout} className="cursor-pointer">
+                              {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
+                              <span>{item.title}</span>
+                            </DropdownMenuItem>
+                          );
+                        }
+                        return (
+                          <DropdownMenuItem key={item.href} asChild>
+                            <Link href={item.href} className="flex items-center">
+                              {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
+                              <span>{item.title}</span>
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                    })}
                   </>
-                )}
-                {userAccountMenu.map((item) => {
-                  // Conditionally render items based on auth state if needed (e.g. hide "Log Out" if not logged in)
-                  if (!user && item.title === "Log Out") return null;
-                  if (!user && item.title !== "Log Out" && item.href !== "/login" && item.href !== "/signup") {
-                    // Potentially hide other auth-only items if not logged in, or handle via route protection
-                  }
-
-                  if (item.title === 'Log Out') {
-                    return (
-                      <DropdownMenuItem key={item.title} onSelect={handleLogout} className="cursor-pointer">
-                        {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
-                        <span>{item.title}</span>
-                      </DropdownMenuItem>
-                    );
-                  }
-                  return (
-                    <DropdownMenuItem key={item.href} asChild>
-                      <Link href={item.href} className="flex items-center">
-                        {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
-                        <span>{item.title}</span>
-                      </Link>
-                    </DropdownMenuItem>
-                  );
-                })}
-                 {!user && !authLoading && ( // Show Login/Signup if not logged in
+                ) : user ? ( // Fallback if userProfile failed to load but Firebase user exists
                     <>
-                      <DropdownMenuSeparator />
+                     <DropdownMenuLabel className="font-normal">
+                        <div className="flex flex-col space-y-1">
+                            <p className="text-sm font-medium leading-none">{user.displayName || "User"}</p>
+                            <p className="text-xs leading-none text-muted-foreground">
+                            {user.email}
+                            </p>
+                        </div>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={handleLogout} className="cursor-pointer">
+                            <LogOut className="mr-2 h-4 w-4 text-muted-foreground" />
+                            <span>Log Out</span>
+                        </DropdownMenuItem>
+                    </>
+                ) : ( // Not logged in, or still in initial auth loading phase (covered by isLoading)
+                    <>
                       <DropdownMenuItem asChild>
                         <Link href="/login" className="flex items-center">
-                           <LogOut className="mr-2 h-4 w-4 text-muted-foreground transform rotate-180" /> {/* Using LogOut icon creatively for LogIn */}
+                           <LogOut className="mr-2 h-4 w-4 text-muted-foreground transform rotate-180" />
                           <span>Log In</span>
                         </Link>
                       </DropdownMenuItem>
                        <DropdownMenuItem asChild>
                         <Link href="/signup" className="flex items-center">
-                           <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" /> {/* Placeholder */}
+                           <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" />
                           <span>Sign Up</span>
                         </Link>
                       </DropdownMenuItem>

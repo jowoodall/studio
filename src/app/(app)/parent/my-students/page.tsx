@@ -13,36 +13,7 @@ import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-
-interface UserProfileData {
-  uid: string;
-  fullName: string;
-  email: string;
-  role: string;
-  avatarUrl?: string;
-  dataAiHint?: string;
-  bio?: string;
-  phone?: string;
-  preferences?: {
-    notifications?: string;
-    preferredPickupRadius?: string;
-  };
-  address?: {
-    street?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-  };
-  canDrive?: boolean;
-  driverDetails?: {
-    ageRange?: string;
-    drivingExperience?: string;
-    primaryVehicle?: string;
-    passengerCapacity?: string;
-  };
-  managedStudentIds?: string[];
-  associatedParentIds?: string[];
-}
+import { type UserProfileData, UserRole } from '@/types'; // Import UserProfileData
 
 interface ManagedStudentForList {
   id: string;
@@ -63,78 +34,66 @@ interface SelectedStudentFullInfo extends ManagedStudentForList {
     associatedParentsDetails: AssociatedParentDetail[];
 }
 
-// interface UpcomingRyd { // Commenting out as studentRydzToShow is commented
-//   id: string;
-//   eventName: string;
-//   date: string;
-//   time: string;
-//   destination?: string;
-// }
-
-// const mockStudentUpcomingRydz: UpcomingRyd[] = [ // Commenting out as studentRydzToShow is commented
-//     { id: "ryd1", eventName: "School Play Rehearsal", date: "2024-12-05", time: "15:00" },
-//     { id: "ryd2", eventName: "Soccer Practice", date: "2024-12-07", time: "09:30" },
-//     { id: "ryd3", eventName: "Library Study Group", date: "2024-12-10", time: "18:00" },
-// ];
-
 export default function MyStudentsPage() {
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth();
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentForList[]>([]);
   const [selectedStudentDetails, setSelectedStudentDetails] = useState<SelectedStudentFullInfo | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // isLoading now combines context loading state with local fetching state
+  const [isFetchingStudentDetails, setIsFetchingStudentDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  const fetchManagedStudents = useCallback(async () => {
-    if (!authUser) return;
-    setIsLoading(true);
+  const fetchManagedStudentsList = useCallback(async () => {
+    if (!authUserProfile || authUserProfile.role !== UserRole.PARENT) {
+      setManagedStudentsList([]);
+      if (authUserProfile && authUserProfile.role !== UserRole.PARENT) {
+          setError("This page is for parents only.");
+      }
+      return;
+    }
+    setIsFetchingStudentDetails(true); // Indicates we are starting to fetch student list
     setError(null);
     try {
-      const parentDocRef = doc(db, "users", authUser.uid);
-      const parentDocSnap = await getDoc(parentDocRef);
-
-      if (parentDocSnap.exists()) {
-        const parentData = parentDocSnap.data() as UserProfileData;
-        if (parentData.managedStudentIds && parentData.managedStudentIds.length > 0) {
-          const studentPromises = parentData.managedStudentIds.map(async (studentId) => {
-            const studentDocRef = doc(db, "users", studentId);
-            const studentDocSnap = await getDoc(studentDocRef);
-            if (studentDocSnap.exists()) {
-              const sData = studentDocSnap.data() as UserProfileData;
-              return {
-                id: studentDocSnap.id,
-                fullName: sData.fullName,
-                email: sData.email,
-                avatarUrl: sData.avatarUrl,
-                dataAiHint: sData.dataAiHint,
-              };
-            }
-            return null;
-          });
-          const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentForList[];
-          setManagedStudentsList(students);
-        } else {
-          setManagedStudentsList([]);
-        }
+      if (authUserProfile.managedStudentIds && authUserProfile.managedStudentIds.length > 0) {
+        const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
+          const studentDocRef = doc(db, "users", studentId);
+          const studentDocSnap = await getDoc(studentDocRef);
+          if (studentDocSnap.exists()) {
+            const sData = studentDocSnap.data() as UserProfileData;
+            return {
+              id: studentDocSnap.id,
+              fullName: sData.fullName,
+              email: sData.email,
+              avatarUrl: sData.avatarUrl,
+              dataAiHint: sData.dataAiHint,
+            };
+          }
+          return null;
+        });
+        const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentForList[];
+        setManagedStudentsList(students);
       } else {
-        setError("Parent profile not found.");
+        setManagedStudentsList([]);
       }
     } catch (e) {
-      console.error("Error fetching managed students:", e);
-      setError("Failed to load managed students.");
+      console.error("Error fetching managed students list:", e);
+      setError("Failed to load managed students list.");
     } finally {
-      setIsLoading(false);
+      setIsFetchingStudentDetails(false);
     }
-  }, [authUser]);
+  }, [authUserProfile]);
 
   useEffect(() => {
-    if (!authLoading && authUser) {
-      fetchManagedStudents();
+    // Only try to fetch if context is done loading and we have a parent profile
+    if (!authLoading && !isLoadingContextProfile && authUserProfile) {
+      fetchManagedStudentsList();
+    } else if (!authLoading && !isLoadingContextProfile && !authUserProfile && authUser) {
+      // User authenticated but no profile (could be new user, error, or not a parent)
+      setError("Profile not loaded or you might not have parent permissions.");
     } else if (!authLoading && !authUser) {
-      setIsLoading(false);
       setError("Please log in to view your students.");
     }
-  }, [authUser, authLoading, fetchManagedStudents]);
+  }, [authUser, authUserProfile, authLoading, isLoadingContextProfile, fetchManagedStudentsList]);
 
   const handleStudentSelect = async (studentId: string) => {
     if (!studentId) {
@@ -143,7 +102,7 @@ export default function MyStudentsPage() {
         return;
     }
     setSelectedStudentId(studentId);
-    setIsLoading(true);
+    setIsFetchingStudentDetails(true);
     setError(null);
 
     try {
@@ -188,11 +147,14 @@ export default function MyStudentsPage() {
         setError("Failed to load student details.");
         setSelectedStudentDetails(null);
     } finally {
-        setIsLoading(false);
+        setIsFetchingStudentDetails(false);
     }
   };
 
-  if (authLoading || (isLoading && managedStudentsList.length === 0 && !error)) {
+  // Combined loading state
+  const isLoading = authLoading || isLoadingContextProfile || isFetchingStudentDetails;
+
+  if (isLoading && managedStudentsList.length === 0 && !error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -207,12 +169,12 @@ export default function MyStudentsPage() {
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
         <h2 className="text-xl font-semibold mb-2">Error</h2>
         <p className="text-muted-foreground px-4">{error}</p>
-        <Button onClick={fetchManagedStudents} className="mt-4">Try Again</Button>
+        <Button onClick={fetchManagedStudentsList} className="mt-4">Try Again</Button>
       </div>
     );
   }
 
-  if (!authUser && !authLoading) {
+  if (!authUser && !authLoading) { // Should be caught by AuthContext's loader, but as a fallback
       return (
           <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
               <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
@@ -221,8 +183,18 @@ export default function MyStudentsPage() {
           </div>
       );
   }
+  
+  if (authUserProfile && authUserProfile.role !== UserRole.PARENT && !isLoading) {
+     return (
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+            <Users className="h-12 w-12 text-muted-foreground mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+            <p className="text-muted-foreground px-4">This page is only accessible to users with the Parent role.</p>
+            <Button asChild className="mt-4"><Link href="/dashboard">Go to Dashboard</Link></Button>
+        </div>
+     );
+  }
 
-  // const studentRydzToShow = selectedStudentDetails ? mockStudentUpcomingRydz.slice(0, 2) : []; // Commented out
 
   return (
     <>
@@ -251,19 +223,19 @@ export default function MyStudentsPage() {
               </SelectContent>
             </Select>
           ) : (
-             <p className="text-muted-foreground">You are not managing any students yet. You can add students from your main profile page.</p>
+             <p className="text-muted-foreground">{isLoading ? "Loading students..." : "You are not managing any students yet. You can add students from your main profile page."}</p>
           )}
         </CardContent>
       </Card>
 
-      {isLoading && selectedStudentId && (
+      {isFetchingStudentDetails && selectedStudentId && ( // Show loader specifically for selected student details
            <div className="flex flex-col items-center justify-center py-10">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
             <p className="text-muted-foreground">Loading student details...</p>
           </div>
       )}
 
-      {selectedStudentDetails && !isLoading && (
+      {selectedStudentDetails && !isFetchingStudentDetails && (
         <div className="grid gap-6 md:grid-cols-3">
           <div className="md:col-span-1">
             <Card className="shadow-lg text-center">
@@ -303,7 +275,7 @@ export default function MyStudentsPage() {
                           <p className="font-medium">{parent.fullName}</p>
                           <p className="text-xs text-muted-foreground">{parent.email || 'No email'}</p>
                         </div>
-                        {parent.uid === authUser?.uid ? (
+                        {parent.uid === authUserProfile?.uid ? ( // Check against authUserProfile
                            <span className="text-xs text-primary font-semibold">This is you</span>
                         ) : (
                             <Button variant="ghost" size="sm" asChild>
@@ -330,19 +302,6 @@ export default function MyStudentsPage() {
                 <CardDescription>Quick overview of {selectedStudentDetails.fullName}'s upcoming rydz. (Mock Data)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* {studentRydzToShow.length > 0 ? ( // Commented out usage
-                    studentRydzToShow.map(ryd => (
-                        <div key={ryd.id} className="p-3 bg-muted/50 rounded-md">
-                            <p className="font-semibold text-sm">{ryd.eventName}</p>
-                            <div className="flex items-center text-xs text-muted-foreground mt-1">
-                                <CalendarDays className="mr-1.5 h-3 w-3" /> {ryd.date}
-                                <Clock className="ml-3 mr-1.5 h-3 w-3" /> {ryd.time}
-                            </div>
-                        </div>
-                    ))
-                ) : (
-                    <p className="text-sm text-muted-foreground">No upcoming rydz scheduled (mock data).</p>
-                )} */}
                  <p className="text-sm text-muted-foreground">Rydz display temporarily commented out for debugging.</p>
                  <p className="text-xs text-muted-foreground pt-2">Note: Rydz data shown here is currently mock data and not live.</p>
               </CardContent>
@@ -350,7 +309,7 @@ export default function MyStudentsPage() {
           </div>
         </div>
       )}
-      {!isLoading && !selectedStudentId && managedStudentsList.length > 0 && (
+      {!isLoading && !selectedStudentId && managedStudentsList.length > 0 && !isFetchingStudentDetails && (
             <Card className="text-center py-12 shadow-md">
             <CardHeader>
                 <User className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -364,7 +323,7 @@ export default function MyStudentsPage() {
             </Card>
         )
       }
-       {!isLoading && managedStudentsList.length === 0 && !error && (
+       {!isLoading && managedStudentsList.length === 0 && !error && !isFetchingStudentDetails && (
          <Card className="text-center py-12 shadow-md">
             <CardHeader>
                 <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -381,4 +340,3 @@ export default function MyStudentsPage() {
     </>
   );
 }
-    

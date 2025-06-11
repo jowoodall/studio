@@ -3,57 +3,72 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
-// import { UserRole } from '@/types'; // Import if you plan to manage roles here
+import { type UserProfileData, UserRole } from '@/types'; // Import UserProfileData and UserRole
 
 interface AuthContextType {
   user: FirebaseUser | null;
-  loading: boolean;
-  // role: UserRole | null; // Placeholder for role management
+  userProfile: UserProfileData | null; // Added userProfile
+  loading: boolean; // Overall auth loading (Firebase auth state)
+  isLoadingProfile: boolean; // Specific loading for Firestore profile
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  // const [role, setRole] = useState<UserRole | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState(true); // For Firebase auth
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true); // For Firestore profile fetch
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true); // Start loading for auth check
+      setIsLoadingProfile(true); // Start loading for profile fetch
+
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Example: Fetch custom claims for role (requires backend setup)
-        // try {
-        //   const idTokenResult = await firebaseUser.getIdTokenResult(true); // Force refresh
-        //   const userRole = idTokenResult.claims.role as UserRole || UserRole.STUDENT;
-        //   setRole(userRole);
-        // } catch (error) {
-        //   console.error("Error fetching user role from token:", error);
-        //   setRole(UserRole.STUDENT); // Default role on error
-        // }
+        try {
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            setUserProfile(userDocSnap.data() as UserProfileData);
+          } else {
+            // Handle case where user exists in Auth but not Firestore (e.g., incomplete signup)
+            // For now, set profile to null, or you could create a default one.
+            setUserProfile(null); 
+            console.warn("User exists in Auth but no profile in Firestore for UID:", firebaseUser.uid);
+          }
+        } catch (error) {
+          console.error("Error fetching user profile from Firestore:", error);
+          setUserProfile(null);
+        }
       } else {
         setUser(null);
-        // setRole(null);
+        setUserProfile(null);
       }
-      setLoading(false);
+      setLoading(false); // Done with Firebase auth check
+      setIsLoadingProfile(false); // Done with profile fetch attempt
     });
 
     return () => unsubscribe();
   }, []);
 
-  if (loading) {
+  // Show a global loader if either Firebase auth or Firestore profile is loading initially.
+  // This prevents rendering parts of the app that depend on role before role is known.
+  if (loading || isLoadingProfile) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">Loading authentication...</p>
+        <p className="ml-3 text-muted-foreground">Loading authentication & profile...</p>
       </div>
     );
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading /*, role */ }}>
+    <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Ensure Label is imported
+// Label import is already implicitly handled by FormLabel from "@/components/ui/form"
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
@@ -20,7 +20,7 @@ import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserRole } from "@/types";
+import { UserRole, type UserProfileData } from "@/types"; // Import UserProfileData
 import {
   Form,
   FormControl,
@@ -31,34 +31,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-// Define a type for the user profile data from Firestore, matching profile/page.tsx
-interface UserProfileData {
-  uid: string;
-  fullName: string;
-  email: string; 
-  role: UserRole; 
-  avatarUrl?: string;
-  dataAiHint?: string;
-  bio?: string;
-  phone?: string;
-  preferences?: {
-    notifications?: string;
-    preferredPickupRadius?: string;
-  };
-  address?: {
-    street?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-  };
-  canDrive?: boolean;
-  driverDetails?: {
-    ageRange?: string;
-    drivingExperience?: string;
-    primaryVehicle?: string;
-    passengerCapacity?: string;
-  };
-}
 
 const profileEditFormSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters."),
@@ -85,9 +57,8 @@ const profileEditFormSchema = z.object({
 type ProfileEditFormValues = z.infer<typeof profileEditFormSchema>;
 
 export default function EditProfilePage() {
-  const { user: authUser, loading: authLoading } = useAuth();
-  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth(); // Use userProfile from context
+  const [localUserProfile, setLocalUserProfile] = useState<UserProfileData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
@@ -115,62 +86,56 @@ export default function EditProfilePage() {
   });
 
   useEffect(() => {
-    async function fetchUserProfile() {
-      if (authUser) {
-        setIsLoadingProfile(true);
-        try {
-          const userDocRef = doc(db, "users", authUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-
-          if (userDocSnap.exists()) {
-            const data = userDocSnap.data() as UserProfileData;
-            setUserProfile(data);
-            form.reset({
-              fullName: data.fullName || "",
-              avatarUrl: data.avatarUrl || "",
-              dataAiHint: data.dataAiHint || "",
-              bio: data.bio || "",
-              phone: data.phone || "",
-              prefNotifications: data.preferences?.notifications || "email",
-              prefPickupRadius: data.preferences?.preferredPickupRadius || "5 miles",
-              addrStreet: data.address?.street || "",
-              addrCity: data.address?.city || "",
-              addrState: data.address?.state || "",
-              addrZip: data.address?.zip || "",
-              canDrive: data.canDrive || false,
-              driverAgeRange: data.driverDetails?.ageRange || "",
-              driverExperience: data.driverDetails?.drivingExperience || "",
-              driverVehicle: data.driverDetails?.primaryVehicle || "",
-              driverCapacity: data.driverDetails?.passengerCapacity || "",
-            });
-          } else {
-            toast({ title: "Error", description: "User profile not found.", variant: "destructive" });
-            router.push("/profile"); 
-          }
-        } catch (error) {
-          console.error("Error fetching user profile for edit:", error);
-          toast({ title: "Error", description: "Failed to load profile for editing.", variant: "destructive" });
-        } finally {
-          setIsLoadingProfile(false);
+    if (!isLoadingContextProfile && authUserProfile) {
+        setLocalUserProfile(authUserProfile);
+        form.reset({
+            fullName: authUserProfile.fullName || "",
+            avatarUrl: authUserProfile.avatarUrl || "",
+            dataAiHint: authUserProfile.dataAiHint || "",
+            bio: authUserProfile.bio || "",
+            phone: authUserProfile.phone || "",
+            prefNotifications: authUserProfile.preferences?.notifications || "email",
+            prefPickupRadius: authUserProfile.preferences?.preferredPickupRadius || "5 miles",
+            addrStreet: authUserProfile.address?.street || "",
+            addrCity: authUserProfile.address?.city || "",
+            addrState: authUserProfile.address?.state || "",
+            addrZip: authUserProfile.address?.zip || "",
+            canDrive: authUserProfile.canDrive || false,
+            driverAgeRange: authUserProfile.driverDetails?.ageRange || "",
+            driverExperience: authUserProfile.driverDetails?.drivingExperience || "",
+            driverVehicle: authUserProfile.driverDetails?.primaryVehicle || "",
+            driverCapacity: authUserProfile.driverDetails?.passengerCapacity || "",
+        });
+    } else if (!authLoading && !isLoadingContextProfile && !authUserProfile && authUser) {
+        // User authenticated but profile doesn't exist in context (might be new or error)
+        // Attempt to fetch directly once more, or redirect if truly missing
+        async function fetchDirectProfile() {
+            const userDocRef = doc(db, "users", authUser!.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                const data = userDocSnap.data() as UserProfileData;
+                setLocalUserProfile(data);
+                form.reset({ /* ... populate form as above ... */ });
+            } else {
+                toast({ title: "Error", description: "User profile not found.", variant: "destructive" });
+                router.push("/profile");
+            }
         }
-      } else if (!authLoading) {
-        router.push("/login"); 
-      }
+        fetchDirectProfile();
+    } else if (!authLoading && !authUser) {
+        router.push("/login");
     }
-    if (!authLoading) {
-      fetchUserProfile();
-    }
-  }, [authUser, authLoading, router, form, toast]);
+  }, [authUser, authUserProfile, authLoading, isLoadingContextProfile, router, form, toast]);
+
 
   async function onSubmit(data: ProfileEditFormValues) {
-    if (!authUser || !userProfile) {
+    if (!authUser || !localUserProfile) {
       toast({ title: "Error", description: "User not authenticated or profile not loaded.", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
     try {
       const userDocRef = doc(db, "users", authUser.uid);
-      // Note: Role is intentionally NOT included in updatedData
       const updatedData: Partial<Omit<UserProfileData, 'role' | 'email' | 'uid' | 'createdAt'>> = {
         fullName: data.fullName,
         avatarUrl: data.avatarUrl,
@@ -207,7 +172,7 @@ export default function EditProfilePage() {
     }
   }
 
-  if (authLoading || isLoadingProfile) {
+  if (authLoading || isLoadingContextProfile || (!localUserProfile && authUser)) { // Show loader if context profile is loading OR local is still null but authUser exists
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -216,13 +181,14 @@ export default function EditProfilePage() {
     );
   }
 
-  if (!userProfile) {
+  if (!localUserProfile) { // Handles case where user is not logged in OR profile truly doesn't exist after loading
     return (
         <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-            <p className="text-muted-foreground">Could not load profile data.</p>
+            <p className="text-muted-foreground">Could not load profile data. Please ensure you are logged in.</p>
         </div>
     );
   }
+
 
   return (
     <>
@@ -248,12 +214,12 @@ export default function EditProfilePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormItem>
                   <FormLabel htmlFor="email-display">Email Address</FormLabel>
-                  <Input id="email-display" value={userProfile.email} readOnly className="bg-muted/50" />
+                  <Input id="email-display" value={localUserProfile.email} readOnly className="bg-muted/50" />
                   <FormDescription className="text-xs">Email cannot be changed.</FormDescription>
                 </FormItem>
                 <FormItem>
                   <FormLabel htmlFor="role-display">Your Role</FormLabel>
-                  <Input id="role-display" value={userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)} readOnly className="bg-muted/50 capitalize" />
+                  <Input id="role-display" value={localUserProfile.role.charAt(0).toUpperCase() + localUserProfile.role.slice(1)} readOnly className="bg-muted/50 capitalize" />
                   <FormDescription className="text-xs">Role is set at signup and cannot be changed.</FormDescription>
                 </FormItem>
               </div>
@@ -430,7 +396,7 @@ export default function EditProfilePage() {
               )}
 
 
-              <Button type="submit" className="w-full" disabled={isSubmitting || isLoadingProfile}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingContextProfile}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
                 ) : (
@@ -444,5 +410,3 @@ export default function EditProfilePage() {
     </>
   );
 }
-
-
