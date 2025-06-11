@@ -13,7 +13,7 @@ import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, Use
 import Link from "next/link";
 import { UserRole } from '@/types';
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// Select component is no longer needed here for role view
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch, query, where, getDocs, collection, setDoc } from 'firebase/firestore';
@@ -85,7 +85,6 @@ export default function ProfilePage() {
     primaryVehicle: "",
     passengerCapacity: "",
   });
-  const [selectedRoleForView, setSelectedRoleForView] = useState<UserRole | undefined>(undefined);
   
   const [studentEmailInput, setStudentEmailInput] = useState("");
   const [isAddingStudent, setIsAddingStudent] = useState(false);
@@ -111,7 +110,6 @@ export default function ProfilePage() {
             setUserProfile(data);
             setCanDrive(data.canDrive || false);
             setDriverDetails(data.driverDetails || { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" });
-            setSelectedRoleForView(data.role); 
             
             if (data.role === UserRole.PARENT && data.managedStudentIds && data.managedStudentIds.length > 0) {
               console.log("ProfilePage: Parent role detected. Fetching managed student details for IDs:", data.managedStudentIds);
@@ -186,7 +184,6 @@ export default function ProfilePage() {
                     };
                     await setDoc(doc(db, "users", authUser.uid), newUserProfile);
                     setUserProfile(newUserProfile);
-                    setSelectedRoleForView(newUserProfile.role);
                     setProfileError(null); 
                     toast({ title: "Profile Initialized", description: "A basic profile has been created for you." });
                     console.log("ProfilePage: Basic profile successfully initialized.");
@@ -420,7 +417,6 @@ export default function ProfilePage() {
     }
   };
   
-  const currentDisplayRole = userProfile?.role || selectedRoleForView;
 
   if (authLoading || isLoadingProfile) {
     return (
@@ -478,7 +474,7 @@ export default function ProfilePage() {
               </Avatar>
               <CardTitle className="font-headline text-2xl">{userProfile.fullName}</CardTitle>
               <CardDescription className="capitalize">
-                {currentDisplayRole === UserRole.PARENT ? "Parent or Guardian" : currentDisplayRole === UserRole.STUDENT ? "Student" : currentDisplayRole}
+                {userProfile.role === UserRole.PARENT ? "Parent or Guardian" : userProfile.role === UserRole.STUDENT ? "Student" : userProfile.role}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -522,7 +518,7 @@ export default function ProfilePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle>Account Information</CardTitle>
-              <CardDescription>Details about your account and preferences.</CardDescription>
+              <CardDescription>Details about your account and preferences. Role is set at signup and cannot be changed.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -563,25 +559,7 @@ export default function ProfilePage() {
 
               <Separator className="my-6" />
 
-              <div>
-                <Label htmlFor="roleSelect" className="text-base font-medium">My Primary Role (View)</Label>
-                <Select
-                  value={selectedRoleForView}
-                  onValueChange={(value) => setSelectedRoleForView(value as UserRole)}
-                >
-                  <SelectTrigger id="roleSelect" className="mt-1">
-                    <SelectValue placeholder="Select role to view relevant sections" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={UserRole.STUDENT}>View as Student</SelectItem>
-                    <SelectItem value={UserRole.PARENT}>View as Parent or Guardian</SelectItem>
-                    <SelectItem value={UserRole.ADMIN}>View as Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-                 <p className="text-xs text-muted-foreground mt-1">Your actual role is: <span className="font-semibold capitalize">{userProfile.role}</span>. This selector changes your view.</p>
-              </div>
-
-              {selectedRoleForView === UserRole.PARENT && (
+              {userProfile.role === UserRole.PARENT && (
                 <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-accent mb-2">
                       <Users className="h-5 w-5" />
@@ -620,7 +598,7 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {selectedRoleForView === UserRole.STUDENT && (
+              {userProfile.role === UserRole.STUDENT && (
                 <div className="space-y-6 pl-4 border-l-2 border-blue-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-blue-600 mb-2">
                       <Users className="h-5 w-5" />
@@ -658,7 +636,7 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {selectedRoleForView === UserRole.ADMIN && (
+              {userProfile.role === UserRole.ADMIN && (
                 <div className="space-y-6 pl-4 border-l-2 border-red-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
                   <div className="flex items-center gap-2 text-red-600 mb-2">
                       <UserCog className="h-5 w-5" />
