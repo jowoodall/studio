@@ -21,10 +21,12 @@ import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc } from "firebase/firestore";
-import type { EventData, RydData, RydStatus, UserProfileData, UserRole } from "@/types";
+import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+
 
 interface ManagedStudentSelectItem {
   id: string;
