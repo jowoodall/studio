@@ -7,13 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle, ArrowLeft } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle, ArrowLeft, MessageSquare } from "lucide-react"; // Added MessageSquare
 import Link from "next/link";
 import { UserRole, type UserProfileData } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from "@/components/ui/input"; // Added Input import
+import { Label } from "@/components/ui/label"; // Added Label import
 
 interface ViewProfilePageParams {
   userId: string;
@@ -128,7 +130,7 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
             <CardHeader>
               <Avatar className="h-32 w-32 mx-auto mb-4 border-4 border-primary">
                 <AvatarImage src={viewedUserProfile.avatarUrl || `https://placehold.co/128x128.png?text=${viewedUserProfile.fullName.split(" ").map(n=>n[0]).join("")}`} alt={viewedUserProfile.fullName} data-ai-hint={viewedUserProfile.dataAiHint || "profile picture"} />
-                <AvatarFallback>{viewedUserProfile.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                <AvatarFallback>{viewedUserProfile.fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
               </Avatar>
               <CardTitle className="font-headline text-2xl">{viewedUserProfile.fullName}</CardTitle>
               <CardDescription className="capitalize">
@@ -152,8 +154,8 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
               </div>
               {!isOwnProfile && (
                 <Button className="w-full mt-6" asChild>
-                    <Link href={`/messages/new?recipient=${viewedUserProfile.uid}`}>
-                        Message {viewedUserProfile.fullName.split(" ")[0]}
+                    <Link href={`/messages/new?recipient=${viewedUserProfile.uid}&recipientName=${encodeURIComponent(viewedUserProfile.fullName)}`}>
+                        <MessageSquare className="mr-2 h-4 w-4" /> Message {viewedUserProfile.fullName.split(" ")[0]}
                     </Link>
                 </Button>
               )}
@@ -200,7 +202,7 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
                     )}
                   </div>
                 )}
-                {(!viewedUserProfile.canDrive || !viewedUserProfile.driverDetails || Object.keys(viewedUserProfile.driverDetails).length === 0) && (
+                {(!viewedUserProfile.canDrive || !viewedUserProfile.driverDetails || Object.keys(viewedUserProfile.driverDetails).filter(k => viewedUserProfile.driverDetails![k as keyof typeof viewedUserProfile.driverDetails]).length === 0) && (
                      <div className="space-y-2 pl-4 border-l-2 border-muted ml-2 pt-2 pb-4">
                          <div className="flex items-center gap-2 text-muted-foreground mb-2">
                             <CarIcon className="h-5 w-5" />
@@ -210,7 +212,6 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
                      </div>
                 )}
               
-              {/* Placeholder for other public info like joined groups (if we decide to show that) */}
               <Separator />
                 <div>
                     <Label htmlFor="joined-groups-count">Joined Groups</Label>
@@ -220,10 +221,7 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
                         readOnly 
                         className="mt-1 bg-muted/50" 
                     />
-                    {/* Future: Could list group names if privacy allows and data is fetched */}
                 </div>
-
-
             </CardContent>
           </Card>
         </div>
@@ -231,3 +229,5 @@ export default function ViewUserProfilePage({ params: paramsPromise }: { params:
     </>
   );
 }
+
+    
