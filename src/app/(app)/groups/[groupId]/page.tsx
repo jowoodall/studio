@@ -1,7 +1,7 @@
 // src/app/(app)/groups/[groupId]/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, use } from 'react'; // Added use
+import React, { useState, useEffect, useCallback, use } from 'react'; 
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -9,14 +9,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CalendarDays, Car, Edit, Users, MapPin, AlertTriangle, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-// Static metadata for now, as dynamic generation is complex with client-side fetching.
-// To have dynamic metadata, a parent Server Component (e.g., layout.tsx) would need to fetch it.
 import { Separator } from "@/components/ui/separator";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import type { GroupData, UserProfileData, UserRole } from "@/types";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
 interface FetchedGroupMember {
   id: string;
@@ -25,15 +24,16 @@ interface FetchedGroupMember {
   dataAiHint?: string;
   canDrive: boolean;
   role: UserRole;
+  hasAcceptedInvitation: boolean; // Added this field
 }
 
 interface GroupViewPageProps {
-  params: Promise<{ groupId: string }>; // Updated: params is a Promise
+  params: Promise<{ groupId: string }>; 
 }
 
-export default function GroupViewPage({ params: paramsPromise }: GroupViewPageProps) { // Renamed to paramsPromise
-  const resolvedParams = use(paramsPromise); // Resolve the params promise
-  const { groupId } = resolvedParams; // Destructure groupId from resolved params
+export default function GroupViewPage({ params: paramsPromise }: GroupViewPageProps) { 
+  const resolvedParams = use(paramsPromise); 
+  const { groupId } = resolvedParams; 
 
   const { user: authUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -75,6 +75,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as UserProfileData;
+            const hasAccepted = (userData.joinedGroupIds || []).includes(groupId); // Check acceptance
             return {
               id: userDocSnap.id,
               name: userData.fullName,
@@ -82,13 +83,14 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
               dataAiHint: userData.dataAiHint,
               canDrive: userData.canDrive || false,
               role: userData.role,
+              hasAcceptedInvitation: hasAccepted, // Set the flag
             };
           }
           return null;
         });
         const fetchedMembers = (await Promise.all(memberPromises)).filter(Boolean) as FetchedGroupMember[];
         setMembers(fetchedMembers);
-        setDrivers(fetchedMembers.filter(m => m.canDrive));
+        setDrivers(fetchedMembers.filter(m => m.canDrive && m.hasAcceptedInvitation)); // Only show accepted drivers
       } else {
         setMembers([]);
         setDrivers([]);
@@ -188,7 +190,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
             </div>
             <CardHeader>
               <CardTitle className="font-headline text-2xl">{group.name}</CardTitle>
-              <CardDescription>{members.length || 0} members</CardDescription>
+              <CardDescription>{members.filter(m => m.hasAcceptedInvitation).length || 0} active members ({members.length || 0} total invited)</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">{group.description}</p>
@@ -232,7 +234,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
           <Card className="shadow-xl">
             <CardHeader>
               <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-primary" /> Group Drivers</CardTitle>
-              <CardDescription>Members who are marked as able to drive.</CardDescription>
+              <CardDescription>Members who can drive and have accepted the group invitation.</CardDescription>
             </CardHeader>
             <CardContent>
               {drivers.length > 0 ? (
@@ -253,7 +255,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
               ) : (
                  <div className="text-center py-6 text-muted-foreground">
                   <Car className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                  <p>No designated drivers in this group yet.</p>
+                  <p>No designated (and accepted) drivers in this group yet.</p>
                 </div>
               )}
             </CardContent>
@@ -273,11 +275,18 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
                         <AvatarImage src={member.avatarUrl || `https://placehold.co/100x100.png?text=${member.name.split(" ").map(n=>n[0]).join("")}`} alt={member.name} data-ai-hint={member.dataAiHint || "member photo"} />
                         <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-medium">{member.name}</p>
+                      <div className="flex-1">
+                        <p className="font-medium">
+                          {member.name}
+                          {!member.hasAcceptedInvitation && (
+                            <Badge variant="outline" className="ml-2 text-xs border-yellow-500 text-yellow-600">
+                              Pending
+                            </Badge>
+                          )}
+                        </p>
                          <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
                       </div>
-                       {member.canDrive && <Car className="ml-auto h-4 w-4 text-blue-500" title="Can Drive" />}
+                       {member.canDrive && member.hasAcceptedInvitation && <Car className="ml-auto h-4 w-4 text-blue-500" title="Can Drive" />}
                     </li>
                   ))}
                 </ul>
@@ -302,3 +311,4 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
 }
 
     
+
