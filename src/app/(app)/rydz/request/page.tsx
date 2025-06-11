@@ -30,11 +30,12 @@ const rydRequestFormSchema = z.object({
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(5, "Pickup location is required."),
   date: z.date({ required_error: "Date of ryd is required." }), 
-  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // This is Event Start Time
+  earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."), // New field
   notes: z.string().optional(),
 }).refine(data => data.eventId || data.eventName, {
     message: "Either select an event or provide an event name if 'Other'.",
-    path: ["eventName"], // Or path: ["eventId"] or a general form error
+    path: ["eventName"], 
 });
 
 type RydRequestFormValues = z.infer<typeof rydRequestFormSchema>; 
@@ -51,6 +52,7 @@ export default function RydRequestPage() {
     resolver: zodResolver(rydRequestFormSchema), 
     defaultValues: {
       time: "09:00", 
+      earliestPickupTime: "08:00", // Default earliest pickup time
       destination: "",
       eventName: "",
       pickupLocation: "",
@@ -65,7 +67,6 @@ export default function RydRequestPage() {
         const querySnapshot = await getDocs(eventsQuery);
         const fetchedEvents: EventData[] = [];
         querySnapshot.forEach((doc) => {
-          // Filter out past events for the dropdown
           const eventData = doc.data() as EventData;
           if (eventData.eventTimestamp.toDate() >= new Date()) {
             fetchedEvents.push({ id: doc.id, ...eventData });
@@ -89,22 +90,29 @@ export default function RydRequestPage() {
     }
     setIsSubmitting(true);
 
-    const [hours, minutes] = data.time.split(':').map(Number);
-    const rydDateTime = new Date(data.date);
-    rydDateTime.setHours(hours, minutes, 0, 0);
-    const rydFirestoreTimestamp = Timestamp.fromDate(rydDateTime);
+    const [eventHours, eventMinutes] = data.time.split(':').map(Number);
+    const eventStartDateTime = new Date(data.date);
+    eventStartDateTime.setHours(eventHours, eventMinutes, 0, 0);
+    const eventStartFirestoreTimestamp = Timestamp.fromDate(eventStartDateTime);
 
-    const rydRequestPayload: Omit<RydData, 'id'> = { // Omit id as Firestore generates it
+    const [pickupHours, pickupMinutes] = data.earliestPickupTime.split(':').map(Number);
+    const earliestPickupDateTime = new Date(data.date); // Assume pickup on the same day
+    earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
+    const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
+
+
+    const rydRequestPayload: Omit<RydData, 'id'> = { 
       requestedBy: authUser.uid,
       eventId: data.eventId === "custom" ? undefined : data.eventId,
       eventName: data.eventId === "custom" ? data.eventName : undefined,
       destination: data.destination,
       pickupLocation: data.pickupLocation,
-      rydTimestamp: rydFirestoreTimestamp,
+      rydTimestamp: eventStartFirestoreTimestamp, // This is the event start time
+      earliestPickupTimestamp: earliestPickupFirestoreTimestamp, // New field for earliest pickup
       notes: data.notes || "",
       status: 'requested' as RydStatus,
       passengerIds: [authUser.uid],
-      createdAt: serverTimestamp() as Timestamp, // serverTimestamp() will be replaced by actual Timestamp by Firestore
+      createdAt: serverTimestamp() as Timestamp, 
     };
 
     try {
@@ -133,16 +141,16 @@ export default function RydRequestPage() {
       const event = availableEvents.find(e => e.id === selectedEventId);
       if (event) {
         form.setValue("destination", event.location);
-        form.setValue("eventName", ""); // Clear custom event name
-        // Also set date and time if the event data contains it
+        form.setValue("eventName", ""); 
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
             form.setValue("date", eventDate);
-            form.setValue("time", format(eventDate, "HH:mm"));
+            form.setValue("time", format(eventDate, "HH:mm")); // Sets Event Start Time
         }
       }
     } else if (selectedEventId === "custom") {
-      form.setValue("destination", ""); // Clear destination if custom event
+      form.setValue("destination", ""); 
+      form.setValue("time", "09:00"); // Reset event start time if custom
     }
   }, [selectedEventId, form, availableEvents]);
 
@@ -172,9 +180,18 @@ export default function RydRequestPage() {
                             field.onChange(value);
                             if (value !== "custom") {
                                 const event = availableEvents.find(e => e.id === value);
-                                if (event) form.setValue("destination", event.location);
+                                if (event) {
+                                  form.setValue("destination", event.location);
+                                  if (event.eventTimestamp) {
+                                    const eventDate = event.eventTimestamp.toDate();
+                                    form.setValue("date", eventDate);
+                                    form.setValue("time", format(eventDate, "HH:mm"));
+                                  }
+                                }
                             } else {
                                 form.setValue("destination", ""); 
+                                form.setValue("time", "09:00"); // Reset time if custom
+                                form.setValue("eventName", ""); // Clear eventName if switching to custom
                             }
                         }} 
                         defaultValue={field.value}
@@ -198,7 +215,7 @@ export default function RydRequestPage() {
                 )}
               />
 
-              {(selectedEventId === "custom" || !selectedEventId) && ( // Show if 'Other' is selected OR no event is selected yet
+              {(selectedEventId === "custom" || !selectedEventId) && ( 
                  <FormField
                     control={form.control}
                     name="eventName"
@@ -291,16 +308,31 @@ export default function RydRequestPage() {
                   name="time"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Time (24h format)</FormLabel>
+                      <FormLabel>Event Start Time (24h format)</FormLabel>
                       <FormControl>
                         <Input type="time" {...field} disabled={(!!selectedEventId && selectedEventId !== "custom")} className={ (!!selectedEventId && selectedEventId !== "custom") ? "bg-muted/50" : ""}/>
                       </FormControl>
-                      {(!!selectedEventId && selectedEventId !== "custom") && <FormDescription className="text-xs">Time auto-filled from selected event.</FormDescription>}
+                      {(!!selectedEventId && selectedEventId !== "custom") && <FormDescription className="text-xs">Event start time auto-filled from selected event.</FormDescription>}
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+              
+              <FormField
+                control={form.control}
+                name="earliestPickupTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Earliest Pickup Time (24h format)</FormLabel>
+                    <FormControl>
+                      <Input type="time" {...field} />
+                    </FormControl>
+                    <FormDescription>The earliest you'd like to be picked up on the event date.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

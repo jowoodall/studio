@@ -109,7 +109,8 @@ export interface RydData {
   destination: string; // Full address of the destination
   pickupLocation: string; // Full address of the pickup location
 
-  rydTimestamp: Timestamp; // Requested date and time for the ryd
+  rydTimestamp: Timestamp; // Requested date and time for the ryd (EVENT START TIME)
+  earliestPickupTimestamp: Timestamp; // Earliest time the user wishes to be picked up
   
   status: RydStatus; // Current status of the ryd
   
