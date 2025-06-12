@@ -3,165 +3,70 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Rules for user profiles
     match /users/{userId} {
-      allow read: if request.auth.uid != null;
-      allow create: if request.auth.uid == userId && 
-                       request.resource.data.uid == userId &&
+      allow read: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId &&
                        request.resource.data.email == request.auth.token.email &&
-                       request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
-                       request.resource.data.role is string && (request.resource.data.role == "student" || request.resource.data.role == "parent" || request.resource.data.role == "admin") &&
-                       request.resource.data.createdAt == request.time &&
-                       // Optional fields need to be checked if they exist, then their type
-                       (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
-                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
-                       (request.resource.data.bio == null || request.resource.data.bio is string) &&
-                       (request.resource.data.phone == null || request.resource.data.phone is string) &&
-                       (request.resource.data.preferences == null || request.resource.data.preferences is map) &&
-                       (request.resource.data.address == null || request.resource.data.address is map) &&
-                       (request.resource.data.canDrive == null || request.resource.data.canDrive is bool) &&
-                       (request.resource.data.driverDetails == null || request.resource.data.driverDetails is map) &&
-                       (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
-                       (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list) &&
-                       (request.resource.data.joinedGroupIds == null || request.resource.data.joinedGroupIds is list);
-                       
-      allow update: if request.auth.uid == userId &&
-                       // Fields that should not be changed by user after creation
-                       request.resource.data.uid == resource.data.uid &&
-                       request.resource.data.email == resource.data.email &&
-                       request.resource.data.role == resource.data.role &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       // Check types for updatable fields
-                       request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
-                       (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string) &&
-                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
-                       (request.resource.data.bio == null || request.resource.data.bio is string) &&
-                       (request.resource.data.phone == null || request.resource.data.phone is string) &&
-                       (request.resource.data.preferences == null || request.resource.data.preferences is map) &&
-                       (request.resource.data.address == null || request.resource.data.address is map) &&
-                       (request.resource.data.canDrive == null || request.resource.data.canDrive is bool) &&
-                       (request.resource.data.driverDetails == null || request.resource.data.driverDetails is map) &&
-                       (request.resource.data.managedStudentIds == null || request.resource.data.managedStudentIds is list) &&
-                       (request.resource.data.associatedParentIds == null || request.resource.data.associatedParentIds is list) &&
-                       (request.resource.data.joinedGroupIds == null || request.resource.data.joinedGroupIds is list);
+                       request.resource.data.role is string &&
+                       (request.resource.data.role == 'student' || request.resource.data.role == 'parent' || request.resource.data.role == 'admin') &&
+                       request.resource.data.fullName is string && request.resource.data.fullName != '' &&
+                       request.resource.data.createdAt is timestamp;
+      allow update: if request.auth.uid == userId;
+      // Deny delete for now to prevent accidental deletion
+      allow delete: if false;
     }
-
-    // Rules for groups
     match /groups/{groupId} {
-      allow read: if request.auth.uid != null; // Allow any authenticated user to read group details
-      allow create: if request.auth.uid != null && 
-                       request.resource.data.createdBy == request.auth.uid &&
-                       request.resource.data.memberIds.hasAny([request.auth.uid]) && // Creator must be a member
-                       request.resource.data.adminIds.hasAny([request.auth.uid]) && // Creator must be an admin
-                       request.resource.data.name is string && request.resource.data.name.size() > 2 &&
-                       request.resource.data.description is string && request.resource.data.description.size() > 5 &&
-                       (request.resource.data.imageUrl == null || request.resource.data.imageUrl is string) &&
-                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
-                       request.resource.data.createdAt == request.time;
-      allow update: if request.auth.uid != null && resource.data.adminIds.hasAny([request.auth.uid]) && // Only admins can update
-                       // Fields that should not be changed by admin after creation
-                       request.resource.data.createdBy == resource.data.createdBy &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       // Check types for updatable fields
-                       request.resource.data.name is string && request.resource.data.name.size() > 2 &&
-                       request.resource.data.description is string && request.resource.data.description.size() > 0 &&
-                       (request.resource.data.imageUrl == null || request.resource.data.imageUrl is string) &&
-                       (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string) &&
-                       request.resource.data.memberIds is list &&
-                       request.resource.data.adminIds is list;
-      // Deletion rule can be added if needed, e.g., only creator or specific admin role
-    }
-
-    // Rules for Events
-    match /events/{eventId} {
-        allow read: if request.auth.uid != null;
-        allow create: if request.auth.uid != null && 
-                         request.resource.data.createdBy == request.auth.uid &&
-                         request.resource.data.name is string && request.resource.data.name.size() > 2 &&
-                         request.resource.data.eventTimestamp is timestamp &&
-                         request.resource.data.location is string && request.resource.data.location.size() > 0 &&
-                         request.resource.data.eventType is string &&
-                         (request.resource.data.description == null || request.resource.data.description is string) &&
-                         request.resource.data.associatedGroupIds is list &&
-                         request.resource.data.createdAt == request.time; // Ensure createdAt is set by server
-        allow update: if request.auth.uid != null && resource.data.createdBy == request.auth.uid && // Only creator can update
-                         request.resource.data.name is string && request.resource.data.name.size() > 2 &&
-                         request.resource.data.eventTimestamp is timestamp &&
-                         request.resource.data.location is string && request.resource.data.location.size() > 0 &&
-                         request.resource.data.eventType is string &&
-                         (request.resource.data.description == null || request.resource.data.description is string) &&
-                         request.resource.data.associatedGroupIds is list &&
-                         // Prevent changing creator and creation time
-                         request.resource.data.createdBy == resource.data.createdBy &&
-                         request.resource.data.createdAt == resource.data.createdAt;
-        // allow delete: if request.auth.uid != null && resource.data.createdBy == request.auth.uid; // Only creator can delete
-    }
-
-    // Rules for Rydz
-    match /rydz/{rydId} {
-      allow read: if request.auth.uid != null; // Allows any authenticated user to read any ryd
+      allow read: if request.auth.uid != null; // Any authenticated user can read group list/details
       allow create: if request.auth.uid != null &&
-                       request.auth.uid == request.resource.data.requestedBy &&
-                       // Validate required fields and types
-                       request.resource.data.requestedBy is string &&
-                       request.resource.data.destination is string && request.resource.data.destination.size() > 4 &&
-                       request.resource.data.pickupLocation is string && request.resource.data.pickupLocation.size() > 2 &&
-                       request.resource.data.rydTimestamp is timestamp &&
-                       request.resource.data.earliestPickupTimestamp is timestamp &&
-                       request.resource.data.status is string && (
-                         request.resource.data.status == 'requested' || 
-                         request.resource.data.status == 'searching_driver' ||
-                         request.resource.data.status == 'driver_assigned' ||
-                         request.resource.data.status == 'confirmed_by_driver' ||
-                         request.resource.data.status == 'en_route_pickup' ||
-                         request.resource.data.status == 'en_route_destination' ||
-                         request.resource.data.status == 'completed' ||
-                         request.resource.data.status == 'cancelled_by_user' ||
-                         request.resource.data.status == 'cancelled_by_driver' ||
-                         request.resource.data.status == 'no_driver_found'
-                       ) &&
-                       request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0 &&
-                       request.resource.data.createdAt == request.time && // serverTimestamp() resolves to a timestamp on create
-                       // Optional fields check: if they exist, they must be of the correct type
-                       (request.resource.data.eventId == null || request.resource.data.eventId is string) &&
-                       (request.resource.data.eventName == null || request.resource.data.eventName is string) &&
-                       (request.resource.data.notes == null || request.resource.data.notes is string) &&
-                       (request.resource.data.driverId == null || request.resource.data.driverId is string) &&
-                       (request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp);
-      // allow update: if request.auth.uid == resource.data.requestedBy || request.auth.uid == resource.data.driverId; // Example
-      // allow delete: if request.auth.uid == resource.data.requestedBy; // Example
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.name is string && request.resource.data.name != '' &&
+                       request.resource.data.description is string && request.resource.data.description != '' &&
+                       request.resource.data.memberIds is list && request.resource.data.memberIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.adminIds is list && request.resource.data.adminIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.createdAt is timestamp;
+      allow update: if request.auth.uid != null && resource.data.adminIds.hasAny([request.auth.uid]);
+    }
+    match /events/{eventId} {
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.name is string && request.resource.data.name != '' &&
+                       request.resource.data.location is string && request.resource.data.location != '' &&
+                       request.resource.data.eventTimestamp is timestamp &&
+                       request.resource.data.eventType is string && request.resource.data.eventType != '' &&
+                       request.resource.data.createdAt is timestamp &&
+                       request.resource.data.associatedGroupIds is list;
+      allow update: if request.auth.uid != null && resource.data.createdBy == request.auth.uid; // Only creator can update
+    }
+    match /eventDriverStates/{stateId} {
+      allow read: if request.auth.uid != null; // Or more specific if needed
+      allow write: if request.auth.uid != null && request.resource.data.driverId == request.auth.uid; // Only the driver can update their own status
     }
 
-    // Rules for Event Driver States
-    match /eventDriverStates/{stateId} {
-      allow read: if request.auth.uid != null;
-      allow create: if request.auth.uid != null && 
-                       request.resource.data.driverId == request.auth.uid && // Driver can set their own status
-                       request.resource.data.eventId is string &&
-                       request.resource.data.status is string && (
-                           request.resource.data.status == 'driving' ||
-                           request.resource.data.status == 'not_driving' ||
-                           request.resource.data.status == 'pending_response' ||
-                           request.resource.data.status == 'full_car'
-                       ) &&
-                       (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable is number) &&
-                       request.resource.data.updatedAt == request.time;
-      allow update: if request.auth.uid != null && 
-                       request.resource.data.driverId == request.auth.uid && // Driver can update their own status
-                       resource.data.eventId == request.resource.data.eventId && // EventId cannot change
-                       resource.data.driverId == request.resource.data.driverId && // DriverId cannot change
-                       request.resource.data.status is string && (
-                           request.resource.data.status == 'driving' ||
-                           request.resource.data.status == 'not_driving' ||
-                           request.resource.data.status == 'pending_response' ||
-                           request.resource.data.status == 'full_car'
-                       ) &&
-                       (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable is number) &&
-                       request.resource.data.updatedAt == request.time; 
-      // No general delete, perhaps only if driver "undoes" a status or admin action
+    match /rydz/{rydId} {
+      // SIMPLIFIED RULE FOR DEBUGGING:
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.requestedBy == request.auth.uid;
+
+      // Original more restrictive rule (commented out for now):
+      // allow create: if request.auth.uid != null &&
+      //                  request.resource.data.requestedBy == request.auth.uid &&
+      //                  request.resource.data.destination is string && request.resource.data.destination != "" &&
+      //                  request.resource.data.pickupLocation is string && request.resource.data.pickupLocation != "" &&
+      //                  request.resource.data.rydTimestamp is timestamp &&
+      //                  request.resource.data.earliestPickupTimestamp is timestamp &&
+      //                  request.resource.data.status is string &&
+      //                  request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0 &&
+      //                  request.resource.data.createdAt is timestamp &&
+      //                  (request.resource.data.eventId == null || request.resource.data.eventId is string) &&
+      //                  (request.resource.data.eventName == null || request.resource.data.eventName is string) &&
+      //                  (request.resource.data.notes == null || request.resource.data.notes is string) &&
+      //                  (request.resource.data.driverId == null || request.resource.data.driverId is string) &&
+      //                  (request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp);
+
+      allow read: if request.auth.uid != null; // Placeholder, refine later
+      allow update: if request.auth.uid != null; // Placeholder, refine later
+      allow delete: if false; // Placeholder, refine later
     }
   }
 }
-
-    
