@@ -35,7 +35,7 @@ interface ManagedStudentSelectItem {
 
 const createRydRequestFormSchema = (userRole?: UserRole) => z.object({ 
   eventId: z.string().optional(), 
-  eventName: z.string().optional(), // Optional at base level
+  eventName: z.string().optional(),
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
@@ -114,40 +114,41 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
-      if (userProfile && userProfile.role === UserRole.PARENT && userProfile.managedStudentIds && userProfile.managedStudentIds.length > 0) {
-        setIsLoadingManagedStudents(true);
-        try {
-          const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
-            const studentDocRef = doc(db, "users", studentId); 
-            const studentDocSnap = await getFirestoreDoc(studentDocRef); 
-            if (studentDocSnap.exists()) {
-              const studentData = studentDocSnap.data() as UserProfileData;
-              return { id: studentDocSnap.id, fullName: studentData.fullName };
-            }
-            return null;
-          });
-          const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentSelectItem[];
-          setManagedStudentsList(students);
-        } catch (error) {
-          console.error("Error fetching managed students:", error);
-          toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
-          setManagedStudentsList([]);
-        } finally {
-          setIsLoadingManagedStudents(false);
-        }
-      } else {
+      if (!userProfile || userProfile.role !== UserRole.PARENT || !userProfile.managedStudentIds || userProfile.managedStudentIds.length === 0) {
         setManagedStudentsList([]);
-        setIsLoadingManagedStudents(false); 
+        setIsLoadingManagedStudents(false); // Ensure loading state is reset
+        return;
       }
-    };
-
-    if (!authLoading && !isLoadingProfile) { 
-      if (userProfile && userProfile.role === UserRole.PARENT) {
-        fetchManagedStudents();
-      } else {
+      
+      setIsLoadingManagedStudents(true);
+      try {
+        const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
+          const studentDocRef = doc(db, "users", studentId); 
+          const studentDocSnap = await getFirestoreDoc(studentDocRef); 
+          if (studentDocSnap.exists()) {
+            const studentData = studentDocSnap.data() as UserProfileData;
+            return { id: studentDocSnap.id, fullName: studentData.fullName };
+          }
+          return null;
+        });
+        const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentSelectItem[];
+        setManagedStudentsList(students);
+      } catch (error) {
+        console.error("Error fetching managed students:", error);
+        toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
         setManagedStudentsList([]);
+      } finally {
         setIsLoadingManagedStudents(false);
       }
+    };
+  
+    if (!authLoading && !isLoadingProfile) { 
+      fetchManagedStudents();
+    } else if (!authLoading && !isLoadingProfile && !userProfile) {
+      // Case where auth is loaded, profile context is loaded, but profile itself is null
+      // (e.g. user logged out, or profile fetch failed in context)
+      setManagedStudentsList([]);
+      setIsLoadingManagedStudents(false);
     }
   }, [userProfile, authLoading, isLoadingProfile, toast]);
 
@@ -165,7 +166,6 @@ export default function RydRequestPage() {
 
     let finalPassengerUids: string[] = [];
     if (userProfile.role === UserRole.PARENT) {
-      // Validation handled by Zod
       finalPassengerUids = data.passengerUids || [];
     } else if (userProfile.role === UserRole.STUDENT) {
       finalPassengerUids = [authUser.uid];
@@ -188,21 +188,39 @@ export default function RydRequestPage() {
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
 
-    const rydRequestPayload: Omit<RydData, 'id'> = { 
+    // Refined payload construction
+    const rydRequestPayload: Omit<RydData, 'id' | 'updatedAt'> = {
       requestedBy: authUser.uid,
-      eventId: data.eventId === "custom" ? undefined : data.eventId,
-      eventName: data.eventId === "custom" ? data.eventName : availableEvents.find(e => e.id === data.eventId)?.name,
       destination: data.destination,
       pickupLocation: data.pickupLocation,
       rydTimestamp: eventStartFirestoreTimestamp,
       earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
-      notes: data.notes || "",
+      notes: data.notes || "", // Ensure notes is a string
       status: 'requested' as RydStatus,
       passengerIds: finalPassengerUids,
-      createdAt: serverTimestamp() as Timestamp, 
+      createdAt: serverTimestamp() as Timestamp,
     };
 
-    console.log("RydRequestPage: Ryd request payload:", rydRequestPayload);
+    if (data.eventId && data.eventId !== "custom") {
+      rydRequestPayload.eventId = data.eventId;
+      const selectedEvent = availableEvents.find(e => e.id === data.eventId);
+      if (selectedEvent) {
+        rydRequestPayload.eventName = selectedEvent.name;
+      }
+      // If selectedEvent is not found (shouldn't happen if UI is correct), 
+      // eventName will be omitted, which is fine for an optional field.
+    } else if (data.eventId === "custom" && data.eventName && data.eventName.trim() !== "") {
+      // If eventId is 'custom' and eventName has a value, use it
+      rydRequestPayload.eventName = data.eventName.trim();
+      // eventId remains omitted in this case
+    } else if (!data.eventId && data.eventName && data.eventName.trim() !== "") {
+      // If no event is selected from dropdown but eventName field has a value
+      rydRequestPayload.eventName = data.eventName.trim();
+    }
+    // If no eventId selected and data.eventName is empty or not "custom", eventName remains omitted.
+
+
+    console.log("RydRequestPage: Ryd request payload being sent to Firestore:", rydRequestPayload);
 
     try {
       console.log("RydRequestPage: Attempting to add document to 'rydz' collection.");
@@ -214,11 +232,18 @@ export default function RydRequestPage() {
       });
       form.reset();
     } catch (error) {
-        console.error("RydRequestPage: Error submitting ryd request to Firestore:", error);
+        let errorMessage = "Could not submit your ryd request. Please try again.";
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        } else if (typeof error === 'object' && error !== null && 'message' in error) {
+            errorMessage = String((error as {message: unknown}).message);
+        }
+        console.error("RydRequestPage: Error submitting ryd request to Firestore:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
         toast({
             title: "Request Failed",
-            description: "Could not submit your ryd request. Please try again. Check console for details.",
+            description: errorMessage + " Check console for more details.",
             variant: "destructive",
+            duration: 9000,
         });
     } finally {
         setIsSubmitting(false);
@@ -233,7 +258,7 @@ export default function RydRequestPage() {
       const event = availableEvents.find(e => e.id === selectedEventId);
       if (event) {
         form.setValue("destination", event.location);
-        form.setValue("eventName", ""); 
+        form.setValue("eventName", ""); // Clear custom event name if a listed event is selected
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
             form.setValue("date", eventDate);
@@ -241,9 +266,12 @@ export default function RydRequestPage() {
         }
       }
     } else if (selectedEventId === "custom") {
-      form.setValue("destination", ""); 
-      form.setValue("time", "09:00");
-      form.setValue("eventName", "");
+      // When "Other" is selected, clear destination (unless user already typed something),
+      // reset time, and ensure eventName field is focused or made prominent.
+      // Keep existing destination if user typed it before selecting "Other"
+      // form.setValue("destination", ""); 
+      form.setValue("time", "09:00"); // Reset to default time for custom event
+      // form.setValue("eventName", ""); // User will fill this
     }
   }, [selectedEventId, form, availableEvents]);
 
@@ -267,7 +295,7 @@ export default function RydRequestPage() {
     isLoadingEvents,
     isLoadingManagedStudents,
   });
-  console.log("Current Form Errors:", form.formState.errors);
+  
 
 
   return (
@@ -293,21 +321,7 @@ export default function RydRequestPage() {
                     <Select 
                         onValueChange={(value) => {
                             field.onChange(value);
-                            if (value !== "custom") {
-                                const event = availableEvents.find(e => e.id === value);
-                                if (event) {
-                                  form.setValue("destination", event.location);
-                                  if (event.eventTimestamp) {
-                                    const eventDate = event.eventTimestamp.toDate();
-                                    form.setValue("date", eventDate);
-                                    form.setValue("time", format(eventDate, "HH:mm"));
-                                  }
-                                }
-                            } else {
-                                form.setValue("destination", ""); 
-                                form.setValue("time", "09:00");
-                                form.setValue("eventName", "");
-                            }
+                            // Logic to pre-fill fields is now in the useEffect watching selectedEventId
                         }} 
                         defaultValue={field.value}
                         disabled={isLoadingEvents}
@@ -330,7 +344,7 @@ export default function RydRequestPage() {
                 )}
               />
 
-              {(selectedEventId === "custom" || !selectedEventId) && ( 
+              {(selectedEventId === "custom" || (!selectedEventId && form.getValues("eventName"))) && ( 
                  <FormField
                     control={form.control}
                     name="eventName"
