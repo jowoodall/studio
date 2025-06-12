@@ -35,7 +35,7 @@ interface ManagedStudentSelectItem {
 
 const createRydRequestFormSchema = (userRole?: UserRole) => z.object({ 
   eventId: z.string().optional(), 
-  eventName: z.string().min(3, "Event name must be at least 3 characters.").optional(),
+  eventName: z.string().optional(), // Optional at base level
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
@@ -60,7 +60,6 @@ const createRydRequestFormSchema = (userRole?: UserRole) => z.object({
     }
 });
 
-// Infer the type from the factory function for a generic case or specific role if needed
 type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema>>;
 
 
@@ -166,14 +165,8 @@ export default function RydRequestPage() {
 
     let finalPassengerUids: string[] = [];
     if (userProfile.role === UserRole.PARENT) {
-      // This check is now handled by Zod schema, but keeping data.passengerUids check for safety.
-      if (!data.passengerUids || data.passengerUids.length === 0) {
-         // This part should ideally not be reached if Zod validation is working
-        console.error("RydRequestPage: Parent submitted without selecting students, Zod validation might have an issue or this is a fallback.");
-        toast({ title: "Selection Required", description: "Please select at least one student for this ryd (Zod Check).", variant: "destructive" });
-        return;
-      }
-      finalPassengerUids = data.passengerUids;
+      // Validation handled by Zod
+      finalPassengerUids = data.passengerUids || [];
     } else if (userProfile.role === UserRole.STUDENT) {
       finalPassengerUids = [authUser.uid];
     } else {
@@ -274,6 +267,7 @@ export default function RydRequestPage() {
     isLoadingEvents,
     isLoadingManagedStudents,
   });
+  console.log("Current Form Errors:", form.formState.errors);
 
 
   return (
@@ -571,9 +565,13 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
+              <pre className="text-xs bg-slate-100 p-2 overflow-auto">
+                Form Errors: {JSON.stringify(form.formState.errors, null, 2)}
+              </pre>
               <Button 
                 type="submit" 
                 className="w-full" 
+                onClick={() => console.log("Submit Ryd Request Button CLICKED (ShadCN)")}
                 disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvents || isLoadingManagedStudents}
               >
                 {isSubmitting ? (
@@ -584,6 +582,12 @@ export default function RydRequestPage() {
               </Button>
             </form>
           </Form>
+          <button 
+            onClick={() => console.log("PLAIN HTML BUTTON CLICKED")}
+            className="mt-4 p-2 bg-red-500 text-white rounded-md w-full"
+          >
+            Test Plain HTML Button Click
+          </button>
         </CardContent>
       </Card>
     </>
