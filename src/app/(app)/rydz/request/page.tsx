@@ -20,7 +20,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc } from "firebase/firestore"; // Renamed getDoc to getFirestoreDoc to avoid conflict
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc } from "firebase/firestore";
 import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,9 +33,9 @@ interface ManagedStudentSelectItem {
   fullName: string;
 }
 
-const rydRequestFormSchema = z.object({ 
+const createRydRequestFormSchema = (userRole?: UserRole) => z.object({ 
   eventId: z.string().optional(), 
-  eventName: z.string().min(3, "Event name must be at least 3 characters.").optional(), // Keep optional here, superRefine handles conditional requirement
+  eventName: z.string().min(3, "Event name must be at least 3 characters.").optional(),
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }), 
@@ -51,9 +51,17 @@ const rydRequestFormSchema = z.object({
         path: ["eventName"],
       });
     }
+    if (userRole === UserRole.PARENT && (!data.passengerUids || data.passengerUids.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select at least one student for this ryd.",
+        path: ["passengerUids"],
+      });
+    }
 });
 
-type RydRequestFormValues = z.infer<typeof rydRequestFormSchema>; 
+// Infer the type from the factory function for a generic case or specific role if needed
+type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema>>;
 
 
 export default function RydRequestPage() { 
@@ -69,7 +77,7 @@ export default function RydRequestPage() {
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
   const form = useForm<RydRequestFormValues>({ 
-    resolver: zodResolver(rydRequestFormSchema), 
+    resolver: zodResolver(createRydRequestFormSchema(userProfile?.role)), 
     defaultValues: {
       time: "09:00", 
       earliestPickupTime: "08:00",
@@ -87,7 +95,7 @@ export default function RydRequestPage() {
         const eventsQuery = query(collection(db, "events"), orderBy("eventTimestamp", "asc"));
         const querySnapshot = await getDocs(eventsQuery);
         const fetchedEvents: EventData[] = [];
-        querySnapshot.forEach((eventDoc) => { // Changed doc to eventDoc to avoid conflict
+        querySnapshot.forEach((eventDoc) => { 
           const eventData = eventDoc.data() as EventData;
           const eventDate = eventData.eventTimestamp instanceof Timestamp ? eventData.eventTimestamp.toDate() : new Date(0);
           if (eventDate >= new Date()) {
@@ -111,8 +119,8 @@ export default function RydRequestPage() {
         setIsLoadingManagedStudents(true);
         try {
           const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
-            const studentDocRef = doc(db, "users", studentId); // Use doc from firebase/firestore
-            const studentDocSnap = await getFirestoreDoc(studentDocRef); // Use imported getFirestoreDoc
+            const studentDocRef = doc(db, "users", studentId); 
+            const studentDocSnap = await getFirestoreDoc(studentDocRef); 
             if (studentDocSnap.exists()) {
               const studentData = studentDocSnap.data() as UserProfileData;
               return { id: studentDocSnap.id, fullName: studentData.fullName };
@@ -130,7 +138,7 @@ export default function RydRequestPage() {
         }
       } else {
         setManagedStudentsList([]);
-        setIsLoadingManagedStudents(false); // Ensure it's set to false if no fetch needed
+        setIsLoadingManagedStudents(false); 
       }
     };
 
@@ -158,10 +166,11 @@ export default function RydRequestPage() {
 
     let finalPassengerUids: string[] = [];
     if (userProfile.role === UserRole.PARENT) {
+      // This check is now handled by Zod schema, but keeping data.passengerUids check for safety.
       if (!data.passengerUids || data.passengerUids.length === 0) {
-        console.log("RydRequestPage: Parent submitted without selecting students.");
-        toast({ title: "Selection Required", description: "Please select at least one student for this ryd.", variant: "destructive" });
-        form.setError("passengerUids", { type: "manual", message: "Please select at least one student." });
+         // This part should ideally not be reached if Zod validation is working
+        console.error("RydRequestPage: Parent submitted without selecting students, Zod validation might have an issue or this is a fallback.");
+        toast({ title: "Selection Required", description: "Please select at least one student for this ryd (Zod Check).", variant: "destructive" });
         return;
       }
       finalPassengerUids = data.passengerUids;
@@ -258,7 +267,6 @@ export default function RydRequestPage() {
   );
   const currentSelectedStudentUids = form.watch("passengerUids") || [];
 
-  // Logging loading states for debugging the button
   console.log("RydRequestPage Button Disabled States:", {
     isSubmitting,
     authLoading,
