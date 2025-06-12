@@ -14,49 +14,42 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
 };
 
-let app: FirebaseApp;
+let app: FirebaseApp | undefined = undefined; // Initialize app as undefined
 let auth: Auth;
 let db: Firestore;
 
 if (!getApps().length) {
-  // Check for missing essential Firebase config variables
-  if (!firebaseConfig.apiKey) {
-    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_API_KEY is missing in .env.local. Firebase initialization failed.");
-  }
-  if (!firebaseConfig.authDomain) {
-    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN is missing in .env.local. Firebase initialization failed.");
-  }
-  if (!firebaseConfig.projectId) {
-    console.error("Firebase Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in .env.local. Firebase initialization failed.");
-  }
+  const missingVars = [];
+  if (!firebaseConfig.apiKey) missingVars.push("NEXT_PUBLIC_FIREBASE_API_KEY");
+  if (!firebaseConfig.authDomain) missingVars.push("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
+  if (!firebaseConfig.projectId) missingVars.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
 
-  // Only initialize if essential configs are present
-  if (firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId) {
-    app = initializeApp(firebaseConfig);
-  } else {
-    // Fallback or throw error if essential config is missing
-    // For now, logging error and app will be undefined, leading to subsequent errors
-    console.error("Firebase initialization was skipped due to missing critical environment variables.");
-    // To make the app fail more gracefully or obviously, you could throw an error here:
-    // throw new Error("Critical Firebase configuration is missing. Check .env.local and server logs.");
+  if (missingVars.length > 0) {
+    const errorMsg = `Critical Firebase configuration is missing. Please set the following environment variables in your .env.local file: ${missingVars.join(", ")}. Firebase initialization failed.`;
+    console.error("Firebase Error:", errorMsg);
+    // Throwing an error here will stop the app load and make the issue clear.
+    // For a production build, you might handle this differently, but for development, this is explicit.
+    throw new Error(errorMsg);
   }
+  app = initializeApp(firebaseConfig);
 } else {
   app = getApps()[0];
 }
 
 // Ensure app is initialized before trying to use it
-if (app!) {
+if (app) {
   auth = getAuth(app);
   db = getFirestore(app); // Initialize Firestore
 } else {
-  // Handle the case where app initialization failed
-  // Assign dummy objects or throw to prevent further runtime errors if app is critical
-  console.error("Firebase app was not initialized. Auth and Firestore services will not be available.");
-  // Fallback to prevent crashing if auth/db are accessed later, though they won't work.
-  // This part depends on how critical Firebase is at every point of your app.
-  // A more robust solution might involve a global state indicating Firebase readiness.
-  auth = {} as Auth; // Dummy assignment
-  db = {} as Firestore; // Dummy assignment
+  // This block should ideally not be reached if the throw above works,
+  // but as a fallback:
+  const criticalErrorMsg = "Firebase app was not initialized. This is a critical error. Auth and Firestore services will not be available.";
+  console.error(criticalErrorMsg);
+  // Throw an error to prevent the app from continuing in a broken state
+  throw new Error(criticalErrorMsg);
+  // The dummy assignments below are less ideal than throwing.
+  // auth = {} as Auth; 
+  // db = {} as Firestore;
 }
 
 export { app, auth, db };
