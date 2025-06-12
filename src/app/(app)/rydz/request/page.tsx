@@ -114,7 +114,10 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
-      if (authLoading || isLoadingProfile) return; 
+      if (authLoading || isLoadingProfile) {
+        setIsLoadingManagedStudents(true); // Keep loading if auth/profile is still loading
+        return;
+      }
       if (!userProfile || userProfile.role !== UserRole.PARENT || !userProfile.managedStudentIds || userProfile.managedStudentIds.length === 0) {
         setManagedStudentsList([]);
         setIsLoadingManagedStudents(false);
@@ -123,8 +126,8 @@ export default function RydRequestPage() {
       
       setIsLoadingManagedStudents(true);
       try {
-        const validStudentIds = userProfile.managedStudentIds.filter(id => typeof id === 'string' && id.trim() !== '');
-        if (validStudentIds.length !== userProfile.managedStudentIds.length) {
+        const validStudentIds = (userProfile.managedStudentIds || []).filter(id => typeof id === 'string' && id.trim() !== '');
+        if (validStudentIds.length !== (userProfile.managedStudentIds || []).length) {
           console.warn("Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
         }
 
@@ -147,12 +150,6 @@ export default function RydRequestPage() {
         const studentsData = (await Promise.all(studentPromises));
         const validStudents = studentsData.filter(Boolean) as ManagedStudentSelectItem[];
         setManagedStudentsList(validStudents);
-
-        if (validStudents.length === 0 && validStudentIds.length > 0) {
-            // This case means there were student IDs, but none could be fetched.
-            // The individual error logs should provide clues. The global toast might be redundant here.
-            // toast({ title: "Error", description: "Could not load any managed student details. Check console.", variant: "destructive" });
-        }
 
       } catch (error) {
         console.error("Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
@@ -202,7 +199,7 @@ export default function RydRequestPage() {
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
 
-    const rydRequestPayload: Partial<RydData> = { // Use Partial<RydData> for progressive assignment
+    const rydRequestPayload: Partial<RydData> = { 
       requestedBy: authUser.uid,
       destination: data.destination,
       pickupLocation: data.pickupLocation,
@@ -272,7 +269,6 @@ export default function RydRequestPage() {
         }
       }
     } else if (selectedEventId === "custom") {
-      // form.setValue("destination", ""); 
       form.setValue("time", "09:00"); 
     }
   }, [selectedEventId, form, availableEvents]);
@@ -597,12 +593,6 @@ export default function RydRequestPage() {
               </Button>
             </form>
           </Form>
-          <button 
-            onClick={() => console.log("PLAIN HTML BUTTON CLICKED")}
-            className="mt-4 p-2 bg-red-500 text-white rounded-md w-full"
-          >
-            Test Plain HTML Button Click
-          </button>
         </CardContent>
       </Card>
     </>
