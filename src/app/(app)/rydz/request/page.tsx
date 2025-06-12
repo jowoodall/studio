@@ -114,42 +114,56 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
+      if (authLoading || isLoadingProfile) return; 
       if (!userProfile || userProfile.role !== UserRole.PARENT || !userProfile.managedStudentIds || userProfile.managedStudentIds.length === 0) {
         setManagedStudentsList([]);
-        setIsLoadingManagedStudents(false); // Ensure loading state is reset
+        setIsLoadingManagedStudents(false);
         return;
       }
       
       setIsLoadingManagedStudents(true);
       try {
-        const studentPromises = userProfile.managedStudentIds.map(async (studentId) => {
-          const studentDocRef = doc(db, "users", studentId); 
-          const studentDocSnap = await getFirestoreDoc(studentDocRef); 
-          if (studentDocSnap.exists()) {
-            const studentData = studentDocSnap.data() as UserProfileData;
-            return { id: studentDocSnap.id, fullName: studentData.fullName };
+        const validStudentIds = userProfile.managedStudentIds.filter(id => typeof id === 'string' && id.trim() !== '');
+        if (validStudentIds.length !== userProfile.managedStudentIds.length) {
+          console.warn("Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
+        }
+
+        const studentPromises = validStudentIds.map(async (studentId) => {
+          try {
+            const studentDocRef = doc(db, "users", studentId); 
+            const studentDocSnap = await getFirestoreDoc(studentDocRef); 
+            if (studentDocSnap.exists()) {
+              const studentData = studentDocSnap.data() as UserProfileData;
+              return { id: studentDocSnap.id, fullName: studentData.fullName };
+            } else {
+              console.warn(`Managed student document with ID ${studentId} not found or not readable.`);
+              return null;
+            }
+          } catch (studentError) {
+            console.error(`Error fetching individual managed student with ID ${studentId}:`, studentError);
+            return null; 
           }
-          return null;
         });
-        const students = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentSelectItem[];
-        setManagedStudentsList(students);
+        const studentsData = (await Promise.all(studentPromises));
+        const validStudents = studentsData.filter(Boolean) as ManagedStudentSelectItem[];
+        setManagedStudentsList(validStudents);
+
+        if (validStudents.length === 0 && validStudentIds.length > 0) {
+            // This case means there were student IDs, but none could be fetched.
+            // The individual error logs should provide clues. The global toast might be redundant here.
+            // toast({ title: "Error", description: "Could not load any managed student details. Check console.", variant: "destructive" });
+        }
+
       } catch (error) {
-        console.error("Error fetching managed students:", error);
-        toast({ title: "Error", description: "Could not load your managed students.", variant: "destructive" });
+        console.error("Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        toast({ title: "Error", description: "Could not load your managed students. Check console for details.", variant: "destructive" });
         setManagedStudentsList([]);
       } finally {
         setIsLoadingManagedStudents(false);
       }
     };
   
-    if (!authLoading && !isLoadingProfile) { 
-      fetchManagedStudents();
-    } else if (!authLoading && !isLoadingProfile && !userProfile) {
-      // Case where auth is loaded, profile context is loaded, but profile itself is null
-      // (e.g. user logged out, or profile fetch failed in context)
-      setManagedStudentsList([]);
-      setIsLoadingManagedStudents(false);
-    }
+    fetchManagedStudents();
   }, [userProfile, authLoading, isLoadingProfile, toast]);
 
 
@@ -188,14 +202,13 @@ export default function RydRequestPage() {
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
 
-    // Refined payload construction
-    const rydRequestPayload: Omit<RydData, 'id' | 'updatedAt'> = {
+    const rydRequestPayload: Partial<RydData> = { // Use Partial<RydData> for progressive assignment
       requestedBy: authUser.uid,
       destination: data.destination,
       pickupLocation: data.pickupLocation,
       rydTimestamp: eventStartFirestoreTimestamp,
       earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
-      notes: data.notes || "", // Ensure notes is a string
+      notes: data.notes || "", 
       status: 'requested' as RydStatus,
       passengerIds: finalPassengerUids,
       createdAt: serverTimestamp() as Timestamp,
@@ -207,24 +220,17 @@ export default function RydRequestPage() {
       if (selectedEvent) {
         rydRequestPayload.eventName = selectedEvent.name;
       }
-      // If selectedEvent is not found (shouldn't happen if UI is correct), 
-      // eventName will be omitted, which is fine for an optional field.
     } else if (data.eventId === "custom" && data.eventName && data.eventName.trim() !== "") {
-      // If eventId is 'custom' and eventName has a value, use it
       rydRequestPayload.eventName = data.eventName.trim();
-      // eventId remains omitted in this case
     } else if (!data.eventId && data.eventName && data.eventName.trim() !== "") {
-      // If no event is selected from dropdown but eventName field has a value
       rydRequestPayload.eventName = data.eventName.trim();
     }
-    // If no eventId selected and data.eventName is empty or not "custom", eventName remains omitted.
-
-
+    
     console.log("RydRequestPage: Ryd request payload being sent to Firestore:", rydRequestPayload);
 
     try {
       console.log("RydRequestPage: Attempting to add document to 'rydz' collection.");
-      const docRef = await addDoc(collection(db, "rydz"), rydRequestPayload);
+      const docRef = await addDoc(collection(db, "rydz"), rydRequestPayload as Omit<RydData, 'id' | 'updatedAt'>);
       console.log("RydRequestPage: Document added with ID:", docRef.id);
       toast({
         title: "Ryd Requested!", 
@@ -258,7 +264,7 @@ export default function RydRequestPage() {
       const event = availableEvents.find(e => e.id === selectedEventId);
       if (event) {
         form.setValue("destination", event.location);
-        form.setValue("eventName", ""); // Clear custom event name if a listed event is selected
+        form.setValue("eventName", ""); 
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
             form.setValue("date", eventDate);
@@ -266,12 +272,8 @@ export default function RydRequestPage() {
         }
       }
     } else if (selectedEventId === "custom") {
-      // When "Other" is selected, clear destination (unless user already typed something),
-      // reset time, and ensure eventName field is focused or made prominent.
-      // Keep existing destination if user typed it before selecting "Other"
       // form.setValue("destination", ""); 
-      form.setValue("time", "09:00"); // Reset to default time for custom event
-      // form.setValue("eventName", ""); // User will fill this
+      form.setValue("time", "09:00"); 
     }
   }, [selectedEventId, form, availableEvents]);
 
@@ -321,7 +323,6 @@ export default function RydRequestPage() {
                     <Select 
                         onValueChange={(value) => {
                             field.onChange(value);
-                            // Logic to pre-fill fields is now in the useEffect watching selectedEventId
                         }} 
                         defaultValue={field.value}
                         disabled={isLoadingEvents}
