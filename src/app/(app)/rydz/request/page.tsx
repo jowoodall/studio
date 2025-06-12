@@ -115,7 +115,7 @@ export default function RydRequestPage() {
   useEffect(() => {
     const fetchManagedStudents = async () => {
       if (authLoading || isLoadingProfile) {
-        setIsLoadingManagedStudents(true); // Keep loading if auth/profile is still loading
+        setIsLoadingManagedStudents(true);
         return;
       }
       if (!userProfile || userProfile.role !== UserRole.PARENT || !userProfile.managedStudentIds || userProfile.managedStudentIds.length === 0) {
@@ -128,7 +128,7 @@ export default function RydRequestPage() {
       try {
         const validStudentIds = (userProfile.managedStudentIds || []).filter(id => typeof id === 'string' && id.trim() !== '');
         if (validStudentIds.length !== (userProfile.managedStudentIds || []).length) {
-          console.warn("Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
+          console.warn("RydRequestPage: Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
         }
 
         const studentPromises = validStudentIds.map(async (studentId) => {
@@ -139,11 +139,11 @@ export default function RydRequestPage() {
               const studentData = studentDocSnap.data() as UserProfileData;
               return { id: studentDocSnap.id, fullName: studentData.fullName };
             } else {
-              console.warn(`Managed student document with ID ${studentId} not found or not readable.`);
+              console.warn(`RydRequestPage: Managed student document with ID ${studentId} not found or not readable.`);
               return null;
             }
           } catch (studentError) {
-            console.error(`Error fetching individual managed student with ID ${studentId}:`, studentError);
+            console.error(`RydRequestPage: Error fetching individual managed student with ID ${studentId}:`, studentError);
             return null; 
           }
         });
@@ -152,7 +152,7 @@ export default function RydRequestPage() {
         setManagedStudentsList(validStudents);
 
       } catch (error) {
-        console.error("Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        console.error("RydRequestPage: Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
         toast({ title: "Error", description: "Could not load your managed students. Check console for details.", variant: "destructive" });
         setManagedStudentsList([]);
       } finally {
@@ -160,7 +160,9 @@ export default function RydRequestPage() {
       }
     };
   
-    fetchManagedStudents();
+    if (!authLoading && !isLoadingProfile) {
+      fetchManagedStudents();
+    }
   }, [userProfile, authLoading, isLoadingProfile, toast]);
 
 
@@ -205,7 +207,7 @@ export default function RydRequestPage() {
       pickupLocation: data.pickupLocation,
       rydTimestamp: eventStartFirestoreTimestamp,
       earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
-      notes: data.notes || "", 
+      notes: data.notes ? data.notes.trim() : "", 
       status: 'requested' as RydStatus,
       passengerIds: finalPassengerUids,
       createdAt: serverTimestamp() as Timestamp,
@@ -576,9 +578,9 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
-              <pre className="text-xs bg-slate-100 p-2 overflow-auto">
+              {/* <pre className="text-xs bg-slate-100 p-2 overflow-auto">
                 Form Errors: {JSON.stringify(form.formState.errors, null, 2)}
-              </pre>
+              </pre> */}
               <Button 
                 type="submit" 
                 className="w-full" 
