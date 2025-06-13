@@ -22,7 +22,7 @@ export async function createActiveRydForEventAction(
     return { success: false, error: "Invalid form data.", issues: validationResult.error.issues };
   }
 
-  const { eventId, seatsAvailable, departureTime, pickupInstructions } = validationResult.data;
+  const { eventId, seatsAvailable, departureTime, startLocationAddress, pickupInstructions } = validationResult.data;
 
   try {
     // Fetch driver's profile for vehicle details and to confirm they can drive
@@ -53,7 +53,11 @@ export async function createActiveRydForEventAction(
     // Combine event date with driver's offered departure time
     const [hours, minutes] = departureTime.split(':').map(Number);
     const actualDepartureDateTime = new Date(eventDate); // Start with the event's date
-    actualDepartureDateTime.setHours(hours, minutes, 0, 0); // Set the offered time
+    actualDepartureDateTime.setHours(hours, minutes, 0, 0);
+
+    const finalStartLocationAddress = startLocationAddress && startLocationAddress.trim() !== ""
+      ? startLocationAddress
+      : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area";
 
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
       driverId: firebaseUser.uid,
@@ -68,7 +72,7 @@ export async function createActiveRydForEventAction(
       createdAt: serverTimestamp() as Timestamp,
       updatedAt: serverTimestamp() as Timestamp,
       actualDepartureTime: Timestamp.fromDate(actualDepartureDateTime),
-      startLocationAddress: driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area", 
+      startLocationAddress: finalStartLocationAddress,
       finalDestinationAddress: eventData.location,
       notes: pickupInstructions,
     };

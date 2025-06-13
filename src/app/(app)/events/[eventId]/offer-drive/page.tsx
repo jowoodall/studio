@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft, Info } from "lucide-react";
+import { AlertTriangle, Car, Loader2, ArrowLeft, Info, MapPin } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
@@ -20,13 +20,14 @@ import { type EventData, UserRole } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { createActiveRydForEventAction } from "@/actions/activeRydActions"; 
-import { offerDriveFormServerSchema } from '@/schemas/activeRydSchemas'; // Import schema from new location
+import { offerDriveFormServerSchema } from '@/schemas/activeRydSchemas';
 import { format } from "date-fns";
 
 // Client-side schema for the form
 const offerDriveClientFormSchema = z.object({
   seatsAvailable: z.coerce.number().min(1, "Must offer at least 1 seat.").max(8, "Cannot offer more than 8 seats."),
   departureTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  startLocationAddress: z.string().max(150, "Address cannot exceed 150 characters.").optional(),
   pickupInstructions: z.string().max(300, "Instructions cannot exceed 300 characters.").optional(),
 });
 
@@ -55,6 +56,7 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
     defaultValues: {
       seatsAvailable: 2,
       departureTime: "09:00",
+      startLocationAddress: "",
       pickupInstructions: "",
     },
   });
@@ -108,6 +110,7 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
       eventId: eventDetails.id,
       seatsAvailable: data.seatsAvailable,
       departureTime: data.departureTime,
+      startLocationAddress: data.startLocationAddress || "", // Ensure it's a string, even if empty
       pickupInstructions: data.pickupInstructions || "",
     };
 
@@ -258,6 +261,24 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
                       <Input type="time" {...field} />
                     </FormControl>
                     <FormDescription>What time will you be departing for the event?</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="startLocationAddress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center"><MapPin className="mr-1.5 h-4 w-4 text-muted-foreground"/>Your Starting Point / Pickup Area (Optional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g., My Home Address, Downtown Area"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>If different from your profile address, or a general area. If blank, your profile's city/zip will be used.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
