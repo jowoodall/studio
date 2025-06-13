@@ -5,16 +5,8 @@ import { auth, db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { type EventData, type UserProfileData, UserRole, type ActiveRyd, ActiveRydStatus } from '@/types';
 import * as z from 'zod';
+import { offerDriveFormServerSchema, type OfferDriveFormServerValues } from '@/schemas/activeRydSchemas';
 
-// Schema for data coming from the "Offer Drive for Event" form
-export const offerDriveFormServerSchema = z.object({
-  eventId: z.string().min(1, "Event ID is required."),
-  seatsAvailable: z.coerce.number().min(1, "Must offer at least 1 seat.").max(8, "Cannot offer more than 8 seats."),
-  departureTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid departure time format (HH:MM)."),
-  pickupInstructions: z.string().max(300, "Pickup instructions cannot exceed 300 characters.").optional().default(""),
-});
-
-type OfferDriveFormServerValues = z.infer<typeof offerDriveFormServerSchema>;
 
 export async function createActiveRydForEventAction(
   data: OfferDriveFormServerValues
@@ -66,18 +58,17 @@ export async function createActiveRydForEventAction(
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
       driverId: firebaseUser.uid,
       associatedEventId: eventId,
-      status: ActiveRydStatus.PLANNING, // Or 'AWAITING_PASSENGERS' if immediately open
+      status: ActiveRydStatus.PLANNING, 
       vehicleDetails: {
-        make: driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "", // Example: "Toyota Camry 2020" -> "Toyota"
-        model: driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "", // Example: -> "Camry 2020"
-        passengerCapacity: String(seatsAvailable), // This is what the driver offers for THIS ryd
-        // licensePlate: driverProfile.driverDetails.licensePlate, // If you add license plate to UserProfileData
+        make: driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "", 
+        model: driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "", 
+        passengerCapacity: String(seatsAvailable), 
       },
       passengerManifest: [],
       createdAt: serverTimestamp() as Timestamp,
       updatedAt: serverTimestamp() as Timestamp,
       actualDepartureTime: Timestamp.fromDate(actualDepartureDateTime),
-      startLocationAddress: driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area", // Placeholder, driver might specify later
+      startLocationAddress: driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area", 
       finalDestinationAddress: eventData.location,
       notes: pickupInstructions,
     };

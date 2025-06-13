@@ -19,7 +19,8 @@ import { useAuth } from "@/context/AuthContext";
 import { type EventData, UserRole } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
-import { createActiveRydForEventAction, offerDriveFormServerSchema } from "@/actions/activeRydActions"; // We will create this action
+import { createActiveRydForEventAction } from "@/actions/activeRydActions"; 
+import { offerDriveFormServerSchema } from '@/schemas/activeRydSchemas'; // Import schema from new location
 import { format } from "date-fns";
 
 // Client-side schema for the form
@@ -74,7 +75,7 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
           setEventDetails({ id: eventDocSnap.id, ...eventDocSnap.data() } as EventData);
         } else {
           setEventError(`Event with ID "${eventId}" not found.`);
-          setEventDetails(null); // Fallback to mock if needed, or show error
+          setEventDetails(null); 
         }
       } catch (e) {
         console.error("Error fetching event details:", e);
@@ -110,7 +111,7 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
       pickupInstructions: data.pickupInstructions || "",
     };
 
-    // Validate with server schema before sending (optional but good practice)
+    // Validate with server schema before sending
     const validationResult = offerDriveFormServerSchema.safeParse(actionPayload);
     if (!validationResult.success) {
         toast({ title: "Validation Error", description: "Form data is invalid. Please check your inputs.", variant: "destructive" });
@@ -136,7 +137,6 @@ export default function OfferDrivePage({ params }: { params: { eventId: string }
       });
       if (result.issues) {
          console.error("Server Action Validation Issues:", result.issues);
-         // map issues to form errors if desired
          result.issues.forEach(issue => {
             form.setError(issue.path[0] as keyof OfferDriveClientFormValues, { message: issue.message });
          });
