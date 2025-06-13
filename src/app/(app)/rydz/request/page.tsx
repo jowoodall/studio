@@ -71,7 +71,7 @@ export default function RydRequestPage() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentSelectItem[]>([]);
-  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(false); 
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true); // Changed initial to true
   const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
@@ -118,7 +118,7 @@ export default function RydRequestPage() {
         setIsLoadingManagedStudents(true);
         return;
       }
-      if (!userProfile || userProfile.role !== UserRole.PARENT || !userProfile.managedStudentIds || userProfile.managedStudentIds.length === 0) {
+      if (!userProfile || userProfile.role !== UserRole.PARENT) {
         setManagedStudentsList([]);
         setIsLoadingManagedStudents(false);
         return;
@@ -131,6 +131,12 @@ export default function RydRequestPage() {
           console.warn("RydRequestPage: Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
         }
 
+        if (validStudentIds.length === 0) {
+          setManagedStudentsList([]);
+          setIsLoadingManagedStudents(false);
+          return;
+        }
+        
         const studentPromises = validStudentIds.map(async (studentId) => {
           try {
             const studentDocRef = doc(db, "users", studentId); 
@@ -194,20 +200,43 @@ export default function RydRequestPage() {
     const [eventHours, eventMinutes] = data.time.split(':').map(Number);
     const eventStartDateTime = new Date(data.date);
     eventStartDateTime.setHours(eventHours, eventMinutes, 0, 0);
-    const eventStartFirestoreTimestamp = Timestamp.fromDate(eventStartDateTime);
+    
 
     const [pickupHours, pickupMinutes] = data.earliestPickupTime.split(':').map(Number);
     const earliestPickupDateTime = new Date(data.date);
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
+    
+
+    console.log("RydRequestPage: Raw form data for dates/times:", {
+      rawDate: data.date,
+      rawTime: data.time,
+      rawEarliestPickupTime: data.earliestPickupTime,
+    });
+    console.log("RydRequestPage: Calculated eventStartDateTime:", eventStartDateTime.toISOString(), "Is Valid JS Date:", !isNaN(eventStartDateTime.getTime()));
+    console.log("RydRequestPage: Calculated earliestPickupDateTime:", earliestPickupDateTime.toISOString(), "Is Valid JS Date:", !isNaN(earliestPickupDateTime.getTime()));
+
+    if (isNaN(eventStartDateTime.getTime()) || isNaN(earliestPickupDateTime.getTime())) {
+        console.error("RydRequestPage: Invalid date/time calculation resulting in 'Invalid Date'.");
+        toast({title: "Date/Time Error", description: "Invalid date or time provided. Please check your inputs.", variant: "destructive"});
+        setIsSubmitting(false);
+        return;
+    }
+
+    const eventStartFirestoreTimestamp = Timestamp.fromDate(eventStartDateTime);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
+
+    console.log("RydRequestPage: Firestore eventStartTimestamp:", eventStartFirestoreTimestamp);
+    console.log("RydRequestPage: Firestore earliestPickupTimestamp:", earliestPickupFirestoreTimestamp);
+    console.log("RydRequestPage: finalPassengerUids for payload:", finalPassengerUids);
+
 
     const rydRequestPayload: Partial<RydData> = { 
       requestedBy: authUser.uid,
-      destination: data.destination,
-      pickupLocation: data.pickupLocation,
+      destination: data.destination.trim(),
+      pickupLocation: data.pickupLocation.trim(),
       rydTimestamp: eventStartFirestoreTimestamp,
       earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
-      notes: data.notes ? data.notes.trim() : "", 
+      notes: data.notes ? data.notes.trim() : "",
       status: 'requested' as RydStatus,
       passengerIds: finalPassengerUids,
       createdAt: serverTimestamp() as Timestamp,
@@ -216,8 +245,8 @@ export default function RydRequestPage() {
     if (data.eventId && data.eventId !== "custom") {
       rydRequestPayload.eventId = data.eventId;
       const selectedEvent = availableEvents.find(e => e.id === data.eventId);
-      if (selectedEvent) {
-        rydRequestPayload.eventName = selectedEvent.name;
+      if (selectedEvent && selectedEvent.name) {
+        rydRequestPayload.eventName = selectedEvent.name.trim();
       }
     } else if (data.eventId === "custom" && data.eventName && data.eventName.trim() !== "") {
       rydRequestPayload.eventName = data.eventName.trim();
@@ -238,10 +267,13 @@ export default function RydRequestPage() {
       form.reset();
     } catch (error) {
         let errorMessage = "Could not submit your ryd request. Please try again.";
-        if (error instanceof Error) {
-            errorMessage = error.message;
-        } else if (typeof error === 'object' && error !== null && 'message' in error) {
-            errorMessage = String((error as {message: unknown}).message);
+        // Attempt to get more details from Firebase error if available
+        const firebaseError = error as any;
+        if (firebaseError.message) {
+            errorMessage = firebaseError.message;
+        }
+        if (firebaseError.code) {
+            errorMessage += ` (Code: ${firebaseError.code})`;
         }
         console.error("RydRequestPage: Error submitting ryd request to Firestore:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
         toast({
@@ -262,7 +294,7 @@ export default function RydRequestPage() {
     if (selectedEventId && selectedEventId !== "custom") {
       const event = availableEvents.find(e => e.id === selectedEventId);
       if (event) {
-        form.setValue("destination", event.location);
+        form.setValue("destination", event.location ? event.location.trim() : "");
         form.setValue("eventName", ""); 
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
@@ -271,7 +303,11 @@ export default function RydRequestPage() {
         }
       }
     } else if (selectedEventId === "custom") {
-      form.setValue("time", "09:00"); 
+      form.setValue("eventName", form.getValues("eventName") || ""); // Keep existing custom name or empty
+      form.setValue("destination", form.getValues("destination") || ""); // Keep existing destination or empty
+      // Potentially reset date/time or keep them if user was editing
+      // form.setValue("date", undefined); // Or keep existing
+      // form.setValue("time", "09:00"); // Or keep existing
     }
   }, [selectedEventId, form, availableEvents]);
 
@@ -287,17 +323,7 @@ export default function RydRequestPage() {
     student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase())
   );
   const currentSelectedStudentUids = form.watch("passengerUids") || [];
-
-  console.log("RydRequestPage Button Disabled States:", {
-    isSubmitting,
-    authLoading,
-    isLoadingProfile,
-    isLoadingEvents,
-    isLoadingManagedStudents,
-  });
   
-
-
   return (
     <>
       <PageHeader
@@ -578,13 +604,12 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
-              {/* <pre className="text-xs bg-slate-100 p-2 overflow-auto">
-                Form Errors: {JSON.stringify(form.formState.errors, null, 2)}
-              </pre> */}
+              <pre className="text-xs bg-slate-100 p-2 overflow-auto text-black">
+                Button Disabled Flags: {JSON.stringify({isSubmitting, authLoading, isLoadingProfile, isLoadingEvents, isLoadingManagedStudents}, null, 2)}
+              </pre>
               <Button 
                 type="submit" 
                 className="w-full" 
-                onClick={() => console.log("Submit Ryd Request Button CLICKED (ShadCN)")}
                 disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvents || isLoadingManagedStudents}
               >
                 {isSubmitting ? (
