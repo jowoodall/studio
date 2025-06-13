@@ -6,8 +6,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon } from "lucide-react"; // Added Loader2 and MapPinIcon
-import type { Metadata } from 'next'; // Keep for server-side metadata generation if needed later
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users } from "lucide-react"; // Added Users
+import type { Metadata } from 'next'; 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
@@ -31,7 +31,7 @@ interface RydDetailsPageParams { rideId: string; }
 interface DisplayRydData extends RydData {
   driverProfile?: UserProfileData;
   passengerProfiles?: UserProfileData[];
-  passengerFullNames?: string[]; // Will be populated in the next step
+  passengerFullNames?: string[]; 
 }
 
 export default function LiveRydTrackingPage({ params: paramsPromise }: { params: Promise<RydDetailsPageParams> }) {
@@ -59,7 +59,31 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const rydDocSnap = await getDoc(rydDocRef);
 
       if (rydDocSnap.exists()) {
-        const data = { id: rydDocSnap.id, ...rydDocSnap.data() } as DisplayRydData; // Cast to DisplayRydData
+        let data = { id: rydDocSnap.id, ...rydDocSnap.data() } as DisplayRydData; 
+
+        // Fetch passenger names
+        if (data.passengerIds && data.passengerIds.length > 0) {
+          const passengerNamePromises = data.passengerIds.map(async (passengerId) => {
+            try {
+              const userDocRef = doc(db, "users", passengerId);
+              const userDocSnap = await getDoc(userDocRef);
+              if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as UserProfileData;
+                return userData.fullName || "Unknown Rider";
+              } else {
+                console.warn(`Passenger profile not found for ID: ${passengerId} on ryd tracking page.`);
+                return "Unknown Rider";
+              }
+            } catch (passengerError) {
+              console.error(`Error fetching passenger profile for ID ${passengerId} on ryd tracking page:`, passengerError);
+              return "Error Rider";
+            }
+          });
+          data.passengerFullNames = await Promise.all(passengerNamePromises);
+        } else {
+          data.passengerFullNames = [];
+        }
+        
         setRydDetails(data);
 
         // Placeholder for fetching driver name based on data.driverId
@@ -212,6 +236,17 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                     <p className="text-sm bg-muted/50 p-2 rounded-md whitespace-pre-wrap">{rydDetails.notes}</p>
                 </div>
               )}
+               {rydDetails.passengerFullNames && rydDetails.passengerFullNames.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Ryders</h4>
+                  <ul className="list-disc list-inside pl-1 text-sm">
+                    {rydDetails.passengerFullNames.map((name, index) => (
+                      <li key={index}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
 
               <Button variant="outline" className="w-full" asChild>
                 <Link href={`/messages/new?rydId=${rideId}&context=rydParticipants`}>
