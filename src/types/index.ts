@@ -121,6 +121,7 @@ export interface RydData {
   
   createdAt: Timestamp; // When the ryd request was created
   updatedAt?: Timestamp; // When the ryd was last updated
+  assignedActiveRydId?: string; // ID of the ActiveRyd this request is part of
 }
 
 // New types for ActiveRyd
