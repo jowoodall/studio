@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus } from "@/types";
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, RydData } from "@/types"; // Added RydData
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
@@ -52,6 +52,11 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
+
+  // New state variables for Rydz data
+  const [rydzData, setRydzData] = useState<RydData[]>([]);
+  const [isLoadingRydz, setIsLoadingRydz] = useState<boolean>(true);
+  const [rydzError, setRydzError] = useState<string | null>(null);
 
   const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : []; 
 
@@ -623,3 +628,5 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
+
+    
