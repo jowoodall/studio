@@ -156,3 +156,26 @@ export interface PassengerManifestItem {
   actualDropoffTime?: Timestamp; // Optional: when the passenger was actually dropped off
   notes?: string; // Optional: any specific notes for this passenger on this ryd (e.g., from driver)
 }
+
+export interface ActiveRyd {
+  id: string; // Firestore document ID
+  driverId: string; // UID of the assigned driver
+  vehicleDetails?: { // Snapshot of vehicle details at the time of ryd assignment/start
+    make?: string;
+    model?: string;
+    color?: string;
+    licensePlate?: string;
+    passengerCapacity?: string; // From UserProfileData.driverDetails
+  };
+  status: ActiveRydStatus;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  actualDepartureTime?: Timestamp;
+  estimatedCompletionTime?: Timestamp;
+  startLocationAddress?: string; // Driver's start or first pickup point
+  finalDestinationAddress?: string; // Main event location or final drop-off for the entire ryd
+  routePolyline?: string; // Optional: Encoded polyline for map display
+  passengerManifest: PassengerManifestItem[];
+  associatedEventId?: string; // Optional: Link to an EventData document
+  notes?: string; // General notes for this ActiveRyd (e.g., by driver or system)
+}
