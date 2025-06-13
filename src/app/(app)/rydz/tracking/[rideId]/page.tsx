@@ -239,7 +239,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                {rydDetails.passengerFullNames && rydDetails.passengerFullNames.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Ryders</h4>
-                  <ul className="list-disc list-inside pl-1 text-sm">
+                  <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
                     {rydDetails.passengerFullNames.map((name, index) => (
                       <li key={index}>{name}</li>
                     ))}
