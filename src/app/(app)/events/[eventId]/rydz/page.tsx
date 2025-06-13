@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User // Added User
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -47,7 +47,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
 
-  // Updated rydzData state type
   const [rydzData, setRydzData] = useState<(RydData & { passengerFullNames?: string[] })[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState<boolean>(true);
   const [rydzError, setRydzError] = useState<string | null>(null);
@@ -155,13 +154,42 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         orderBy("rydTimestamp", "asc")
       );
       const querySnapshot = await getDocs(q);
-      const fetchedRydz: (RydData & { passengerFullNames?: string[] })[] = []; // Ensure type matches state
+      const fetchedRydz: RydData[] = []; 
       querySnapshot.forEach((docSnap) => {
-        // Cast to RydData first, then add passengerFullNames if needed later
         const ryd = { id: docSnap.id, ...docSnap.data() } as RydData; 
-        fetchedRydz.push(ryd); // Initially push without passengerFullNames
+        fetchedRydz.push(ryd);
       });
-      setRydzData(fetchedRydz);
+
+      // Augment rydz with passenger names
+      const augmentedRydzPromises = fetchedRydz.map(async (ryd) => {
+        if (!ryd.passengerIds || ryd.passengerIds.length === 0) {
+          return { ...ryd, passengerFullNames: [] };
+        }
+
+        const passengerNamePromises = ryd.passengerIds.map(async (passengerId) => {
+          try {
+            const userDocRef = doc(db, "users", passengerId);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+              const userData = userDocSnap.data() as UserProfileData;
+              return userData.fullName || "Unknown Rider";
+            } else {
+              console.warn(`Passenger profile not found for ID: ${passengerId}`);
+              return "Unknown Rider";
+            }
+          } catch (passengerError) {
+            console.error(`Error fetching passenger profile for ID ${passengerId}:`, passengerError);
+            return "Error Rider";
+          }
+        });
+
+        const passengerFullNames = await Promise.all(passengerNamePromises);
+        return { ...ryd, passengerFullNames };
+      });
+
+      const finalAugmentedRydz = await Promise.all(augmentedRydzPromises);
+      setRydzData(finalAugmentedRydz);
+
     } catch (e: any) {
       console.error("Error fetching event rydz:", e);
       let detailedError = "Failed to load rydz for this event.";
@@ -172,7 +200,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         detailedError = "Permission denied when fetching rydz. Please check Firestore security rules.";
         setRydzError(detailedError);
       } else {
-        setRydzError(detailedError); // The default message
+        setRydzError(detailedError);
       }
       setRydzData([]);
       toast({ title: "Error Loading Rydz", description: detailedError, variant: "destructive", duration: 10000 });
@@ -314,10 +342,10 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     };
 
     try {
-      await setDoc(stateDocRef, newStateData, { merge: true }); // Use setDoc with merge to create or update
+      await setDoc(stateDocRef, newStateData, { merge: true }); 
       setEventDriverStates(prevStates => {
         const existingStateIndex = prevStates.findIndex(s => s.id === stateDocId);
-        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() }; // Simulate timestamp for UI update
+        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() }; 
         if (existingStateIndex > -1) {
           const newStates = [...prevStates];
           newStates[existingStateIndex] = updatedStateEntry;
@@ -326,7 +354,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         return [...prevStates, updatedStateEntry];
       });
       toast({ title: "Status Updated", description: "Your driving status for this event has been updated." });
-      setEditingSeatsForDriver(null); // Close seat editor if open
+      setEditingSeatsForDriver(null); 
     } catch (error) {
       console.error("Error updating driver status:", error);
       toast({ title: "Update Failed", description: "Could not update your driving status.", variant: "destructive" });
@@ -656,7 +684,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                   </div>
                   <div className="flex items-center">
                     <Car className="mr-1.5 h-4 w-4" />
-                    Driver: {ryd.driverId ? "Assigned" : "Pending"} {/* Placeholder for now */}
+                    Driver: {ryd.driverId ? "Assigned" : "Pending"} 
                   </div>
                 </div>
               </CardContent>
@@ -701,4 +729,5 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     
 
     
+
 
