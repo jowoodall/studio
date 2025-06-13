@@ -392,7 +392,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                       onClick={() => handleRemoveMember(member.id)}
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       aria-label={`Remove ${member.name}`}
-                      disabled={(!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid) || (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && group.memberIds.length > 1 && member.hasAcceptedInvitation) }
+                      disabled={(!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid) || (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && members.filter(m => m.hasAcceptedInvitation).length > 1 && member.hasAcceptedInvitation) }
                       title={!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid ? "Only admins can remove others" : (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && members.filter(m => m.hasAcceptedInvitation).length > 1) ? "Cannot remove self as last admin if other accepted members are present" : `Remove ${member.name}`}
                     >
                       {member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}

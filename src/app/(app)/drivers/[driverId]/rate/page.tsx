@@ -10,18 +10,18 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Star, ThumbsUp, Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
+import { Star, ThumbsUp, Loader2, AlertTriangle } from "lucide-react"; 
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import React, { use } from "react"; // Added use
+import React, { use } from "react"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils"; 
-import Link from "next/link"; // Added Link
+import Link from "next/link"; 
 
 // No direct metadata export from client component files. Define in a parent server component or layout if needed.
 
 const driverRatingFormSchema = z.object({
-  rating: z.string().nonempty("Please select a rating."), // Store as string, convert to number on submit
+  rating: z.string().nonempty("Please select a rating."), 
   comments: z.string().max(500, "Comments cannot exceed 500 characters.").optional(),
 });
 
@@ -46,8 +46,6 @@ export default function DriverRatingPage({ params: paramsPromise }: { params: Pr
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   
-  // In a real app, fetch driver details using driverId
-  // For mock, find the driver or use a default if not found initially
   const driver = driverId ? mockDriverData[driverId] : null;
 
   const form = useForm<DriverRatingFormValues>({
@@ -66,7 +64,7 @@ export default function DriverRatingPage({ params: paramsPromise }: { params: Pr
     setIsSubmitting(true);
     const submissionData = {
       ...data,
-      rating: parseInt(data.rating, 10), // Convert rating to number
+      rating: parseInt(data.rating, 10), 
       driverId: driverId,
     };
     console.log("Driver Rating Data:", submissionData);
@@ -83,7 +81,7 @@ export default function DriverRatingPage({ params: paramsPromise }: { params: Pr
     }, 1500);
   }
 
-  if (!driverId) {
+  if (!driverId && !params) { // Check if params itself is null or driverId is missing
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
@@ -92,7 +90,7 @@ export default function DriverRatingPage({ params: paramsPromise }: { params: Pr
     );
   }
 
-  if (!driver) {
+  if (!driver && driverId) { // Only show not found if driverId was present but no driver matched
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -101,6 +99,15 @@ export default function DriverRatingPage({ params: paramsPromise }: { params: Pr
         <Button asChild className="mt-4">
           <Link href="/dashboard">Back to Dashboard</Link>
         </Button>
+      </div>
+    );
+  }
+  
+  if (!driver) { // Catch-all for driver not being available for other reasons (e.g. initial load before driverId is resolved)
+     return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-10">
+        <Loader2 className="w-16 h-16 text-muted-foreground animate-spin mb-4" />
+        <p className="text-muted-foreground">Waiting for driver information...</p>
       </div>
     );
   }

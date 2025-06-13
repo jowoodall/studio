@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User, Clock // Added Clock
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User, Clock 
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem } from "@/types"; // Changed RydData to ActiveRyd
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem } from "@/types"; 
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
@@ -39,12 +39,12 @@ interface ResolvedPageParams { eventId: string; }
 
 interface DisplayActiveRyd extends ActiveRyd {
   driverProfile?: UserProfileData;
-  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[]; // Include manifest status
+  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[]; 
   eventName?: string;
 }
 
-export default function EventRydzPage({ params }: { params: Promise<ResolvedPageParams> }) {
-  const resolvedParams = use(params); 
+export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+  const resolvedParams = use(paramsPromise); 
   const { eventId } = resolvedParams || {}; 
   const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useAuth();
@@ -157,7 +157,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       const q = query(
         activeRydzCollectionRef,
         where("associatedEventId", "==", currentEventId),
-        orderBy("createdAt", "desc") // Or actualDepartureTime if preferred
+        orderBy("createdAt", "desc") 
       );
       const querySnapshot = await getDocs(q);
       const fetchedActiveRydzPromises: Promise<DisplayActiveRyd | null>[] = [];
@@ -228,10 +228,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }, [fetchEventDetails, fetchAllGroups, fetchEventDriverStates]);
 
   useEffect(() => {
-    if (eventId && eventDetails) { // Fetch active rydz only after eventDetails are loaded
+    if (eventId && eventDetails) { 
       fetchActiveRydzForEvent(eventId);
     } else if (eventId && !eventDetails && !isLoadingEvent && eventError) {
-      // If event loading failed, don't attempt to load rydz
       setIsLoadingActiveRydz(false);
       setActiveRydzList([]);
     }

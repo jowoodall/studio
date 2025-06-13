@@ -41,13 +41,12 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     setIsLoadingRyd(true);
     setRydError(null);
     try {
-      const rydDocRef = doc(db, "activeRydz", currentRydId); // Fetch from activeRydz collection
+      const rydDocRef = doc(db, "activeRydz", currentRydId); 
       const rydDocSnap = await getDoc(rydDocRef);
 
       if (rydDocSnap.exists()) {
         let data = { id: rydDocSnap.id, ...rydDocSnap.data() } as DisplayActiveRydData;
 
-        // Fetch Driver Profile
         if (data.driverId) {
           const driverDocRef = doc(db, "users", data.driverId);
           const driverDocSnap = await getDoc(driverDocRef);
@@ -58,7 +57,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
           }
         }
 
-        // Fetch Passenger Profiles for names
         if (data.passengerManifest && data.passengerManifest.length > 0) {
           const passengerProfilePromises = data.passengerManifest.map(async (item) => {
             try {
@@ -73,7 +71,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
           data.passengerProfiles = (await Promise.all(passengerProfilePromises)).filter(Boolean) as UserProfileData[];
         }
 
-        // Fetch Event Name if associatedEventId exists
         if (data.associatedEventId) {
           const eventDocRef = doc(db, "events", data.associatedEventId);
           const eventDocSnap = await getDoc(eventDocRef);
@@ -107,6 +104,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       document.title = `Track Ryd: ${rydDetails.eventName || rydDetails.finalDestinationAddress || rideId} | MyRydz`;
     } else if (rydError) {
       document.title = `Error Loading Ryd | MyRydz`;
+    } else if (rideId) {
+       document.title = `Track Ryd: ${rideId} | MyRydz`;
     } else {
        document.title = `Track Ryd | MyRydz`;
     }
@@ -146,7 +145,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   }
 
   const mapMarkers = [];
-  // Placeholder coordinates - geocoding would be needed for real addresses
   if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` });
   if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`});
 

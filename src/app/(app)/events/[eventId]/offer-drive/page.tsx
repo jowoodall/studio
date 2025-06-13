@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use } from "react"; // Added 'use'
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { type EventData, UserRole } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
-import { createActiveRydForEventAction } from "@/actions/activeRydActions"; 
+import { createActiveRydForEventAction } from "@/actions/activeRydActions";
 import { offerDriveFormServerSchema } from '@/schemas/activeRydSchemas';
 import { format } from "date-fns";
 
@@ -40,9 +40,14 @@ const mockEventsData: { [key: string]: { name: string; location: string, date: T
   "3": { name: "Tech Conference 2024", location: "Downtown Convention Center", date: Timestamp.fromDate(new Date(Date.now() + 86400000 * 15)) },
 };
 
+interface ResolvedPageParams { // Added interface for resolved params
+  eventId: string;
+}
 
-export default function OfferDrivePage({ params }: { params: { eventId: string } }) {
-  const { eventId } = params;
+export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) { // params is a Promise
+  const params = use(paramsPromise); // Unwrap the promise using React.use()
+  const { eventId } = params || {}; // Destructure eventId after unwrapping
+
   const { toast } = useToast();
   const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   
