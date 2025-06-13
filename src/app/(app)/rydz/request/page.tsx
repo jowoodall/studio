@@ -71,7 +71,7 @@ export default function RydRequestPage() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentSelectItem[]>([]);
-  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true); // Changed initial to true
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true); 
   const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
@@ -157,7 +157,7 @@ export default function RydRequestPage() {
         const validStudents = studentsData.filter(Boolean) as ManagedStudentSelectItem[];
         setManagedStudentsList(validStudents);
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("RydRequestPage: Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
         toast({ title: "Error", description: "Could not load your managed students. Check console for details.", variant: "destructive" });
         setManagedStudentsList([]);
@@ -173,10 +173,6 @@ export default function RydRequestPage() {
 
 
   async function onSubmit(data: RydRequestFormValues) { 
-    console.log("RydRequestPage: onSubmit triggered");
-    console.log("RydRequestPage: Form data:", data);
-    console.log("RydRequestPage: Form validation errors:", form.formState.errors);
-
     if (!authUser || !userProfile) {
       console.error("RydRequestPage: Auth user or profile missing in onSubmit.");
       toast({ title: "Authentication Error", description: "You must be logged in to request a ryd.", variant: "destructive" });
@@ -195,7 +191,6 @@ export default function RydRequestPage() {
     }
 
     setIsSubmitting(true);
-    console.log("RydRequestPage: isSubmitting set to true");
 
     const [eventHours, eventMinutes] = data.time.split(':').map(Number);
     const eventStartDateTime = new Date(data.date);
@@ -206,15 +201,6 @@ export default function RydRequestPage() {
     const earliestPickupDateTime = new Date(data.date);
     earliestPickupDateTime.setHours(pickupHours, pickupMinutes, 0, 0);
     
-
-    console.log("RydRequestPage: Raw form data for dates/times:", {
-      rawDate: data.date,
-      rawTime: data.time,
-      rawEarliestPickupTime: data.earliestPickupTime,
-    });
-    console.log("RydRequestPage: Calculated eventStartDateTime:", eventStartDateTime.toISOString(), "Is Valid JS Date:", !isNaN(eventStartDateTime.getTime()));
-    console.log("RydRequestPage: Calculated earliestPickupDateTime:", earliestPickupDateTime.toISOString(), "Is Valid JS Date:", !isNaN(earliestPickupDateTime.getTime()));
-
     if (isNaN(eventStartDateTime.getTime()) || isNaN(earliestPickupDateTime.getTime())) {
         console.error("RydRequestPage: Invalid date/time calculation resulting in 'Invalid Date'.");
         toast({title: "Date/Time Error", description: "Invalid date or time provided. Please check your inputs.", variant: "destructive"});
@@ -224,11 +210,6 @@ export default function RydRequestPage() {
 
     const eventStartFirestoreTimestamp = Timestamp.fromDate(eventStartDateTime);
     const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
-
-    console.log("RydRequestPage: Firestore eventStartTimestamp:", eventStartFirestoreTimestamp);
-    console.log("RydRequestPage: Firestore earliestPickupTimestamp:", earliestPickupFirestoreTimestamp);
-    console.log("RydRequestPage: finalPassengerUids for payload:", finalPassengerUids);
-
 
     const rydRequestPayload: Partial<RydData> = { 
       requestedBy: authUser.uid,
@@ -254,12 +235,8 @@ export default function RydRequestPage() {
       rydRequestPayload.eventName = data.eventName.trim();
     }
     
-    console.log("RydRequestPage: Ryd request payload being sent to Firestore:", rydRequestPayload);
-
     try {
-      console.log("RydRequestPage: Attempting to add document to 'rydz' collection.");
       const docRef = await addDoc(collection(db, "rydz"), rydRequestPayload as Omit<RydData, 'id' | 'updatedAt'>);
-      console.log("RydRequestPage: Document added with ID:", docRef.id);
       toast({
         title: "Ryd Requested!", 
         description: `Your request (ID: ${docRef.id}) for a ryd to ${rydRequestPayload.eventName || rydRequestPayload.destination} has been submitted.`, 
@@ -267,7 +244,6 @@ export default function RydRequestPage() {
       form.reset();
     } catch (error) {
         let errorMessage = "Could not submit your ryd request. Please try again.";
-        // Attempt to get more details from Firebase error if available
         const firebaseError = error as any;
         if (firebaseError.message) {
             errorMessage = firebaseError.message;
@@ -284,7 +260,6 @@ export default function RydRequestPage() {
         });
     } finally {
         setIsSubmitting(false);
-        console.log("RydRequestPage: isSubmitting set to false");
     }
   }
 
@@ -303,11 +278,8 @@ export default function RydRequestPage() {
         }
       }
     } else if (selectedEventId === "custom") {
-      form.setValue("eventName", form.getValues("eventName") || ""); // Keep existing custom name or empty
-      form.setValue("destination", form.getValues("destination") || ""); // Keep existing destination or empty
-      // Potentially reset date/time or keep them if user was editing
-      // form.setValue("date", undefined); // Or keep existing
-      // form.setValue("time", "09:00"); // Or keep existing
+      form.setValue("eventName", form.getValues("eventName") || ""); 
+      form.setValue("destination", form.getValues("destination") || ""); 
     }
   }, [selectedEventId, form, availableEvents]);
 
@@ -604,9 +576,6 @@ export default function RydRequestPage() {
                   </FormItem>
                 )}
               />
-              <pre className="text-xs bg-slate-100 p-2 overflow-auto text-black">
-                Button Disabled Flags: {JSON.stringify({isSubmitting, authLoading, isLoadingProfile, isLoadingEvents, isLoadingManagedStudents}, null, 2)}
-              </pre>
               <Button 
                 type="submit" 
                 className="w-full" 
