@@ -141,3 +141,18 @@ export enum PassengerManifestStatus {
   MISSED_PICKUP = 'missed_pickup',
   CANCELLED_BY_PASSENGER = 'cancelled_by_passenger',
 }
+
+export interface PassengerManifestItem {
+  userId: string; // The passenger's UID
+  originalRydRequestId: string; // The ID of the RydData (request) this manifest item fulfills
+  pickupAddress: string; // Specific pickup address for this passenger for this ryd
+  destinationAddress: string; // Specific destination for this passenger for this ryd
+  status: PassengerManifestStatus; // Current status of this passenger in the manifest
+  pickupOrder?: number; // Optional: for route optimization by the driver
+  dropoffOrder?: number; // Optional: for route optimization by the driver
+  estimatedPickupTime?: Timestamp; // Optional: specific ETA for this passenger's pickup
+  actualPickupTime?: Timestamp; // Optional: when the passenger was actually picked up
+  estimatedDropoffTime?: Timestamp; // Optional: specific ETA for this passenger's dropoff
+  actualDropoffTime?: Timestamp; // Optional: when the passenger was actually dropped off
+  notes?: string; // Optional: any specific notes for this passenger on this ryd (e.g., from driver)
+}
