@@ -35,9 +35,25 @@ export async function createActiveRydForEventAction(
     if (!driverProfile.canDrive) {
       return { success: false, error: "User is not registered as a driver." };
     }
-    if (!driverProfile.driverDetails?.primaryVehicle) {
-        return { success: false, error: "Driver's primary vehicle is not set in their profile." };
+    
+    // Safely check for driverDetails and primaryVehicle first
+    if (!driverProfile.driverDetails || !driverProfile.driverDetails.primaryVehicle || driverProfile.driverDetails.primaryVehicle.trim() === "") {
+        return { success: false, error: "Driver's primary vehicle is not set or is empty in their profile. Please update your profile." };
     }
+
+    let vehicleMake = "N/A";
+    let vehicleModel = "N/A";
+    const primaryVehicle = driverProfile.driverDetails.primaryVehicle;
+
+    if (primaryVehicle) {
+        const parts = primaryVehicle.split(' ');
+        vehicleMake = parts[0] || "N/A";
+        vehicleModel = parts.length > 1 ? parts.slice(1).join(' ') : "N/A";
+        if (vehicleMake === "N/A" && vehicleModel === "N/A") { // if split resulted in N/A for both but vehicle string exists
+             vehicleMake = primaryVehicle; // Use the full string as make
+        }
+    }
+
 
     const eventDocRef = doc(db, "events", eventId);
     const eventDocSnap = await getDoc(eventDocRef);
@@ -55,13 +71,6 @@ export async function createActiveRydForEventAction(
       ? startLocationAddress
       : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area";
 
-    let vehicleMake = driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "N/A";
-    let vehicleModel = driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "N/A";
-    if (vehicleMake === "N/A" && vehicleModel === "N/A" && driverProfile.driverDetails.primaryVehicle) {
-        // If splitting didn't work but there is a primary vehicle string, use it as make.
-        vehicleMake = driverProfile.driverDetails.primaryVehicle;
-    }
-
 
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
       driverId: userId,
@@ -74,31 +83,43 @@ export async function createActiveRydForEventAction(
       },
       passengerManifest: [],
       createdAt: serverTimestamp() as Timestamp,
-      updatedAt: serverTimestamp() as Timestamp, // Added updatedAt
+      updatedAt: serverTimestamp() as Timestamp,
       actualDepartureTime: Timestamp.fromDate(actualDepartureDateTime),
       startLocationAddress: finalStartLocationAddress,
       finalDestinationAddress: eventData.location,
-      notes: pickupInstructions || "", // Ensure notes is always a string
+      notes: pickupInstructions || "", 
     };
 
-    // Log the payload for debugging on the server
     console.log("[Action: createActiveRydForEvent] Attempting to create ActiveRyd with payload:", JSON.stringify(activeRydPayload, null, 2));
 
     try {
         const activeRydDocRef = await addDoc(collection(db, "activeRydz"), activeRydPayload);
         return { success: true, activeRydId: activeRydDocRef.id };
     } catch (firestoreError: any) {
-        // Log the detailed Firestore error on the server
         console.error("[Action: createActiveRydForEvent] Firestore error creating ActiveRyd:", firestoreError);
-        console.error("Firestore error code:", firestoreError.code);
-        console.error("Firestore error message:", firestoreError.message);
-        // Return a more specific error to the client
-        return { success: false, error: `Firestore operation failed: ${firestoreError.message} (Code: ${firestoreError.code}). Check server logs for payload details and verify Firestore rules.` };
+        let errorMessage = "An unknown Firestore error occurred.";
+        if (firestoreError.message) {
+            errorMessage = firestoreError.message;
+        }
+        let errorCode = "UNKNOWN";
+        if (firestoreError.code) {
+            errorCode = firestoreError.code;
+        }
+        console.error("Firestore error code:", errorCode);
+        console.error("Firestore error message:", errorMessage);
+        return { success: false, error: `Firestore operation failed: ${errorMessage} (Code: ${errorCode}). Check server logs for payload details and verify Firestore rules.` };
     }
 
   } catch (error: any) {
-    // This catch block handles errors from getDoc, etc., before the Firestore write attempt
     console.error("[Action: createActiveRydForEvent] General error:", error);
-    return { success: false, error: error.message || "Could not submit drive offer due to an unexpected error." };
+    let generalErrorMessage = "Could not submit drive offer due to an unexpected error.";
+    if (error.message) {
+        generalErrorMessage = error.message;
+    }
+    // If it's a TypeError, it's likely a programming error accessing properties of undefined
+    if (error instanceof TypeError) {
+        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data.`;
+    }
+    return { success: false, error: generalErrorMessage };
   }
 }
