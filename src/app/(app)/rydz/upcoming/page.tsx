@@ -1,115 +1,225 @@
 
+"use client";
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Users, Car, Eye, AlertTriangle } from "lucide-react";
+import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Metadata } from 'next';
+import { useAuth } from '@/context/AuthContext';
+import { db } from '@/lib/firebase';
+import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
+import type { RydData, RydStatus, UserProfileData } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
 
-export const metadata: Metadata = {
-  title: 'Upcoming Rydz', 
-};
+interface DisplayRydData extends RydData {
+  driverProfile?: UserProfileData;
+}
 
-// Mock data for upcoming rydz
-const mockUpcomingRydz = [ 
-  { 
-    id: "ryd1", 
-    eventName: "School Annual Day Rehearsal", 
-    date: "2024-12-10", 
-    time: "03:00 PM", 
-    destination: "Northwood High Auditorium", 
-    driver: "John Smith", 
-    status: "Confirmed", 
-    image: "https://placehold.co/400x200.png?text=School+Event", 
-    dataAiHint: "school kids play" 
-  },
-  { 
-    id: "ryd2", 
-    eventName: "Weekend Soccer Practice", 
-    date: "2024-11-25", 
-    time: "09:00 AM", 
-    destination: "City Sports Complex", 
-    driver: "Maria Garcia", 
-    status: "Driver Assigned", 
-    image: "https://placehold.co/400x200.png?text=Soccer+Practice",
-    dataAiHint: "soccer kids" 
-  },
-  { 
-    id: "ryd3", 
-    eventName: "Study Group Session", 
-    date: "2024-11-28", 
-    time: "06:00 PM", 
-    destination: "Community Library", 
-    driver: "Pending", 
-    status: "Requested", 
-    image: "https://placehold.co/400x200.png?text=Study+Group",
-    dataAiHint: "students library"
-  },
+const upcomingStatuses: RydStatus[] = [
+  'requested',
+  'searching_driver',
+  'driver_assigned',
+  'confirmed_by_driver',
+  'en_route_pickup',
+  'en_route_destination',
 ];
 
-export default function UpcomingRydzPage() { 
+export default function UpcomingRydzPage() {
+  const { user: authUser, loading: authLoading, isLoadingProfile } = useAuth();
+  const { toast } = useToast();
+
+  const [upcomingRydz, setUpcomingRydz] = useState<DisplayRydData[]>([]);
+  const [isLoadingRydz, setIsLoadingRydz] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchUpcomingRydz = useCallback(async () => {
+    if (!authUser) {
+      if (!authLoading && !isLoadingProfile) { // Only set loading to false if auth is resolved
+        setIsLoadingRydz(false);
+        setUpcomingRydz([]);
+      }
+      return;
+    }
+
+    setIsLoadingRydz(true);
+    setError(null);
+    try {
+      const rydzQuery = query(
+        collection(db, "rydz"),
+        where("requestedBy", "==", authUser.uid),
+        where("status", "in", upcomingStatuses),
+        orderBy("rydTimestamp", "asc")
+      );
+      const querySnapshot = await getDocs(rydzQuery);
+      const fetchedRydzPromises: Promise<DisplayRydData | null>[] = [];
+
+      querySnapshot.forEach((docSnap) => {
+        const ryd = { id: docSnap.id, ...docSnap.data() } as RydData;
+        
+        const promise = async (): Promise<DisplayRydData | null> => {
+          let driverProfile: UserProfileData | undefined = undefined;
+          if (ryd.driverId) {
+            try {
+              const driverDocRef = doc(db, "users", ryd.driverId);
+              const driverDocSnap = await getDoc(driverDocRef);
+              if (driverDocSnap.exists()) {
+                driverProfile = driverDocSnap.data() as UserProfileData;
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch driver profile for ${ryd.driverId}`, e);
+            }
+          }
+          return { ...ryd, driverProfile };
+        };
+        fetchedRydzPromises.push(promise());
+      });
+      
+      const resolvedRydz = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as DisplayRydData[];
+      setUpcomingRydz(resolvedRydz);
+
+    } catch (e: any) {
+      console.error("Error fetching upcoming rydz:", e);
+      let detailedError = "Failed to load upcoming rydz.";
+       if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
+        detailedError = "A Firestore index is required to load upcoming rydz. Please check the browser's developer console for a link to create it.";
+      } else if (e.code === 'permission-denied') {
+        detailedError = "Permission denied when fetching upcoming rydz. Please check Firestore security rules.";
+      }
+      setError(detailedError);
+      toast({ title: "Error", description: detailedError, variant: "destructive", duration: 10000 });
+    } finally {
+      setIsLoadingRydz(false);
+    }
+  }, [authUser, toast, authLoading, isLoadingProfile]);
+
+  useEffect(() => {
+    if (!authLoading && !isLoadingProfile) { // Fetch only when auth state is resolved
+        fetchUpcomingRydz();
+    }
+  }, [authLoading, isLoadingProfile, fetchUpcomingRydz]);
+
+  const isLoadingInitial = authLoading || isLoadingProfile;
+
+
+  if (isLoadingInitial) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading your rydz...</p>
+      </div>
+    );
+  }
+  
+  if (!authUser && !isLoadingInitial) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+        <p className="text-muted-foreground px-4">Please log in to view your upcoming rydz.</p>
+        <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
+      </div>
+    );
+  }
+
+  if (isLoadingRydz && !isLoadingInitial) { // Show loader specific to rydz data fetching if auth is done
+     return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Fetching your rydz...</p>
+      </div>
+    );
+  }
+  
+  if (error && !isLoadingRydz) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Error Loading Rydz</h2>
+        <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
+        <Button onClick={fetchUpcomingRydz} className="mt-4">Try Again</Button>
+      </div>
+    );
+  }
+
+
   return (
     <>
       <PageHeader
-        title="Upcoming Rydz" 
-        description="Here are your scheduled and requested rydz." 
+        title="Upcoming Rydz"
+        description="Here are your scheduled and requested rydz."
       />
 
-      {mockUpcomingRydz.length > 0 ? ( 
+      {upcomingRydz.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {mockUpcomingRydz.map((ryd) => ( 
+          {upcomingRydz.map((ryd) => {
+            const rydDate = ryd.rydTimestamp instanceof Timestamp ? ryd.rydTimestamp.toDate() : new Date();
+            const driverName = ryd.driverProfile?.fullName || "Pending";
+            const trackable = !!ryd.assignedActiveRydId;
+
+            return (
             <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="relative h-40">
-                <Image 
-                  src={ryd.image} 
-                  alt={ryd.eventName} 
-                  fill 
-                  className="rounded-t-lg object-cover" 
-                  data-ai-hint={ryd.dataAiHint}
+                <Image
+                  src={"https://placehold.co/400x200.png?text=Ryd"}
+                  alt={ryd.eventName || ryd.destination}
+                  fill
+                  className="rounded-t-lg object-cover"
+                  data-ai-hint={"map car journey"}
                 />
-                 <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm">
-                    {ryd.status}
+                 <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm capitalize">
+                    {ryd.status.replace(/_/g, ' ')}
                  </div>
               </CardHeader>
               <CardContent className="flex-grow pt-4">
-                <CardTitle className="font-headline text-lg mb-1">{ryd.eventName}</CardTitle>
+                <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
                 <div className="text-sm text-muted-foreground space-y-1 mb-2">
-                  <div className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> {ryd.date} at {ryd.time}</div>
-                  <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> {ryd.destination}</div>
                   <div className="flex items-center">
-                    <Car className="mr-1.5 h-4 w-4" /> 
-                    Driver: {ryd.driver !== "Pending" ? (
-                      <Link href={`/drivers/${ryd.driver.toLowerCase().replace(' ','-')}/profile`} className="ml-1 text-primary hover:underline">{ryd.driver}</Link>
+                    <CalendarDays className="mr-1.5 h-4 w-4" /> {format(rydDate, "PPP 'at' p")}
+                  </div>
+                  <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> To: {ryd.destination}</div>
+                  <div className="flex items-center">
+                    <User className="mr-1.5 h-4 w-4" />
+                    Driver: {ryd.driverId && ryd.driverProfile ? (
+                      <Link href={`/profile/view/${ryd.driverId}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
                     ) : (
-                      <span className="ml-1">{ryd.driver}</span>
+                      <span className="ml-1">{driverName}</span>
                     )}
                   </div>
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
-                <Button variant="default" className="w-full" asChild>
-                  <Link href={`/rydz/tracking/${ryd.id}`}> 
-                    <Eye className="mr-2 h-4 w-4" /> View Details / Track
-                  </Link>
+                <Button variant="default" className="w-full" asChild={trackable} disabled={!trackable}>
+                  {trackable ? (
+                    <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
+                      <Eye className="mr-2 h-4 w-4" /> View Details / Track
+                    </Link>
+                  ) : (
+                    <span>
+                       <Eye className="mr-2 h-4 w-4" /> Awaiting Driver / Details
+                    </span>
+                  )}
                 </Button>
               </CardFooter>
             </Card>
-          ))}
+          )})}
         </div>
       ) : (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
-            <AlertTriangle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Upcoming Rydz</CardTitle> 
+            <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <CardTitle className="font-headline text-2xl">No Upcoming Rydz</CardTitle>
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              You have no rydz scheduled. Request one to get started! 
+              You have no rydz scheduled or actively requested. Request one to get started!
             </CardDescription>
             <Button asChild>
-              <Link href="/rydz/request"> 
-                Request a Ryd 
+              <Link href="/rydz/request">
+                Request a Ryd
               </Link>
             </Button>
           </CardContent>
