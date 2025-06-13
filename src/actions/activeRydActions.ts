@@ -66,7 +66,7 @@ export async function createActiveRydForEventAction(
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
       driverId: firebaseUser.uid,
       associatedEventId: eventId,
-      status: ActiveRydStatus.PLANNING, // Or 'AVAILABLE_FOR_PASSENGERS' if immediately open
+      status: ActiveRydStatus.PLANNING, // Or 'AWAITING_PASSENGERS' if immediately open
       vehicleDetails: {
         make: driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "", // Example: "Toyota Camry 2020" -> "Toyota"
         model: driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "", // Example: -> "Camry 2020"
