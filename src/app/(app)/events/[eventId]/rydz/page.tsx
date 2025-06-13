@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
