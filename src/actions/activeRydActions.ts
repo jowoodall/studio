@@ -13,21 +13,21 @@ export async function createActiveRydForEventAction(
   userId: string,
   data: OfferDriveFormServerValues
 ): Promise<{ success: boolean; activeRydId?: string; error?: string; issues?: z.ZodIssue[] }> {
-  console.log("[Action: createActiveRydForEventAction] Action called.");
+  console.log("[Action: createActiveRydForEventAction] Action called."); // First log in the action
 
   if (!userId) {
     console.error("[Action: createActiveRydForEventAction] Error: userId not provided to action.");
-    return { success: false, error: "User ID not provided." };
+    return { success: false, error: "User ID not provided. Authentication failed." };
   }
-  console.log(`[Action: createActiveRydForEventAction] Processing for userId: ${userId}`, "with data:", data);
+  console.log(`[Action: createActiveRydForEventAction] Processing for userId: ${userId}`, "with data:", JSON.stringify(data, null, 2));
 
 
   const validationResult = offerDriveFormServerSchema.safeParse(data);
   if (!validationResult.success) {
-    console.error("[Action: createActiveRydForEventAction] Server-side validation failed:", validationResult.error.flatten());
-    return { success: false, error: "Invalid form data.", issues: validationResult.error.issues };
+    console.error("[Action: createActiveRydForEventAction] Server-side validation of input data failed:", validationResult.error.flatten());
+    return { success: false, error: "Invalid form data submitted to server action.", issues: validationResult.error.issues };
   }
-  console.log("[Action: createActiveRydForEventAction] Server-side validation successful.");
+  console.log("[Action: createActiveRydForEventAction] Server-side input data validation successful.");
 
   const { eventId, seatsAvailable, departureTime, startLocationAddress, pickupInstructions } = validationResult.data;
 
@@ -38,10 +38,11 @@ export async function createActiveRydForEventAction(
 
     if (!driverProfileSnap.exists()) {
       console.error(`[Action: createActiveRydForEventAction] Driver profile not found for userId: ${userId}`);
-      return { success: false, error: "Driver profile not found." };
+      return { success: false, error: "Driver profile not found. Ensure the user exists in Firestore." };
     }
     const driverProfile = driverProfileSnap.data() as UserProfileData;
     console.log("[Action: createActiveRydForEventAction] Fetched driverProfile:", JSON.stringify(driverProfile, null, 2));
+    console.log(`[Action: createActiveRydForEventAction] Checking driverProfile.canDrive: ${driverProfile.canDrive}`);
 
 
     if (!driverProfile.canDrive) {
@@ -56,11 +57,11 @@ export async function createActiveRydForEventAction(
 
     let vehicleMake = "N/A";
     let vehicleModel = "N/A";
-    const primaryVehicle = driverProfile.driverDetails.primaryVehicle; // Safe due to check above
+    const primaryVehicle = driverProfile.driverDetails.primaryVehicle; 
 
-    if (primaryVehicle) { 
+    if (primaryVehicle && primaryVehicle.trim() !== "") {
         const parts = primaryVehicle.split(' ');
-        vehicleMake = parts[0] || "N/A"; 
+        vehicleMake = parts[0]; 
         vehicleModel = parts.length > 1 ? parts.slice(1).join(' ') : "N/A"; 
         if (vehicleMake === "N/A" && vehicleModel === "N/A" && primaryVehicle.trim() !== "N/A") { 
              vehicleMake = primaryVehicle; 
@@ -69,15 +70,21 @@ export async function createActiveRydForEventAction(
     console.log(`[Action: createActiveRydForEventAction] Parsed vehicle: Make - ${vehicleMake}, Model - ${vehicleModel}`);
 
 
-    console.log("[Action: createActiveRydForEventAction] Attempting to fetch event data...");
+    console.log("[Action: createActiveRydForEventAction] Attempting to fetch event data for eventId:", eventId);
     const eventDocRef = doc(db, "events", eventId);
     const eventDocSnap = await getDoc(eventDocRef);
     if (!eventDocSnap.exists()) {
         console.error(`[Action: createActiveRydForEventAction] Event not found for eventId: ${eventId}`);
-        return { success: false, error: "Event not found." };
+        return { success: false, error: "Event not found. Cannot offer drive for a non-existent event." };
     }
     const eventData = eventDocSnap.data() as EventData;
     console.log("[Action: createActiveRydForEventAction] Fetched eventData:", JSON.stringify(eventData, null, 2));
+
+    if (!eventData.location || eventData.location.trim() === "") {
+      console.error(`[Action: createActiveRydForEventAction] Event (ID: ${eventId}) is missing a location. Cannot set finalDestinationAddress.`);
+      return { success: false, error: "The selected event does not have a location specified. Please update the event details." };
+    }
+
 
     const eventDate = eventData.eventTimestamp.toDate();
 
@@ -87,7 +94,7 @@ export async function createActiveRydForEventAction(
 
     const finalStartLocationAddress = startLocationAddress && startLocationAddress.trim() !== ""
       ? startLocationAddress
-      : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area";
+      : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area"; // Fallback must be non-empty for rules
     console.log(`[Action: createActiveRydForEventAction] Final start location: ${finalStartLocationAddress}`);
 
 
@@ -98,59 +105,63 @@ export async function createActiveRydForEventAction(
       vehicleDetails: {
         make: vehicleMake,
         model: vehicleModel,
-        passengerCapacity: String(seatsAvailable),
+        passengerCapacity: String(seatsAvailable), // Rules expect string "1"-"8"
       },
       passengerManifest: [],
       createdAt: serverTimestamp() as Timestamp,
       updatedAt: serverTimestamp() as Timestamp,
       actualDepartureTime: Timestamp.fromDate(actualDepartureDateTime),
       startLocationAddress: finalStartLocationAddress,
-      finalDestinationAddress: eventData.location,
+      finalDestinationAddress: eventData.location, // Checked above to be non-empty
       notes: pickupInstructions || "", 
     };
     // Remove serverTimestamps for logging actual payload being sent for rule evaluation
     const payloadForLogging = {...activeRydPayload};
-    delete (payloadForLogging as any).createdAt;
-    delete (payloadForLogging as any).updatedAt;
-    console.log("[Action: createActiveRydForEventAction] Final ActiveRyd payload (before addDoc, excluding serverTimestamps):", JSON.stringify(payloadForLogging, null, 2));
+    delete (payloadForLogging as any).createdAt; // Firestore handles serverTimestamp
+    delete (payloadForLogging as any).updatedAt; // Firestore handles serverTimestamp
+    console.log("====================================================================================");
+    console.log("[Action: createActiveRydForEventAction] FINAL ActiveRyd payload for Firestore (before addDoc, excluding serverTimestamps):", JSON.stringify(payloadForLogging, null, 2));
+    console.log("====================================================================================");
 
     try {
-        console.log(`[Action: createActiveRydForEventAction] About to call addDoc with Firestore.`);
+        console.log(`[Action: createActiveRydForEventAction] Attempting addDoc to 'activeRydz' collection now...`);
         const activeRydDocRef = await addDoc(collection(db, "activeRydz"), activeRydPayload);
-        console.log(`[Action: createActiveRydForEventAction] ActiveRyd created successfully with ID: ${activeRydDocRef.id}`);
+        console.log(`[Action: createActiveRydForEventAction] SUCCESS! ActiveRyd created with ID: ${activeRydDocRef.id}`);
         return { success: true, activeRydId: activeRydDocRef.id };
     } catch (firestoreError: any) {
-        console.error(`[Action: createActiveRydForEventAction] CAUGHT FIRESTORE ERROR during addDoc.`);
-        console.error(`[Action: createActiveRydForEventAction] Raw Firestore Error Object:`, firestoreError);
+        console.error(`\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
+        console.error(`[Action: createActiveRydForEventAction] CAUGHT FIRESTORE ERROR during addDoc to 'activeRydz'.`);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Code:`, firestoreError.code);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Message:`, firestoreError.message);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Stack:`, firestoreError.stack);
+        console.error(`[Action: createActiveRydForEventAction] Full Firestore Error Object:`, JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError), 2));
+        console.error(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n`);
         
         let detailedMessage = "Firestore operation failed. ";
-        if (typeof firestoreError === 'object' && firestoreError !== null) {
-            if (firestoreError.code) {
-                detailedMessage += `Code: ${firestoreError.code}. `;
-            }
-            // If the raw message is 'Missing or insufficient permissions.', provide context.
-            if (firestoreError.message === 'Missing or insufficient permissions.') {
-                 detailedMessage += `Message: ${firestoreError.message}. This usually means a security rule was violated. Please check driver 'canDrive' status and Firestore rules for 'activeRydz' collection.`;
-            } else if (firestoreError.message) {
-                detailedMessage += `Message: ${firestoreError.message}. `;
-            } else if (Object.keys(firestoreError).length === 0 && firestoreError.toString) {
-                 detailedMessage += `Details: ${firestoreError.toString()}. `;
-            } else {
-                 detailedMessage += `No standard message/code found in error. `;
-            }
+        if (firestoreError.code) {
+            detailedMessage += `Code: ${firestoreError.code}. `;
+        }
+        if (firestoreError.message === 'Missing or insufficient permissions.') {
+            detailedMessage += `Message: ${firestoreError.message}. This indicates a security rule violation. Please double-check: 1) The driver's profile has 'canDrive: true'. 2) The event has a valid location. 3) The submitted payload (see server logs) matches Firestore rule expectations for 'activeRydz' creation.`;
+        } else if (firestoreError.message) {
+            detailedMessage += `Message: ${firestoreError.message}. `;
         } else {
             detailedMessage += `Details: ${String(firestoreError)}. `;
         }
-        detailedMessage += "If server logs are available, check them for payload details and rule evaluation specifics.";
         
         console.error(`[Action: createActiveRydForEventAction] Constructed Firestore error message for client: ${detailedMessage}`);
         return { success: false, error: detailedMessage };
     }
 
   } catch (error: any) {
-    console.error("[Action: createActiveRydForEventAction] General error (outer catch):", error);
-    console.error("[Action: createActiveRydForEventAction] General error object stringified:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    let generalErrorMessage = "Could not submit drive offer due to an unexpected error.";
+    console.error(`\n\n************************************************************************************`);
+    console.error("[Action: createActiveRydForEventAction] CRITICAL GENERAL ERROR (outer catch):", error.message);
+    console.error("[Action: createActiveRydForEventAction] Error Name:", error.name);
+    console.error("[Action: createActiveRydForEventAction] Error Stack:", error.stack);
+    console.error("[Action: createActiveRydForEventAction] Full General Error Object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error(`************************************************************************************\n\n`);
+    
+    let generalErrorMessage = "Could not submit drive offer due to an unexpected server error.";
     if (error.message) {
         generalErrorMessage = error.message;
          if (error.message === 'Missing or insufficient permissions.') {
@@ -158,7 +169,7 @@ export async function createActiveRydForEventAction(
          }
     }
     if (error instanceof TypeError) {
-        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data or an internal coding error. Please check your profile details.`;
+        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data (like 'driverDetails' or event 'location') or an internal coding error. Please check your profile details and the event details.`;
     }
     console.error(`[Action: createActiveRydForEventAction] Constructed General error message for client: ${generalErrorMessage}`);
     return { success: false, error: generalErrorMessage };
