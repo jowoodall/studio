@@ -159,11 +159,20 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         fetchedRydz.push({ id: docSnap.id, ...docSnap.data() } as RydData);
       });
       setRydzData(fetchedRydz);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error fetching event rydz:", e);
-      setRydzError("Failed to load rydz for this event.");
+      let detailedError = "Failed to load rydz for this event.";
+      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
+        detailedError = "A Firestore index is required to load rydz for this event. Please check the browser's developer console for a link to create the necessary index in your Firebase project.";
+        setRydzError(detailedError);
+      } else if (e.code === 'permission-denied') {
+        detailedError = "Permission denied when fetching rydz. Please check Firestore security rules.";
+        setRydzError(detailedError);
+      } else {
+        setRydzError(detailedError); // The default message
+      }
       setRydzData([]);
-      toast({ title: "Error", description: "Could not load rydz information.", variant: "destructive" });
+      toast({ title: "Error Loading Rydz", description: detailedError, variant: "destructive", duration: 10000 });
     } finally {
       setIsLoadingRydz(false);
     }
@@ -606,7 +615,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
             <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Rydz</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription className="mb-6 text-destructive-foreground/90">
+            <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
               {rydzError}
             </CardDescription>
             <Button onClick={() => eventId && fetchEventRydz(eventId)} variant="secondary">Try Again</Button>
@@ -686,4 +695,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   );
 }
         
+    
+
     
