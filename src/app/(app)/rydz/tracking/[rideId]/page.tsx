@@ -1,118 +1,225 @@
 
+"use client";
+
+import React, { useState, useEffect, use, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare } from "lucide-react"; // Added MessageSquare
-import type { Metadata } from 'next';
-import { Button } from "@/components/ui/button"; // Added Button
-import Link from "next/link"; // Added Link
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon } from "lucide-react"; // Added Loader2 and MapPinIcon
+import type { Metadata } from 'next'; // Keep for server-side metadata generation if needed later
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { type RydData, type UserProfileData } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
 
-// Function to generate metadata dynamically based on rideId
-export async function generateMetadata({ params }: { params: { rideId: string } }): Promise<Metadata> {
-  // In a real app, fetch ryd details using params.rideId
-  return {
-    title: `Track Ryd ${params.rideId}`, // Changed Ride to Ryd
-    description: `Live tracking for ryd ${params.rideId}.`, // Changed ride to ryd
-  };
+// Metadata generation needs to be outside the client component or handled differently for client-rendered pages
+// For now, this will be handled by a default or if this page becomes server-rendered in part.
+// export async function generateMetadata({ params }: { params: { rideId: string } }): Promise<Metadata> {
+//   return {
+//     title: `Track Ryd ${params.rideId}`,
+//     description: `Live tracking for ryd ${params.rideId}.`,
+//   };
+// }
+
+interface RydDetailsPageParams { rideId: string; }
+
+// Extended RydData to potentially hold fetched driver/passenger info later
+interface DisplayRydData extends RydData {
+  driverProfile?: UserProfileData;
+  passengerProfiles?: UserProfileData[];
+  passengerFullNames?: string[]; // Will be populated in the next step
 }
 
-// Mock ryd data
-const mockRydDetails = { // Changed mockRideDetails to mockRydDetails
-  driver: { name: "Jane Doe", avatar: "https://placehold.co/100x100.png?text=JD", dataAiHint: "woman driver" },
-  vehicle: "Blue Sedan - XYZ 123",
-  origin: { lat: 35.0450, lng: -85.3100, address: "123 Oak Street, Anytown" }, // Made origin an object
-  destination: { lat: 35.0550, lng: -85.2900, address: "Northwood High School" }, // Made destination an object
-  eta: "15 minutes",
-  status: "En route", // Other statuses: "Picking up", "Delayed", "Arrived"
-};
+export default function LiveRydTrackingPage({ params: paramsPromise }: { params: Promise<RydDetailsPageParams> }) {
+  const params = use(paramsPromise);
+  const { rideId } = params || {};
+  const { toast } = useToast();
 
-// Mock route coordinates for demonstration
-const mockRoutePath = [
-  { lat: mockRydDetails.origin.lat, lng: mockRydDetails.origin.lng }, // Start at origin
-  { lat: 35.0480, lng: -85.3050 }, // Intermediate point 1
-  { lat: 35.0500, lng: -85.2980 }, // Intermediate point 2
-  { lat: mockRydDetails.destination.lat, lng: mockRydDetails.destination.lng }, // End at destination
-];
+  const [rydDetails, setRydDetails] = useState<DisplayRydData | null>(null);
+  const [isLoadingRyd, setIsLoadingRyd] = useState(true);
+  const [rydError, setRydError] = useState<string | null>(null);
+  // Placeholder for driver details until we fetch them
+  const [driverDetails, setDriverDetails] = useState<{name: string, avatar: string, dataAiHint: string, vehicle: string} | null>(null);
 
 
-export default function LiveRydTrackingPage({ params }: { params: { rideId: string } }) { // Changed LiveRideTrackingPage to LiveRydTrackingPage
-  // In a real app, you would fetch ryd details using params.rideId
-  // and update map + details via websockets or polling.
+  const fetchRydDetails = useCallback(async (currentRydId: string) => {
+    if (!currentRydId) {
+      setRydError("Ryd ID is missing.");
+      setIsLoadingRyd(false);
+      return;
+    }
+    setIsLoadingRyd(true);
+    setRydError(null);
+    try {
+      const rydDocRef = doc(db, "rydz", currentRydId);
+      const rydDocSnap = await getDoc(rydDocRef);
 
-  if (!params.rideId) {
+      if (rydDocSnap.exists()) {
+        const data = { id: rydDocSnap.id, ...rydDocSnap.data() } as DisplayRydData; // Cast to DisplayRydData
+        setRydDetails(data);
+
+        // Placeholder for fetching driver name based on data.driverId
+        if (data.driverId) {
+          const driverDocRef = doc(db, "users", data.driverId);
+          const driverDocSnap = await getDoc(driverDocRef);
+          if (driverDocSnap.exists()) {
+            const driverData = driverDocSnap.data() as UserProfileData;
+            setDriverDetails({
+              name: driverData.fullName || "Unknown Driver",
+              avatar: driverData.avatarUrl || `https://placehold.co/100x100.png?text=${(driverData.fullName || "Driver").split(" ").map(n=>n[0]).join("")}`,
+              dataAiHint: driverData.dataAiHint || "driver photo",
+              vehicle: driverData.driverDetails?.primaryVehicle || "Vehicle not specified"
+            });
+          } else {
+             setDriverDetails({name: "Driver details not found", avatar: "https://placehold.co/100x100.png?text=?", dataAiHint: "person unknown", vehicle: "N/A"});
+          }
+        } else {
+            setDriverDetails({name: "Pending Assignment", avatar: "https://placehold.co/100x100.png?text=?", dataAiHint: "question mark", vehicle: "N/A"});
+        }
+
+      } else {
+        setRydError(`Ryd with ID "${currentRydId}" not found.`);
+        setRydDetails(null);
+      }
+    } catch (e) {
+      console.error("Error fetching ryd details:", e);
+      setRydError("Failed to load ryd details. Please try again.");
+      toast({ title: "Error", description: "Could not load ryd information.", variant: "destructive" });
+    } finally {
+      setIsLoadingRyd(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (rideId) {
+      fetchRydDetails(rideId);
+    }
+  }, [rideId, fetchRydDetails]);
+
+
+  if (isLoadingRyd) {
     return (
-         <div className="flex flex-col items-center justify-center h-full">
-            <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-            <h2 className="text-2xl font-semibold mb-2">Ryd Not Found</h2> {/* Changed Ride to Ryd */}
-            <p className="text-muted-foreground">The specified ryd ID is invalid or the ryd does not exist.</p> {/* Changed ride to ryd (twice) */}
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading ryd details...</p>
+      </div>
+    );
+  }
+
+  if (rydError) {
+    return (
+       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Error Loading Ryd</h2>
+        <p className="text-muted-foreground mb-4 px-4">{rydError}</p>
+        <Button asChild variant="outline">
+          <Link href="/dashboard">Go to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+  
+  if (!rydDetails) {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+            <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+            <p className="text-muted-foreground">Ryd details could not be loaded or found.</p>
+            <Button asChild className="mt-4" variant="outline"><Link href="/dashboard">Go to Dashboard</Link></Button>
         </div>
     );
   }
 
-  const mapMarkers = [
-    { id: 'origin', position: mockRydDetails.origin, title: `Origin: ${mockRydDetails.origin.address}` },
-    { id: 'destination', position: mockRydDetails.destination, title: `Destination: ${mockRydDetails.destination.address}` },
-    // Potentially add a marker for the driver's current location if available
+  // Mock route path - replace with actual data if available
+  const mockRoutePath = [
+    { lat: 35.0450, lng: -85.3100 }, 
+    { lat: 35.0550, lng: -85.2900 },
   ];
+  
+  const mapMarkers = [];
+  if (rydDetails.pickupLocation) mapMarkers.push({id: 'origin', position: {lat: 35.0450, lng: -85.3100}, title: `Pickup: ${rydDetails.pickupLocation}` }); // Placeholder lat/lng
+  if (rydDetails.destination) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `Destination: ${rydDetails.destination}`}); // Placeholder lat/lng
+
+  const pickupTimestamp = rydDetails.earliestPickupTimestamp instanceof Timestamp ? rydDetails.earliestPickupTimestamp.toDate() : null;
+  const eventTimestamp = rydDetails.rydTimestamp instanceof Timestamp ? rydDetails.rydTimestamp.toDate() : null;
 
 
   return (
     <>
       <PageHeader
-        title={`Live Tracking: Ryd #${params.rideId}`} // Changed Ride to Ryd
-        description={`Follow the progress of your ryd in real-time.`} // Changed ride to ryd
+        title={`Live Tracking: Ryd #${rideId}`}
+        description={`Follow the progress of your ryd in real-time.`}
       />
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <InteractiveMap
             className="h-[400px] lg:h-full"
             markers={mapMarkers}
-            routeCoordinates={mockRoutePath}
-            defaultCenterLat={(mockRydDetails.origin.lat + mockRydDetails.destination.lat) / 2} // Center map between origin and destination
-            defaultCenterLng={(mockRydDetails.origin.lng + mockRydDetails.destination.lng) / 2}
-            defaultZoom={12} // Adjust zoom as needed for the route
+            // routeCoordinates={mockRoutePath} // Temporarily disable route for simplicity
+            defaultCenterLat={mapMarkers[0]?.position.lat || 35.0456}
+            defaultCenterLng={mapMarkers[0]?.position.lng || -85.3097}
+            defaultZoom={12}
           />
         </div>
         <div className="lg:col-span-1">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Ryd Details</CardTitle> {/* Changed Ride to Ryd */}
-              <CardDescription>Status: <span className="font-semibold text-primary">{mockRydDetails.status}</span></CardDescription> {/* Changed mockRideDetails */}
+              <CardTitle>Ryd Details for: {rydDetails.eventName || rydDetails.destination}</CardTitle>
+              <CardDescription>Status: <span className="font-semibold text-primary capitalize">{rydDetails.status.replace(/_/g, ' ')}</span></CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver</h4>
-                <div className="flex items-center gap-3">
-                  <Avatar>
-                    <AvatarImage src={mockRydDetails.driver.avatar} alt={mockRydDetails.driver.name} data-ai-hint={mockRydDetails.driver.dataAiHint} /> {/* Changed mockRideDetails */}
-                    <AvatarFallback>{mockRydDetails.driver.name.split(" ").map(n => n[0]).join("")}</AvatarFallback> {/* Changed mockRideDetails */}
-                  </Avatar>
-                  <div>
-                    <p className="font-semibold">{mockRydDetails.driver.name}</p> {/* Changed mockRideDetails */}
-                    <p className="text-xs text-muted-foreground">{mockRydDetails.vehicle}</p> {/* Changed mockRideDetails */}
+              {driverDetails && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver</h4>
+                  <div className="flex items-center gap-3">
+                    <Avatar>
+                      <AvatarImage src={driverDetails.avatar} alt={driverDetails.name} data-ai-hint={driverDetails.dataAiHint} />
+                      <AvatarFallback>{driverDetails.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-semibold">{driverDetails.name}</p>
+                      <p className="text-xs text-muted-foreground">{driverDetails.vehicle}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Estimated Time of Arrival</h4>
-                <p className="font-semibold">{mockRydDetails.eta}</p> {/* Changed mockRideDetails */}
+              )}
+              {pickupTimestamp && (
+                 <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Earliest Pickup Time</h4>
+                  <p className="font-semibold">{format(pickupTimestamp, "PPP 'at' p")}</p>
+                </div>
+              )}
+               {eventTimestamp && (
+                 <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Event Start Time</h4>
+                  <p className="font-semibold">{format(eventTimestamp, "PPP 'at' p")}</p>
+                </div>
+              )}
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><MapPinIcon className="h-4 w-4 mr-1.5" /> From (Pickup)</h4>
+                <p>{rydDetails.pickupLocation}</p>
               </div>
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Car className="h-4 w-4 mr-1.5" /> From</h4>
-                <p>{mockRydDetails.origin.address}</p> {/* Changed mockRideDetails */}
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To (Destination)</h4>
+                <p>{rydDetails.destination}</p>
               </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To</h4>
-                <p>{mockRydDetails.destination.address}</p> {/* Changed mockRideDetails */}
-              </div>
+              {rydDetails.notes && (
+                 <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Notes from Requester</h4>
+                    <p className="text-sm bg-muted/50 p-2 rounded-md whitespace-pre-wrap">{rydDetails.notes}</p>
+                </div>
+              )}
+
               <Button variant="outline" className="w-full" asChild>
-                <Link href={`/messages/new?rydId=${params.rideId}&context=rydParticipants`}>
+                <Link href={`/messages/new?rydId=${rideId}&context=rydParticipants`}>
                   <MessageSquare className="mr-2 h-4 w-4" /> Message Ryd Participants
                 </Link>
               </Button>
                <div className="text-xs text-muted-foreground pt-4 border-t">
-                Map and ETA are estimates and may vary based on real-time conditions.
+                Map and ETA are estimates and may vary based on real-time conditions. Live driver location is not yet implemented.
               </div>
             </CardContent>
           </Card>
@@ -121,3 +228,5 @@ export default function LiveRydTrackingPage({ params }: { params: { rideId: stri
     </>
   );
 }
+
+    
