@@ -80,9 +80,10 @@ export async function createActiveRydForEventAction(
     const eventData = eventDocSnap.data() as EventData;
     console.log("[Action: createActiveRydForEventAction] Fetched eventData:", JSON.stringify(eventData, null, 2));
 
+    // **** EXPLICIT CHECK FOR EVENT LOCATION ****
     if (!eventData.location || eventData.location.trim() === "") {
-      console.error(`[Action: createActiveRydForEventAction] Event (ID: ${eventId}) is missing a location. Cannot set finalDestinationAddress.`);
-      return { success: false, error: "The selected event does not have a location specified. Please update the event details." };
+      console.error(`[Action: createActiveRydForEventAction] CRITICAL: Event (ID: ${eventId}) is missing a location. This will cause Firestore rule failure for 'finalDestinationAddress'.`);
+      return { success: false, error: "The selected event does not have a location specified. Please update the event details as this is required to offer a ryd." };
     }
 
 
@@ -93,9 +94,17 @@ export async function createActiveRydForEventAction(
     actualDepartureDateTime.setHours(hours, minutes, 0, 0);
 
     const finalStartLocationAddress = startLocationAddress && startLocationAddress.trim() !== ""
-      ? startLocationAddress
-      : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area"; // Fallback must be non-empty for rules
-    console.log(`[Action: createActiveRydForEventAction] Final start location: ${finalStartLocationAddress}`);
+      ? startLocationAddress.trim()
+      : (driverProfile.address?.city && driverProfile.address.city.trim() !== "" ? driverProfile.address.city.trim() : 
+        (driverProfile.address?.zip && driverProfile.address.zip.trim() !== "" ? driverProfile.address.zip.trim() : "Driver's general area"));
+    
+    console.log(`[Action: createActiveRydForEventAction] Determined finalStartLocationAddress: "${finalStartLocationAddress}"`);
+    
+    // **** EXPLICIT CHECK FOR FINAL START LOCATION ADDRESS ****
+    if (!finalStartLocationAddress || finalStartLocationAddress.trim() === "") {
+      console.error(`[Action: createActiveRydForEventAction] CRITICAL: finalStartLocationAddress resolved to an empty string. This will cause Firestore rule failure for 'startLocationAddress'. Profile Address: City: ${driverProfile.address?.city}, Zip: ${driverProfile.address?.zip}. Form Input: '${startLocationAddress}'`);
+      return { success: false, error: "Could not determine a valid start location address for the ryd. Please ensure your profile has a city/zip or specify a start address in the form." };
+    }
 
 
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
@@ -105,20 +114,21 @@ export async function createActiveRydForEventAction(
       vehicleDetails: {
         make: vehicleMake,
         model: vehicleModel,
-        passengerCapacity: String(seatsAvailable), // Rules expect string "1"-"8"
+        passengerCapacity: String(seatsAvailable), 
       },
       passengerManifest: [],
       createdAt: serverTimestamp() as Timestamp,
       updatedAt: serverTimestamp() as Timestamp,
       actualDepartureTime: Timestamp.fromDate(actualDepartureDateTime),
       startLocationAddress: finalStartLocationAddress,
-      finalDestinationAddress: eventData.location, // Checked above to be non-empty
+      finalDestinationAddress: eventData.location, // Already checked eventData.location above
       notes: pickupInstructions || "", 
     };
-    // Remove serverTimestamps for logging actual payload being sent for rule evaluation
+    
     const payloadForLogging = {...activeRydPayload};
-    delete (payloadForLogging as any).createdAt; // Firestore handles serverTimestamp
-    delete (payloadForLogging as any).updatedAt; // Firestore handles serverTimestamp
+    // Firestore handles serverTimestamps, removing for logging to match what rules evaluate on direct fields
+    delete (payloadForLogging as any).createdAt; 
+    delete (payloadForLogging as any).updatedAt;
     console.log("====================================================================================");
     console.log("[Action: createActiveRydForEventAction] FINAL ActiveRyd payload for Firestore (before addDoc, excluding serverTimestamps):", JSON.stringify(payloadForLogging, null, 2));
     console.log("====================================================================================");
@@ -141,8 +151,13 @@ export async function createActiveRydForEventAction(
         if (firestoreError.code) {
             detailedMessage += `Code: ${firestoreError.code}. `;
         }
-        if (firestoreError.message === 'Missing or insufficient permissions.') {
-            detailedMessage += `Message: ${firestoreError.message}. This indicates a security rule violation. Please double-check: 1) The driver's profile has 'canDrive: true'. 2) The event has a valid location. 3) The submitted payload (see server logs) matches Firestore rule expectations for 'activeRydz' creation.`;
+        if (firestoreError.message === 'Missing or insufficient permissions.' || firestoreError.code === 'permission-denied') {
+            detailedMessage += `Message: ${firestoreError.message}. This indicates a security rule violation. Please double-check: 
+1) The driver's profile (UID: ${userId}) has 'canDrive: true'. 
+2) The event (ID: ${eventId}) has a valid, non-empty location. 
+3) The start location (either from form or profile fallback) is non-empty.
+4) The vehicle capacity (seats) is between 1 and 8.
+5) The submitted payload (see server logs if visible) matches Firestore rule expectations for 'activeRydz' creation.`;
         } else if (firestoreError.message) {
             detailedMessage += `Message: ${firestoreError.message}. `;
         } else {
@@ -165,13 +180,14 @@ export async function createActiveRydForEventAction(
     if (error.message) {
         generalErrorMessage = error.message;
          if (error.message === 'Missing or insufficient permissions.') {
-             generalErrorMessage = "Submission failed: Missing or insufficient permissions. This likely indicates a Firestore security rule prevented the operation. Please check your user profile (e.g., 'canDrive' status) and the Firestore rules.";
+             generalErrorMessage = "Submission failed: Missing or insufficient permissions. This likely indicates a Firestore security rule prevented the operation. Please check your user profile (e.g., 'canDrive' status), the event details (e.g., location), and the Firestore rules.";
          }
     }
-    if (error instanceof TypeError) {
-        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data (like 'driverDetails' or event 'location') or an internal coding error. Please check your profile details and the event details.`;
+    if (error instanceof TypeError) { // Catching TypeErrors which can happen with undefined properties
+        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data (like 'driverDetails.primaryVehicle' or event 'location') or an internal coding error. Please check your profile details and the event details. Ensure the user profile for UID '${userId}' and event '${eventId}' exist and are complete.`;
     }
     console.error(`[Action: createActiveRydForEventAction] Constructed General error message for client: ${generalErrorMessage}`);
     return { success: false, error: generalErrorMessage };
   }
 }
+
