@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User // Added User
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -47,7 +47,8 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
 
-  const [rydzData, setRydzData] = useState<RydData[]>([]);
+  // Updated rydzData state type
+  const [rydzData, setRydzData] = useState<(RydData & { passengerFullNames?: string[] })[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState<boolean>(true);
   const [rydzError, setRydzError] = useState<string | null>(null);
 
@@ -154,9 +155,11 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         orderBy("rydTimestamp", "asc")
       );
       const querySnapshot = await getDocs(q);
-      const fetchedRydz: RydData[] = [];
+      const fetchedRydz: (RydData & { passengerFullNames?: string[] })[] = []; // Ensure type matches state
       querySnapshot.forEach((docSnap) => {
-        fetchedRydz.push({ id: docSnap.id, ...docSnap.data() } as RydData);
+        // Cast to RydData first, then add passengerFullNames if needed later
+        const ryd = { id: docSnap.id, ...docSnap.data() } as RydData; 
+        fetchedRydz.push(ryd); // Initially push without passengerFullNames
       });
       setRydzData(fetchedRydz);
     } catch (e: any) {
@@ -698,3 +701,4 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     
 
     
+
