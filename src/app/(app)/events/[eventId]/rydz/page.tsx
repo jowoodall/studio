@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User // Added User here
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -686,6 +686,19 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                     <Car className="mr-1.5 h-4 w-4" />
                     Driver: {ryd.driverId ? "Assigned" : "Pending"} 
                   </div>
+                  {ryd.passengerFullNames && ryd.passengerFullNames.length > 0 && (
+                    <div className="flex items-start pt-1">
+                      <User className="mr-1.5 h-4 w-4 mt-0.5" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">Ryders:</span>
+                        <ul className="list-disc list-inside ml-1">
+                          {ryd.passengerFullNames.map((name, index) => (
+                            <li key={index} className="text-xs">{name}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
@@ -729,5 +742,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     
 
     
+
 
 
