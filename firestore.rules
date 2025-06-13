@@ -4,110 +4,124 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users collection
+    // Helper function to check if a user has a specific role
+    function hasRole(role) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    // Helper function to check if a user is a managed student of the requester
+    function isManagedStudent(studentId) {
+      return request.auth.uid in get(/databases/$(database)/documents/users/$(studentId)).data.associatedParentIds;
+    }
+
+    // User profiles:
+    // - Authenticated users can read any profile (for names, avatars etc.)
+    // - Users can only create/update their own profile
+    // - Deletion might be restricted (e.g., admin only or self with conditions)
     match /users/{userId} {
-      // Any authenticated user can read any user's profile data.
-      // This is needed for parents to view their managed students' names,
-      // for users to view driver profiles, group member profiles, etc.
       allow read: if request.auth.uid != null;
-
-      // Only the authenticated user can write to their own profile.
-      // This also covers creation if we assume profiles are created by the user themselves
-      // or during signup.
-      allow write: if request.auth.uid == userId;
+      allow create: if request.auth.uid != null && request.auth.uid == userId;
+      allow update: if request.auth.uid != null && request.auth.uid == userId;
+      allow delete: if request.auth.uid != null && request.auth.uid == userId; // Or more restrictive
     }
 
-    // Groups collection
+    // Groups:
+    // - Authenticated users can read group details.
+    // - Only authenticated users can create groups (creator becomes admin).
+    // - Only group admins can update group details (name, description, image).
+    // - For adding/removing members, specific logic in `memberIds` and `adminIds` updates handled by backend/transactions usually,
+    //   but rules here ensure only admins can initiate changes to core group doc fields.
     match /groups/{groupId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read group details
-
-      // Only authenticated users can create groups, and they become the initial admin/member.
+      allow read: if request.auth.uid != null;
       allow create: if request.auth.uid != null
-                    && request.resource.data.createdBy == request.auth.uid
-                    && request.auth.uid in request.resource.data.memberIds
-                    && request.auth.uid in request.resource.data.adminIds
-                    && request.resource.data.memberIds.size() == 1 // Initially only creator
-                    && request.resource.data.adminIds.size() == 1;  // Initially only creator
-
-      // Only group admins can update group details (name, description, image, memberIds, adminIds).
-      allow update: if request.auth.uid != null 
-                    && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds
-                    && request.resource.data.diff(get(/databases/$(database)/documents/groups/$(groupId)).data).affectedKeys().hasOnly(['name', 'description', 'imageUrl', 'dataAiHint', 'memberIds', 'adminIds']);
+                    && request.auth.uid == request.resource.data.createdBy
+                    && request.resource.data.name is string && request.resource.data.name != ''
+                    && request.resource.data.description is string && request.resource.data.description != ''
+                    && request.resource.data.memberIds is list && request.resource.data.memberIds.size() == 1 && request.resource.data.memberIds[0] == request.auth.uid
+                    && request.resource.data.adminIds is list && request.resource.data.adminIds.size() == 1 && request.resource.data.adminIds[0] == request.auth.uid
+                    && (request.resource.data.imageUrl == null || request.resource.data.imageUrl is string)
+                    && (request.resource.data.dataAiHint == null || request.resource.data.dataAiHint is string)
+                    && (request.resource.data.createdAt == request.time || (request.resource.data.createdAt is map && request.resource.data.createdAt.get('.sv') == 'timestamp'));
 
 
-      // Potentially only admins or creator can delete
-      // allow delete: if request.auth.uid != null && request.auth.uid in resource.data.adminIds;
+      allow update: if request.auth.uid != null && request.auth.uid in resource.data.adminIds // Only admins
+                    // Allow updates only to specific fields, not adminIds/memberIds directly here (managed by actions)
+                    && request.resource.data.containsKey('name') && request.resource.data.name is string && request.resource.data.name != ''
+                    && request.resource.data.containsKey('description') && request.resource.data.description is string
+                    && (!request.resource.data.containsKey('imageUrl') || request.resource.data.imageUrl is string)
+                    && (!request.resource.data.containsKey('dataAiHint') || request.resource.data.dataAiHint is string)
+                    // Prevent changing createdBy, createdAt, memberIds, adminIds through this general update rule
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.memberIds == resource.data.memberIds
+                    && request.resource.data.adminIds == resource.data.adminIds;
+
+      // allow delete: if request.auth.uid != null && request.auth.uid in resource.data.adminIds; // Or only creator
     }
 
-    // Events collection
+    // Events:
+    // - Authenticated users can read events.
+    // - Authenticated users can create events (creator UID is stored).
+    // - Only the event creator or an admin can update/delete an event.
     match /events/{eventId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read event details
-
-      // Only authenticated users can create events
-      allow create: if request.auth.uid != null 
-                    && request.resource.data.createdBy == request.auth.uid
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null
+                    && request.auth.uid == request.resource.data.createdBy
                     && request.resource.data.name is string && request.resource.data.name != ''
                     && request.resource.data.eventTimestamp is timestamp
                     && request.resource.data.location is string && request.resource.data.location != ''
                     && request.resource.data.eventType is string && request.resource.data.eventType != ''
-                    && request.resource.data.associatedGroupIds is list // Can be empty list
-                    && (request.resource.data.description == null || request.resource.data.description is string)
-                    && request.resource.data.createdAt is timestamp;
+                    && request.resource.data.associatedGroupIds is list
+                    && (request.resource.data.createdAt == request.time || (request.resource.data.createdAt is map && request.resource.data.createdAt.get('.sv') == 'timestamp'));
 
-
-      // Only the event creator can update event details
-      allow update: if request.auth.uid != null 
-                  && get(/databases/$(database)/documents/events/$(eventId)).data.createdBy == request.auth.uid
-                  && request.resource.data.diff(get(/databases/$(database)/documents/events/$(eventId)).data).affectedKeys().hasOnly(['name', 'eventTimestamp', 'location', 'description', 'eventType', 'associatedGroupIds']);
-      
-      // Only the event creator can delete events
-      // allow delete: if request.auth.uid != null && get(/databases/$(database)/documents/events/$(eventId)).data.createdBy == request.auth.uid;
-    }
-    
-    // EventDriverStates collection
-    match /eventDriverStates/{stateId} {
-        // stateId is expected to be eventId_driverId
-        // Driver can read/write their own state for an event.
-        // Event creator might need read access to all states for their event.
-        allow read: if request.auth.uid != null && (
-           request.auth.uid == resource.data.driverId ||
-           (exists(/databases/$(database)/documents/events/$(resource.data.eventId)) &&
-            get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.createdBy == request.auth.uid)
-        );
-        allow write: if request.auth.uid != null 
-                     && request.auth.uid == request.resource.data.driverId
-                     && request.resource.data.eventId is string
-                     && request.resource.data.status is string
-                     && (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable is number)
-                     && request.resource.data.updatedAt is timestamp;
+      allow update: if request.auth.uid != null && request.auth.uid == resource.data.createdBy; // Or admin
+      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.createdBy; // Or admin
     }
 
-    // Rydz collection
+    // Rydz (Carpool Requests/Rides):
+    // - Authenticated users can read rydz (e.g., if they are a passenger or driver, further checks might be needed).
+    // - Authenticated users can create rydz requests for themselves or their managed students.
+    // - Updates and deletes might be restricted to involved parties or admins.
     match /rydz/{rydId} {
-      // Allow create if user is authenticated and is the one requesting, with basic data validation
-      allow create: if request.auth.uid != null 
+      allow read: if request.auth.uid != null; // Can be further restricted
+      allow create: if request.auth.uid != null
                     && request.auth.uid == request.resource.data.requestedBy
-                    && request.resource.data.destination is string && request.resource.data.destination != ""
-                    && request.resource.data.pickupLocation is string && request.resource.data.pickupLocation != ""
+                    && request.resource.data.destination is string && request.resource.data.destination != ''
+                    && request.resource.data.pickupLocation is string && request.resource.data.pickupLocation != ''
                     && request.resource.data.rydTimestamp is timestamp
                     && request.resource.data.earliestPickupTimestamp is timestamp
-                    && request.resource.data.status is string
+                    && request.resource.data.status is string // e.g., "requested", "confirmed"
                     && request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0
-                    && request.resource.data.createdAt is timestamp
+                    // Corrected check for serverTimestamp:
+                    && (request.resource.data.createdAt is map && request.resource.data.createdAt.get(".sv") == "timestamp")
                     && (request.resource.data.eventId == null || request.resource.data.eventId is string)
                     && (request.resource.data.eventName == null || request.resource.data.eventName is string)
                     && (request.resource.data.notes == null || request.resource.data.notes is string)
                     && (request.resource.data.driverId == null || request.resource.data.driverId is string)
-                    && (request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp);
+                    && (request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp || (request.resource.data.updatedAt is map && request.resource.data.updatedAt.get(".sv") == "timestamp"));
 
-      // TODO: Define read, update, delete rules for rydz
-      // Example: Allow user to read their own rydz, or rydz they are a passenger/driver for.
-      // allow read: if request.auth.uid != null && (
-      //   request.auth.uid == resource.data.requestedBy ||
-      //   request.auth.uid == resource.data.driverId ||
-      //   request.auth.uid in resource.data.passengerIds
-      // );
-      // allow update: if ... (e.g. driver can update status, requester can cancel)
+
+      // Add update and delete rules as needed, e.g.:
+      // allow update: if request.auth.uid != null && (request.auth.uid == resource.data.requestedBy || request.auth.uid == resource.data.driverId);
+      // allow delete: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy;
     }
+
+    // eventDriverStates
+    match /eventDriverStates/{stateId} {
+      allow read: if request.auth.uid != null;
+      // Users can only create/update their own driver state for an event.
+      // stateId should be composite `${eventId}_${driverId}`
+      allow create, update: if request.auth.uid != null
+                              && request.auth.uid == request.resource.data.driverId
+                              && request.resource.data.eventId is string
+                              && request.resource.data.status is string
+                              && (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable is number)
+                              && (request.resource.data.updatedAt is map && request.resource.data.updatedAt.get(".sv") == "timestamp");
+      // No general delete, perhaps mark as 'not_attending' or similar
+    }
+
+    // Other collections as needed...
   }
 }
+
+    
