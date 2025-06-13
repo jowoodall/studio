@@ -96,15 +96,20 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   }, [eventId]);
 
   async function onSubmit(data: OfferDriveClientFormValues) {
+    console.log("[OfferDrivePage] onSubmit triggered. Client form data:", data);
+
     if (!authUser || !userProfile) {
+      console.error("[OfferDrivePage] AuthUser or UserProfile missing. AuthUser:", authUser, "UserProfile:", userProfile);
       toast({ title: "Authentication Error", description: "You must be logged in to offer a drive.", variant: "destructive" });
       return;
     }
     if (!userProfile.canDrive) {
+      console.error("[OfferDrivePage] User cannot drive. Profile:", userProfile);
       toast({ title: "Not a Driver", description: "Your profile indicates you are not registered as a driver.", variant: "destructive" });
       return;
     }
     if (!eventDetails) {
+      console.error("[OfferDrivePage] EventDetails missing.");
       toast({ title: "Event Error", description: "Event details are not loaded.", variant: "destructive" });
       return;
     }
@@ -118,16 +123,22 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       startLocationAddress: data.startLocationAddress || "", 
       pickupInstructions: data.pickupInstructions || "",
     };
+    console.log("[OfferDrivePage] Prepared actionPayload for server schema validation:", actionPayload);
 
     const validationResult = offerDriveFormServerSchema.safeParse(actionPayload);
     if (!validationResult.success) {
+        console.error("[OfferDrivePage] Client-side validation failed for server schema:", validationResult.error.flatten());
         toast({ title: "Validation Error", description: "Form data is invalid. Please check your inputs.", variant: "destructive" });
-        console.error("Client-side validation failed for server schema:", validationResult.error.flatten().fieldErrors);
+        validationResult.error.issues.forEach(issue => {
+          form.setError(issue.path[0] as keyof OfferDriveClientFormValues, { message: issue.message });
+        });
         setIsSubmitting(false);
         return;
     }
+    console.log("[OfferDrivePage] Server schema validation successful. Calling server action with UID:", authUser.uid, "and validated data:", validationResult.data);
 
-    const result = await createActiveRydForEventAction(authUser.uid, validationResult.data); // Pass authUser.uid
+    const result = await createActiveRydForEventAction(authUser.uid, validationResult.data); 
+    console.log("[OfferDrivePage] Server action result:", result);
 
     if (result.success && result.activeRydId) {
       toast({
@@ -143,7 +154,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         variant: "destructive",
       });
       if (result.issues) {
-         console.error("Server Action Validation Issues:", result.issues);
+         console.error("[OfferDrivePage] Server Action Validation Issues from result:", result.issues);
          result.issues.forEach(issue => {
             form.setError(issue.path[0] as keyof OfferDriveClientFormValues, { message: issue.message });
          });
