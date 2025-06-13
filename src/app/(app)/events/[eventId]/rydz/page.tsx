@@ -20,7 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore"; // Added orderBy
+import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
 import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, RydData } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
@@ -53,12 +53,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
 
-  // New state variables for Rydz data
   const [rydzData, setRydzData] = useState<RydData[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState<boolean>(true);
   const [rydzError, setRydzError] = useState<string | null>(null);
-
-  // const rydzForThisEvent = eventId ? mockEventRydz.filter(ryd => ryd.eventId === eventId) : []; 
 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
@@ -160,13 +157,11 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
       const q = query(
         rydzCollectionRef,
         where("eventId", "==", currentEventId),
-        orderBy("rydTimestamp", "asc") // Order by event/ryd time
+        orderBy("rydTimestamp", "asc")
       );
       const querySnapshot = await getDocs(q);
       const fetchedRydz: RydData[] = [];
       querySnapshot.forEach((docSnap) => {
-        // Assuming docSnap.data() is compatible with RydData structure
-        // and adding the document ID
         fetchedRydz.push({ id: docSnap.id, ...docSnap.data() } as RydData);
       });
       setRydzData(fetchedRydz);
@@ -178,14 +173,19 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     } finally {
       setIsLoadingRydz(false);
     }
-  }, [toast]); // eventId is passed as parameter, toast is a stable dependency
+  }, [toast]); 
 
   useEffect(() => {
     fetchEventDetails();
     fetchAllGroups();
     fetchEventDriverStates();
-    // fetchEventRydz will be called in another useEffect depending on eventId
   }, [fetchEventDetails, fetchAllGroups, fetchEventDriverStates]);
+
+  useEffect(() => {
+    if (eventId) {
+      fetchEventRydz(eventId);
+    }
+  }, [eventId, fetchEventRydz]);
 
   useEffect(() => {
     const fetchPotentialDriversFromGroups = async () => {
@@ -360,7 +360,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }
   
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
-  const rydzForThisEvent = rydzData; // Use the fetched rydz data
+  const rydzForThisEvent = rydzData; 
 
   return (
     <>
@@ -600,16 +600,16 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
 
       {rydzForThisEvent.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {rydzForThisEvent.map((ryd) => ( // Changed from mockEventRydz
+          {rydzForThisEvent.map((ryd) => ( 
             <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="relative h-40">
                 <Image
-                  src={ryd.image || "https://placehold.co/400x200.png?text=Event+Ryd"} // Fallback image
+                  src={"https://placehold.co/400x200.png?text=Event+Ryd"} 
                   alt={`Ryd for ${ryd.eventName || 'event'}`}
                   fill
                   style={{objectFit: 'cover'}}
                   className="rounded-t-lg"
-                  data-ai-hint={ryd.dataAiHint || "car event"} // Fallback hint
+                  data-ai-hint={"car event"} 
                 />
                  <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm">
                     {ryd.status}
@@ -621,7 +621,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                   <div className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> Pickup: {ryd.earliestPickupTimestamp instanceof Timestamp ? format(ryd.earliestPickupTimestamp.toDate(), "MMM d, p") : "N/A"}</div>
                   <div className="flex items-center">
                     <Car className="mr-1.5 h-4 w-4" />
-                    Driver: {ryd.driverName || (ryd.driverId ? "Assigned" : "Pending")} {/* Placeholder */}
+                    Driver: {ryd.driverId ? "Assigned" : "Pending"} {/* Placeholder for now */}
                   </div>
                 </div>
               </CardContent>
@@ -660,3 +660,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
+
+
+    
