@@ -9,11 +9,12 @@ import { offerDriveFormServerSchema, type OfferDriveFormServerValues } from '@/s
 
 
 export async function createActiveRydForEventAction(
+  userId: string, // Added userId parameter
   data: OfferDriveFormServerValues
 ): Promise<{ success: boolean; activeRydId?: string; error?: string; issues?: z.ZodIssue[] }> {
-  const firebaseUser = auth.currentUser;
-  if (!firebaseUser) {
-    return { success: false, error: "User not authenticated." };
+  // Removed: const firebaseUser = auth.currentUser;
+  if (!userId) { // Check the passed userId
+    return { success: false, error: "User ID not provided." };
   }
 
   // Validate input data with the server-side schema
@@ -26,7 +27,7 @@ export async function createActiveRydForEventAction(
 
   try {
     // Fetch driver's profile for vehicle details and to confirm they can drive
-    const driverProfileRef = doc(db, "users", firebaseUser.uid);
+    const driverProfileRef = doc(db, "users", userId); // Use passed userId
     const driverProfileSnap = await getDoc(driverProfileRef);
 
     if (!driverProfileSnap.exists()) {
@@ -60,13 +61,13 @@ export async function createActiveRydForEventAction(
       : driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area";
 
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
-      driverId: firebaseUser.uid,
+      driverId: userId, // Use passed userId
       associatedEventId: eventId,
-      status: ActiveRydStatus.PLANNING, 
+      status: ActiveRydStatus.PLANNING,
       vehicleDetails: {
-        make: driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "", 
-        model: driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "", 
-        passengerCapacity: String(seatsAvailable), 
+        make: driverProfile.driverDetails.primaryVehicle?.split(' ')[0] || "",
+        model: driverProfile.driverDetails.primaryVehicle?.split(' ').slice(1).join(' ') || "",
+        passengerCapacity: String(seatsAvailable),
       },
       passengerManifest: [],
       createdAt: serverTimestamp() as Timestamp,

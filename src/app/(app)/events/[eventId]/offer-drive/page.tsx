@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, use } from "react"; // Added 'use'
+import React, { useState, useEffect, use } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,13 +40,13 @@ const mockEventsData: { [key: string]: { name: string; location: string, date: T
   "3": { name: "Tech Conference 2024", location: "Downtown Convention Center", date: Timestamp.fromDate(new Date(Date.now() + 86400000 * 15)) },
 };
 
-interface ResolvedPageParams { // Added interface for resolved params
+interface ResolvedPageParams {
   eventId: string;
 }
 
-export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) { // params is a Promise
-  const params = use(paramsPromise); // Unwrap the promise using React.use()
-  const { eventId } = params || {}; // Destructure eventId after unwrapping
+export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+  const params = use(paramsPromise);
+  const { eventId } = params || {};
 
   const { toast } = useToast();
   const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
@@ -115,11 +115,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       eventId: eventDetails.id,
       seatsAvailable: data.seatsAvailable,
       departureTime: data.departureTime,
-      startLocationAddress: data.startLocationAddress || "", // Ensure it's a string, even if empty
+      startLocationAddress: data.startLocationAddress || "", 
       pickupInstructions: data.pickupInstructions || "",
     };
 
-    // Validate with server schema before sending
     const validationResult = offerDriveFormServerSchema.safeParse(actionPayload);
     if (!validationResult.success) {
         toast({ title: "Validation Error", description: "Form data is invalid. Please check your inputs.", variant: "destructive" });
@@ -128,7 +127,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         return;
     }
 
-    const result = await createActiveRydForEventAction(validationResult.data);
+    const result = await createActiveRydForEventAction(authUser.uid, validationResult.data); // Pass authUser.uid
 
     if (result.success && result.activeRydId) {
       toast({
