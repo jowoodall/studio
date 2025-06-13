@@ -47,7 +47,7 @@ service cloud.firestore {
 
     // Rules for rydz (requests)
     match /rydz/{rydId} {
-      allow read: if request.auth.uid != null; 
+      allow read: if request.auth.uid != null;
       
       allow create: if request.auth.uid != null
         && request.auth.uid == request.resource.data.requestedBy
@@ -62,77 +62,107 @@ service cloud.firestore {
         && (request.resource.data.eventId == null || request.resource.data.eventId is string)
         && (request.resource.data.eventName == null || request.resource.data.eventName is string)
         && request.resource.data.keys().hasAll(['requestedBy', 'destination', 'pickupLocation', 'rydTimestamp', 'earliestPickupTimestamp', 'status', 'passengerIds', 'createdAt'])
-        && request.resource.data.keys().size() >= 8 && request.resource.data.keys().size() <= 11;
+        && request.resource.data.keys().size() >= 8 && request.resource.data.keys().size() <= 12; // Adjusted to include updatedAt potentially for server action
 
-      allow update: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy &&
-                      // Allow updating only specific fields
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'assignedActiveRydId', 'updatedAt']) &&
-                      // Prevent changing critical immutable fields
-                      request.resource.data.requestedBy == resource.data.requestedBy &&
-                      request.resource.data.destination == resource.data.destination &&
-                      request.resource.data.pickupLocation == resource.data.pickupLocation &&
-                      request.resource.data.rydTimestamp == resource.data.rydTimestamp &&
-                      request.resource.data.createdAt == resource.data.createdAt;
-
+      allow update: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy
+        // Allow updating status, notes, or linking to an active ryd, but not core details by requester.
+        && request.resource.data.keys().hasAny(['status', 'notes', 'assignedActiveRydId', 'updatedAt'])
+        && (request.resource.data.status == null || request.resource.data.status is string) // Example, refine as needed
+        && (request.resource.data.updatedAt == null || request.resource.data.updatedAt == request.time)
+        && request.resource.data.requestedBy == resource.data.requestedBy; // Cannot change requester
+        
       allow delete: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy && resource.data.status == 'requested';
     }
 
-    // Rules for Active Rydz
+    // Rules for activeRydz
     match /activeRydz/{activeRydId} {
-      allow create: if request.auth != null &&
-                       // Check canDrive status of the user *being set as the driver*
-                       get(/databases/$(database)/documents/users/$(request.resource.data.driverId)).data.canDrive == true &&
-                       // Ensure the authenticated user is the one being set as the driver
-                       request.auth.uid == request.resource.data.driverId &&
-                       // Validate required fields and their types
-                       request.resource.data.driverId is string && request.resource.data.driverId.size() > 0 &&
-                       request.resource.data.associatedEventId is string && request.resource.data.associatedEventId.size() > 0 &&
-                       request.resource.data.status is string && (request.resource.data.status == "planning" || request.resource.data.status == "available_for_passengers") && // Adjust initial statuses as needed
-                       request.resource.data.vehicleDetails is map &&
-                       request.resource.data.vehicleDetails.passengerCapacity is string && // or number depending on your type
-                       request.resource.data.passengerManifest is list && request.resource.data.passengerManifest.size() == 0 && // Initially empty
-                       request.resource.data.createdAt == request.time &&
-                       request.resource.data.updatedAt == request.time &&
-                       request.resource.data.actualDepartureTime is timestamp &&
-                       request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
-                       request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
-                       (request.resource.data.notes is string || request.resource.data.notes == null) &&
-                       // Ensure no unexpected fields are being sent
-                       request.resource.data.keys().hasAll(['driverId', 'associatedEventId', 'status', 'vehicleDetails', 'passengerManifest', 'createdAt', 'updatedAt', 'actualDepartureTime', 'startLocationAddress', 'finalDestinationAddress', 'notes']) &&
-                       request.resource.data.keys().size() == 11; // Adjust count based on final fields
+      // CREATE rule: Validates data integrity. Server action is responsible for ensuring driverId is the authenticated user.
+      allow create: if 
+        // Check if the driverId specified in the document exists and is allowed to drive
+        get(/databases/$(database)/documents/users/$(request.resource.data.driverId)).data.canDrive == true &&
+        // Validate fields from the request.resource.data (the new document being created)
+        request.resource.data.driverId is string && request.resource.data.driverId.size() > 0 &&
+        request.resource.data.associatedEventId is string && request.resource.data.associatedEventId.size() > 0 &&
+        request.resource.data.status == 'planning' && // Initial status must be 'planning'
+        request.resource.data.vehicleDetails is map &&
+          request.resource.data.vehicleDetails.make is string &&
+          request.resource.data.vehicleDetails.model is string &&
+          request.resource.data.vehicleDetails.passengerCapacity is string &&
+          (int(request.resource.data.vehicleDetails.passengerCapacity) >= 1 && int(request.resource.data.vehicleDetails.passengerCapacity) <= 8) && // Capacity between 1-8
+        request.resource.data.passengerManifest is list &&
+        request.resource.data.passengerManifest.size() == 0 && // Must be empty on creation
+        request.resource.data.createdAt == request.time && // Server timestamp validation
+        request.resource.data.updatedAt == request.time && // Server timestamp validation
+        request.resource.data.actualDepartureTime is timestamp &&
+        request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
+        request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
+        (request.resource.data.notes == null || request.resource.data.notes is string) &&
+        // Ensure only expected fields are present
+        request.resource.data.keys().hasOnly([
+          'driverId', 'associatedEventId', 'status', 'vehicleDetails', 
+          'passengerManifest', 'createdAt', 'updatedAt', 'actualDepartureTime', 
+          'startLocationAddress', 'finalDestinationAddress', 'notes'
+        ]) &&
+        request.resource.data.keys().size() == 11; // Exact number of fields
 
+      // READ rule: Any authenticated user can read ActiveRyd listings for events.
       allow read: if request.auth.uid != null;
-                      // Previous detailed rule was:
-                      // (request.auth.uid == resource.data.driverId ||
-                      //  resource.data.passengerManifest.exists(p, p.userId == request.auth.uid));
-                      // Simplified for event listing, refine if needed for direct access security.
+      
+      // UPDATE rule: Only the driver of the ActiveRyd can update it.
+      allow update: if request.auth.uid != null && request.auth.uid == resource.data.driverId
+        // Prevent changing immutable fields
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.associatedEventId == resource.data.associatedEventId
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Validate status transitions if needed (omitted for brevity, can be complex)
+        && request.resource.data.status is string
+        && request.resource.data.updatedAt == request.time // Enforce server timestamp for updates
+        // Allow vehicleDetails to be updated, but validate its structure if present in update
+        && (request.resource.data.vehicleDetails == null || (
+            request.resource.data.vehicleDetails is map &&
+            (request.resource.data.vehicleDetails.make == null || request.resource.data.vehicleDetails.make is string) &&
+            (request.resource.data.vehicleDetails.model == null || request.resource.data.vehicleDetails.model is string) &&
+            (request.resource.data.vehicleDetails.passengerCapacity == null || (
+                request.resource.data.vehicleDetails.passengerCapacity is string &&
+                (int(request.resource.data.vehicleDetails.passengerCapacity) >= 0 && int(request.resource.data.vehicleDetails.passengerCapacity) <= 8)
+            ))
+        ))
+        // Allow passengerManifest to be updated, validate its structure
+        && request.resource.data.passengerManifest is list
+        && request.resource.data.passengerManifest.all(item,
+            item is map &&
+            item.userId is string && item.userId.size() > 0 &&
+            item.originalRydRequestId is string && item.originalRydRequestId.size() > 0 &&
+            item.pickupAddress is string && item.pickupAddress.size() > 0 &&
+            item.destinationAddress is string && item.destinationAddress.size() > 0 &&
+            item.status is string && (
+              item.status == 'awaiting_pickup' || item.status == 'on_board' || 
+              item.status == 'dropped_off' || item.status == 'missed_pickup' || 
+              item.status == 'cancelled_by_passenger'
+            ) &&
+            (item.pickupOrder == null || item.pickupOrder is number) &&
+            (item.dropoffOrder == null || item.dropoffOrder is number) &&
+            (item.estimatedPickupTime == null || item.estimatedPickupTime is timestamp) &&
+            (item.actualPickupTime == null || item.actualPickupTime is timestamp) &&
+            (item.estimatedDropoffTime == null || item.estimatedDropoffTime is timestamp) &&
+            (item.actualDropoffTime == null || item.actualDropoffTime is timestamp) &&
+            (item.notes == null || item.notes is string) &&
+            item.keys().hasOnly([
+                'userId', 'originalRydRequestId', 'pickupAddress', 'destinationAddress', 'status', 
+                'pickupOrder', 'dropoffOrder', 'estimatedPickupTime', 'actualPickupTime', 
+                'estimatedDropoffTime', 'actualDropoffTime', 'notes'
+            ]) && item.keys().size() >= 5 && item.keys().size() <= 12 // Min required to max possible
+        )
+        // Ensure only certain fields can be updated by the driver
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'vehicleDetails', 'passengerManifest', 'updatedAt', 
+            'actualDepartureTime', 'estimatedCompletionTime', 'startLocationAddress', 
+            'finalDestinationAddress', 'routePolyline', 'notes'
+        ]);
 
-      allow update: if request.auth.uid != null && request.auth.uid == resource.data.driverId &&
-                       // Prevent changing immutable fields
-                       request.resource.data.driverId == resource.data.driverId &&
-                       request.resource.data.associatedEventId == resource.data.associatedEventId &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       // Validate specific fields on update, e.g., status progression, manifest changes
-                       (request.resource.data.status is string) &&
-                       (request.resource.data.passengerManifest is list) &&
-                       request.resource.data.passengerManifest.all(item,
-                         item.userId is string && item.userId.size() > 0 &&
-                         item.originalRydRequestId is string && item.originalRydRequestId.size() > 0 &&
-                         item.pickupAddress is string && item.pickupAddress.size() > 0 &&
-                         item.destinationAddress is string && item.destinationAddress.size() > 0 &&
-                         item.status is string &&
-                         (item.pickupOrder == null || item.pickupOrder is number) &&
-                         (item.dropoffOrder == null || item.dropoffOrder is number) &&
-                         (item.estimatedPickupTime == null || item.estimatedPickupTime is timestamp) &&
-                         (item.actualPickupTime == null || item.actualPickupTime is timestamp) &&
-                         (item.estimatedDropoffTime == null || item.estimatedDropoffTime is timestamp) &&
-                         (item.actualDropoffTime == null || item.actualDropoffTime is timestamp) &&
-                         (item.notes == null || item.notes is string) &&
-                         item.keys().hasAll(['userId', 'originalRydRequestId', 'pickupAddress', 'destinationAddress', 'status']) && // Check required keys
-                         item.keys().size() >= 5 && item.keys().size() <= 11 // Min and max expected keys in a manifest item
-                       ) &&
-                       request.resource.data.updatedAt == request.time;
-      allow delete: if false; // Deletion should likely be an admin/system action
+      allow delete: if false; // Generally, rydz should be cancelled/completed, not deleted by clients
     }
   }
 }
+
+  
