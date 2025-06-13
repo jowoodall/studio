@@ -25,12 +25,6 @@ import type { EventData, GroupData, UserProfileData, EventDriverStateData, Event
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
-// Mock data for rydz related to an event (keep for now, will be replaced)
-const mockEventRydz = [
-  { id: "rydM", eventId: "1", passengerName: "Alice Wonderland", pickupTime: "09:30 AM", driverName: "Bob The Builder", status: "Confirmed", image: "https://placehold.co/400x200.png?text=Event+Ryd+1", dataAiHint: "group children car" },
-  { id: "rydN", eventId: "1", passengerName: "Charlie Brown", pickupTime: "09:45 AM", driverName: "Diana Prince", status: "Pending Driver", image: "https://placehold.co/400x200.png?text=Event+Ryd+2", dataAiHint: "teenager waiting" },
-];
-
 interface GroupMember {
   id: string;
   name: string;
@@ -360,8 +354,7 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
   }
   
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
-  const rydzForThisEvent = rydzData; 
-
+  
   return (
     <>
       <PageHeader
@@ -515,7 +508,6 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                                           onClick={() => {
                                             setEditingSeatsForDriver(driver.id);
                                             setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 1);
-                                            // If currently not driving, set to driving with default seats
                                             if (driverStateInfo.status === 'not_driving' || driverStateInfo.status === 'pending_response') {
                                                 handleDriverStatusUpdate("driving", 1);
                                             }
@@ -598,9 +590,33 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
         </CardContent>
       </Card>
 
-      {rydzForThisEvent.length > 0 ? (
+      {/* Rydz List Section */}
+      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Available Rydz for this Event</h3>
+      {isLoadingRydz && (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="ml-3 text-muted-foreground">Loading rydz...</p>
+        </div>
+      )}
+
+      {rydzError && (
+        <Card className="text-center py-10 shadow-md bg-destructive/10 border-destructive">
+          <CardHeader>
+            <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
+            <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Rydz</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription className="mb-6 text-destructive-foreground/90">
+              {rydzError}
+            </CardDescription>
+            <Button onClick={() => eventId && fetchEventRydz(eventId)} variant="secondary">Try Again</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoadingRydz && !rydzError && rydzData.length > 0 && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {rydzForThisEvent.map((ryd) => ( 
+          {rydzData.map((ryd) => ( 
             <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="relative h-40">
                 <Image
@@ -611,14 +627,21 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
                   className="rounded-t-lg"
                   data-ai-hint={"car event"} 
                 />
-                 <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm">
-                    {ryd.status}
+                 <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm capitalize">
+                    {ryd.status.replace(/_/g, ' ')}
                  </div>
               </CardHeader>
               <CardContent className="flex-grow pt-4">
-                <CardTitle className="font-headline text-lg mb-1">Ryd for: {ryd.eventName || ryd.destination}</CardTitle>
+                <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
                 <div className="text-sm text-muted-foreground space-y-1 mb-2">
-                  <div className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> Pickup: {ryd.earliestPickupTimestamp instanceof Timestamp ? format(ryd.earliestPickupTimestamp.toDate(), "MMM d, p") : "N/A"}</div>
+                  <div className="flex items-center">
+                    <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                    Pickup: {ryd.earliestPickupTimestamp instanceof Timestamp ? format(ryd.earliestPickupTimestamp.toDate(), "MMM d, p") : "N/A"}
+                  </div>
+                  <div className="flex items-center">
+                    <MapPin className="mr-1.5 h-4 w-4" /> 
+                    To: {ryd.destination}
+                  </div>
                   <div className="flex items-center">
                     <Car className="mr-1.5 h-4 w-4" />
                     Driver: {ryd.driverId ? "Assigned" : "Pending"} {/* Placeholder for now */}
@@ -635,7 +658,9 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
             </Card>
           ))}
         </div>
-      ) : (
+      )}
+
+      {!isLoadingRydz && !rydzError && rydzData.length === 0 && (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -660,6 +685,5 @@ export default function EventRydzPage({ params }: { params: Promise<ResolvedPage
     </>
   );
 }
-
-
+        
     
