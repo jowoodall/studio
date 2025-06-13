@@ -122,3 +122,14 @@ export interface RydData {
   createdAt: Timestamp; // When the ryd request was created
   updatedAt?: Timestamp; // When the ryd was last updated
 }
+
+// New types for ActiveRyd
+export enum ActiveRydStatus {
+  PLANNING = 'planning', // Driver is setting up the ryd, adding stops
+  AWAITING_PASSENGERS = 'awaiting_passengers', // Ryd is set, driver waiting for pickup time or passenger confirmations
+  IN_PROGRESS_PICKUP = 'in_progress_pickup', // Driver is actively picking up passengers
+  IN_PROGRESS_ROUTE = 'in_progress_route', // All passengers picked up, en route to final destinations/event
+  COMPLETED = 'completed', // All passengers dropped off, ryd finished
+  CANCELLED_BY_DRIVER = 'cancelled_by_driver',
+  CANCELLED_BY_SYSTEM = 'cancelled_by_system', // e.g. no passengers, critical issue
+}
