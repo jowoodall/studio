@@ -45,11 +45,10 @@ service cloud.firestore {
         allow delete: if false; // Or based on specific conditions like event creator
     }
 
-    // Rules for rydz (rides)
+    // Rules for rydz (individual ride requests)
     match /rydz/{rydId} {
       allow read: if request.auth.uid != null; // Define more specific read rules later (e.g., involved users)
       
-      // Allow authenticated users to create ryd requests if they are the requester
       allow create: if request.auth.uid != null
         && request.auth.uid == request.resource.data.requestedBy
         && request.resource.data.destination is string && request.resource.data.destination.size() > 0
@@ -59,20 +58,88 @@ service cloud.firestore {
         && request.resource.data.status is string && request.resource.data.status == "requested"
         && request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0
         && (request.resource.data.notes == null || request.resource.data.notes is string)
-        // Correct way to validate serverTimestamp on create:
         && request.resource.data.createdAt == request.time 
         && (request.resource.data.eventId == null || request.resource.data.eventId is string)
         && (request.resource.data.eventName == null || request.resource.data.eventName is string)
-        // Ensure no unexpected fields are being sent and basic field count.
-        // Max number of fields in your RydData (excluding id, updatedAt which are not set on client create typically)
-        // requestedBy, eventId, eventName, destination, pickupLocation, rydTimestamp, earliestPickupTimestamp, status, passengerIds, notes, createdAt
-        // Total 11 fields are expected. DriverId is optional.
         && request.resource.data.keys().hasAll(['requestedBy', 'destination', 'pickupLocation', 'rydTimestamp', 'earliestPickupTimestamp', 'status', 'passengerIds', 'createdAt'])
         && request.resource.data.keys().size() >= 8 && request.resource.data.keys().size() <= 11;
 
+      // Allow requester to update their own request (e.g. status, notes, assignedActiveRydId)
+      allow update: if request.auth.uid != null
+                      && request.auth.uid == resource.data.requestedBy
+                      // Check that only allowed fields are being modified or all fields are present as expected if a full update
+                      && (
+                           // Case 1: Only specific fields are being updated (status, notes, assignedActiveRydId)
+                           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'assignedActiveRydId', 'updatedAt']))
+                           ||
+                           // Case 2: A more complete update, ensure critical fields are not changed by requester if they are re-sent
+                           (
+                             request.resource.data.requestedBy == resource.data.requestedBy &&
+                             request.resource.data.destination == resource.data.destination &&
+                             request.resource.data.pickupLocation == resource.data.pickupLocation &&
+                             request.resource.data.rydTimestamp == resource.data.rydTimestamp &&
+                             request.resource.data.passengerIds == resource.data.passengerIds &&
+                             request.resource.data.createdAt == resource.data.createdAt
+                           )
+                         )
+                      && request.resource.data.updatedAt == request.time;
+                      
+      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy && resource.data.status == "requested"; // Only requester can delete if still in 'requested' state
+    }
 
-      allow update: if request.auth.uid != null; // Define more specific update rules later (e.g., requester or driver)
-      allow delete: if request.auth.uid != null; // Define more specific delete rules later
+    // Rules for Active Rydz (actual trips offered/managed by drivers)
+    match /activeRydz/{activeRydId} {
+      // Driver creating the ActiveRyd must be authenticated and marked as canDrive in their profile
+      allow create: if request.auth.uid != null
+                    && request.auth.uid == request.resource.data.driverId  // driverId in doc must match authenticated user
+                    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.canDrive == true // User must be a driver
+                    // Validate essential fields and structure from createActiveRydForEventAction
+                    && request.resource.data.driverId is string
+                    && request.resource.data.associatedEventId is string // Event ID is required for this creation flow
+                    && request.resource.data.status is string // e.g., 'planning' or 'awaiting_passengers'
+                    && request.resource.data.vehicleDetails is map
+                    && request.resource.data.vehicleDetails.keys().hasAll(['make', 'model', 'passengerCapacity'])
+                    && request.resource.data.passengerManifest is list
+                    && request.resource.data.passengerManifest.size() == 0 // Manifest should be empty on initial offer
+                    && request.resource.data.actualDepartureTime is timestamp // Proposed departure by driver
+                    && request.resource.data.startLocationAddress is string
+                    && request.resource.data.finalDestinationAddress is string
+                    && (request.resource.data.notes == null || request.resource.data.notes is string)
+                    && request.resource.data.createdAt == request.time // Timestamps
+                    && request.resource.data.updatedAt == request.time
+                    // Check for exact field count to prevent extra fields
+                    && request.resource.data.keys().size() == 11; // Count of fields in ActiveRyd excluding 'id'
+
+      // Driver of the ryd OR a passenger listed in the manifest can read it
+      allow read: if request.auth.uid != null
+                  && (resource.data.driverId == request.auth.uid
+                      || request.auth.uid in resource.data.passengerManifest.map(p => p.userId));
+
+      // Only the driver of this ActiveRyd can update it
+      allow update: if request.auth.uid != null
+                    && resource.data.driverId == request.auth.uid // Must be the driver
+                    // Prevent changing immutable fields after creation
+                    && request.resource.data.driverId == resource.data.driverId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.associatedEventId == resource.data.associatedEventId
+                    // Validate passengerManifest structure if updated
+                    && request.resource.data.passengerManifest is list
+                    // Basic validation for items in passengerManifest: ensure each has userId, status, addresses, originalRydRequestId
+                    && request.resource.data.passengerManifest.all(item =>
+                        item.keys().hasAll(['userId', 'status', 'pickupAddress', 'destinationAddress', 'originalRydRequestId'])
+                        && item.userId is string
+                        && item.status is string // Further validation of status enum values can be added
+                        && item.pickupAddress is string
+                        && item.destinationAddress is string
+                        && item.originalRydRequestId is string
+                        && (item.notes == null || item.notes is string)
+                        // Ensure no unexpected fields in manifest items and check size
+                        && item.keys().size() >= 5 && item.keys().size() <= 11 // Based on PassengerManifestItem fields
+                    )
+                    && request.resource.data.updatedAt == request.time; // Ensure updatedAt is server timestamp
+
+      // Deletion is disallowed for now; ActiveRydz should be marked as 'completed' or 'cancelled'
+      allow delete: if false;
     }
 
   }
