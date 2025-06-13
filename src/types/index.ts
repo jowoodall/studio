@@ -133,3 +133,11 @@ export enum ActiveRydStatus {
   CANCELLED_BY_DRIVER = 'cancelled_by_driver',
   CANCELLED_BY_SYSTEM = 'cancelled_by_system', // e.g. no passengers, critical issue
 }
+
+export enum PassengerManifestStatus {
+  AWAITING_PICKUP = 'awaiting_pickup',
+  ON_BOARD = 'on_board',
+  DROPPED_OFF = 'dropped_off',
+  MISSED_PICKUP = 'missed_pickup',
+  CANCELLED_BY_PASSENGER = 'cancelled_by_passenger',
+}
