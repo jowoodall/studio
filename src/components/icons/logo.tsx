@@ -17,18 +17,16 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
         "relative flex items-center justify-center", // Added justify-center and relative
         containerHeightClass,
         containerWidthClass,
-        "bg-yellow-300", // DEBUG: Bright background for the container
         className
       )}
       {...props}
     >
       <Image
-        src="/logo.png" // Assumes public/logo.png
+        src="/logo.png" // Assumes public/logo.png.
         alt="MyRydz Logo"
         fill // Makes the image fill the parent div
         className={cn(
-          "object-contain", // Ensures aspect ratio is maintained
-          "border-2 border-red-500" // DEBUG: Red border for the image itself
+          "object-contain" // Ensures aspect ratio is maintained
         )}
         priority
       />
