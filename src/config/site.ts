@@ -16,6 +16,7 @@ import {
   MessageSquare,
   ClipboardList, 
   Home, // Added for My Locations
+  Terminal, // Added for Test Logging
 } from 'lucide-react';
 import type { NavItem } from '@/types';
 
@@ -95,6 +96,11 @@ export const navMenuItems: NavItem[] = [
     title: 'Messages',
     href: '/messages',
     icon: MessageSquare,
+  },
+  {
+    title: 'Test Logging', // New Item
+    href: '/test-logging',
+    icon: Terminal,
   }
 ];
 
@@ -126,4 +132,3 @@ export const userAccountMenu: NavItem[] = [
     icon: LogOut,
   },
 ];
-
