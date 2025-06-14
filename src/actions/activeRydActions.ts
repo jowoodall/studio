@@ -136,60 +136,65 @@ export async function createActiveRydForEventAction(
         console.log(`[Action: createActiveRydForEventAction] SUCCESS! ActiveRyd created with ID: ${activeRydDocRef.id}`);
         return { success: true, activeRydId: activeRydDocRef.id };
     } catch (firestoreError: any) {
+        const errCode = firestoreError.code || 'UNKNOWN_CODE';
+        const errMsg = firestoreError.message || 'No message';
+        const errStack = firestoreError.stack || 'No stack';
+
         console.error(`\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
-        console.error(`[Action: createActiveRydForEventAction] CAUGHT FIRESTORE ERROR during addDoc to 'activeRydz'.`);
-        console.error(`[Action: createActiveRydForEventAction] Firestore Error Code:`, firestoreError.code);
-        console.error(`[Action: createActiveRydForEventAction] Firestore Error Message:`, firestoreError.message);
-        console.error(`[Action: createActiveRydForEventAction] Firestore Error Stack:`, firestoreError.stack);
+        console.error(`[Action: createActiveRydForEventAction] FIRESTORE ADD FAILURE in 'activeRydz'. UID: ${userId}, EventID: ${eventId}`);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Code: ${errCode}`);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Message: ${errMsg}`);
+        console.error(`[Action: createActiveRydForEventAction] Firestore Error Stack: ${errStack}`);
         console.error(`[Action: createActiveRydForEventAction] Full Firestore Error Object:`, JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError), 2));
         console.error(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n`);
         
-        let detailedMessage = "Firestore operation failed. ";
-        if (firestoreError.code) {
-            detailedMessage += `Code: ${firestoreError.code}. `;
+        let detailedClientMessage = `Firestore Add Operation Failed. Code: ${errCode}. Message: ${errMsg}.`;
+        if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
+            detailedClientMessage += ` This indicates a Firestore security rule violation for 'activeRydz' creation. Please double-check these specific conditions in your Firestore rules and data:
+1. Driver Profile (UID: ${userId}): The 'canDrive' field must be explicitly true.
+2. Event Details (ID: ${eventId}): The 'location' field must be non-empty (this becomes 'finalDestinationAddress' in the ryd document).
+3. Start Location: The 'startLocationAddress' (from form input '${startLocationAddress}' or profile fallback '${driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area"}') must result in a non-empty string.
+4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string between "1" and "8" in 'vehicleDetails.passengerCapacity'.
+5. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).
+Review the server-side logs (if visible) for the exact payload being sent to Firestore just before this error.`;
         }
-        if (firestoreError.message === 'Missing or insufficient permissions.' || firestoreError.code === 'permission-denied') {
-            detailedMessage += `Message: ${firestoreError.message}. This indicates a security rule violation. Please double-check: 
-1) The driver's profile (UID: ${userId}) has 'canDrive: true'. 
-2) The event (ID: ${eventId}) has a valid, non-empty location. 
-3) The start location (either from form or profile fallback) is non-empty.
-4) The vehicle capacity (seats) is between 1 and 8.
-5) The submitted payload (see server logs if visible) matches Firestore rule expectations for 'activeRydz' creation.`;
-        } else if (firestoreError.message) {
-            detailedMessage += `Message: ${firestoreError.message}. `;
-        } else {
-            detailedMessage += `Details: ${String(firestoreError)}. `;
-        }
-        // Append the stringified full error for client debugging
-        detailedMessage += ` | Full Error (Server): ${JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError))}`;
+        detailedClientMessage += ` | Full Raw Error (Server): ${JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError))}`;
         
-        console.error(`[Action: createActiveRydForEventAction] Constructed Firestore error message for client: ${detailedMessage}`);
-        return { success: false, error: detailedMessage };
+        console.error(`[Action: createActiveRydForEventAction] Constructed INNER CATCH Firestore error message for client: ${detailedClientMessage}`);
+        return { success: false, error: detailedClientMessage };
     }
 
   } catch (error: any) {
     console.error(`\n\n************************************************************************************`);
-    console.error("[Action: createActiveRydForEventAction] CRITICAL GENERAL ERROR (outer catch):", error.message);
+    console.error(`[Action: createActiveRydForEventAction] CRITICAL GENERAL ERROR (outer catch). UID: ${userId}. Error:`, error.message);
     console.error("[Action: createActiveRydForEventAction] Error Name:", error.name);
     console.error("[Action: createActiveRydForEventAction] Error Stack:", error.stack);
     console.error("[Action: createActiveRydForEventAction] Full General Error Object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     console.error(`************************************************************************************\n\n`);
     
     let generalErrorMessage = "Could not submit drive offer due to an unexpected server error.";
+    const errorFullName = Object.prototype.toString.call(error);
+
     if (error.message) {
-        generalErrorMessage = error.message;
-         if (error.message === 'The selected event does not have a location specified. Please update the event details as this is required to offer a ryd.' ||
-             error.message === "Could not determine a valid start location address for the ryd. Please ensure your profile has a city/zip or specify a start address in the form." ||
-             error.message === "Driver's primary vehicle is not set or is empty in their profile. Please update your profile.") {
-            // Return specific pre-check errors directly
-         } else if (error.message === 'Missing or insufficient permissions.') {
-             generalErrorMessage = "Submission failed: Missing or insufficient permissions. This likely indicates a Firestore security rule prevented the operation. Please check your user profile (e.g., 'canDrive' status), the event details (e.g., location), and the Firestore rules.";
-         }
+        if (error.message.startsWith("The selected event does not have a location specified") ||
+            error.message.startsWith("Could not determine a valid start location address") ||
+            error.message.startsWith("Driver's primary vehicle is not set or is empty")) {
+            generalErrorMessage = error.message; // Pass through specific pre-check errors
+        } else if (error.message === 'Missing or insufficient permissions.') {
+             generalErrorMessage = `Submission failed (Outer Catch): Missing or insufficient permissions. This suggests an issue *before* the Firestore write attempt, or an unhandled Firestore error. UID: ${userId}. Key items to check:
+1. Driver Profile (UID: ${userId}): 'canDrive' must be true.
+2. Event (ID: ${eventId}): Must exist and have a non-empty 'location'.
+3. Start Location: Must resolve to a non-empty string.
+4. Primary Vehicle: Must be set in driver's profile.
+Full error details if possible: Name: ${error.name}, Type: ${errorFullName}, Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+        } else {
+            generalErrorMessage = `Outer catch: ${error.message}. Type: ${errorFullName}. Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+        }
+    } else {
+        generalErrorMessage = `Outer catch: An unknown error occurred. Type: ${errorFullName}. Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
     }
-    if (error instanceof TypeError && !generalErrorMessage.startsWith("A TypeError occurred:")) { 
-        generalErrorMessage = `A TypeError occurred: ${error.message}. This might be due to missing profile data (like 'driverDetails.primaryVehicle' or event 'location') or an internal coding error. Please check your profile details and the event details. Ensure the user profile for UID '${userId}' and event '${eventId}' exist and are complete.`;
-    }
-    console.error(`[Action: createActiveRydForEventAction] Constructed General error message for client: ${generalErrorMessage}`);
+    
+    console.error(`[Action: createActiveRydForEventAction] Constructed OUTER CATCH General error message for client: ${generalErrorMessage}`);
     return { success: false, error: generalErrorMessage };
   }
 }
