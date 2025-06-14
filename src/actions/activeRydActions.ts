@@ -31,20 +31,32 @@ export async function createActiveRydForEventAction(
 
   const { eventId, seatsAvailable, departureTime, startLocationAddress, pickupInstructions } = validationResult.data;
 
+  let driverProfile: UserProfileData;
+  let eventData: EventData;
+
   try {
-    console.log("[Action: createActiveRydForEventAction] Attempting to fetch driver profile...");
-    const driverProfileRef = doc(db, "users", userId);
-    const driverProfileSnap = await getDoc(driverProfileRef);
+    // Fetch Driver Profile
+    try {
+      console.log(`[Action: createActiveRydForEventAction] Attempting to fetch driver profile for userId: ${userId}...`);
+      const driverProfileRef = doc(db, "users", userId);
+      const driverProfileSnap = await getDoc(driverProfileRef);
+      console.log(`[Action: createActiveRydForEventAction] Fetched driver profile snap. Exists: ${driverProfileSnap.exists()}`);
 
-    if (!driverProfileSnap.exists()) {
-      console.error(`[Action: createActiveRydForEventAction] Driver profile not found for userId: ${userId}`);
-      return { success: false, error: "Driver profile not found. Ensure the user exists in Firestore." };
+      if (!driverProfileSnap.exists()) {
+        console.error(`[Action: createActiveRydForEventAction] Driver profile not found for userId: ${userId}`);
+        return { success: false, error: "Driver profile not found. Ensure the user exists in Firestore." };
+      }
+      driverProfile = driverProfileSnap.data() as UserProfileData;
+      console.log("[Action: createActiveRydForEventAction] Fetched driverProfile content:", JSON.stringify(driverProfile, null, 2));
+    } catch (profileError: any) {
+      const errCode = profileError.code || 'UNKNOWN_PROFILE_FETCH_CODE';
+      const errMsg = profileError.message || 'No message';
+      console.error(`[Action: createActiveRydForEventAction] ERROR FETCHING DRIVER PROFILE for UID ${userId}. Code: ${errCode}, Message: ${errMsg}`, JSON.stringify(profileError, Object.getOwnPropertyNames(profileError)));
+      return { success: false, error: `Failed to fetch driver profile (UID: ${userId}). Code: ${errCode}. Message: ${errMsg}. This might be a Firestore read permission issue for '/users/${userId}'.` };
     }
-    const driverProfile = driverProfileSnap.data() as UserProfileData;
-    console.log("[Action: createActiveRydForEventAction] Fetched driverProfile:", JSON.stringify(driverProfile, null, 2));
+
+    // Validate Driver Profile
     console.log(`[Action: createActiveRydForEventAction] Checking driverProfile.canDrive: ${driverProfile.canDrive}`);
-
-
     if (!driverProfile.canDrive) {
       console.error(`[Action: createActiveRydForEventAction] User ${userId} is not registered as a driver. Profile 'canDrive': ${driverProfile.canDrive}`);
       return { success: false, error: "User is not registered as a driver. Please update your profile to indicate you can drive." };
@@ -69,25 +81,33 @@ export async function createActiveRydForEventAction(
     }
     console.log(`[Action: createActiveRydForEventAction] Parsed vehicle: Make - ${vehicleMake}, Model - ${vehicleModel}`);
 
-
-    console.log("[Action: createActiveRydForEventAction] Attempting to fetch event data for eventId:", eventId);
-    const eventDocRef = doc(db, "events", eventId);
-    const eventDocSnap = await getDoc(eventDocRef);
-    if (!eventDocSnap.exists()) {
-        console.error(`[Action: createActiveRydForEventAction] Event not found for eventId: ${eventId}`);
-        return { success: false, error: "Event not found. Cannot offer drive for a non-existent event." };
+    // Fetch Event Data
+    try {
+      console.log(`[Action: createActiveRydForEventAction] Attempting to fetch event data for eventId: ${eventId}...`);
+      const eventDocRef = doc(db, "events", eventId);
+      const eventDocSnap = await getDoc(eventDocRef);
+      console.log(`[Action: createActiveRydForEventAction] Fetched event data snap. Exists: ${eventDocSnap.exists()}`);
+      
+      if (!eventDocSnap.exists()) {
+          console.error(`[Action: createActiveRydForEventAction] Event not found for eventId: ${eventId}`);
+          return { success: false, error: "Event not found. Cannot offer drive for a non-existent event." };
+      }
+      eventData = eventDocSnap.data() as EventData;
+      console.log("[Action: createActiveRydForEventAction] Fetched eventData content:", JSON.stringify(eventData, null, 2));
+    } catch (eventFetchError: any) {
+      const errCode = eventFetchError.code || 'UNKNOWN_EVENT_FETCH_CODE';
+      const errMsg = eventFetchError.message || 'No message';
+      console.error(`[Action: createActiveRydForEventAction] ERROR FETCHING EVENT DATA for EventID ${eventId}. Code: ${errCode}, Message: ${errMsg}`, JSON.stringify(eventFetchError, Object.getOwnPropertyNames(eventFetchError)));
+      return { success: false, error: `Failed to fetch event data (ID: ${eventId}). Code: ${errCode}. Message: ${errMsg}. This might be a Firestore read permission issue for '/events/${eventId}'.` };
     }
-    const eventData = eventDocSnap.data() as EventData;
-    console.log("[Action: createActiveRydForEventAction] Fetched eventData:", JSON.stringify(eventData, null, 2));
 
+    // Validate Event Data
     if (!eventData.location || eventData.location.trim() === "") {
       console.error(`[Action: createActiveRydForEventAction] CRITICAL: Event (ID: ${eventId}) is missing a location. This will cause Firestore rule failure for 'finalDestinationAddress'.`);
       return { success: false, error: "The selected event does not have a location specified. Please update the event details as this is required to offer a ryd." };
     }
 
-
     const eventDate = eventData.eventTimestamp.toDate();
-
     const [hours, minutes] = departureTime.split(':').map(Number);
     const actualDepartureDateTime = new Date(eventDate);
     actualDepartureDateTime.setHours(hours, minutes, 0, 0);
@@ -103,7 +123,6 @@ export async function createActiveRydForEventAction(
       console.error(`[Action: createActiveRydForEventAction] CRITICAL: finalStartLocationAddress resolved to an empty string. This will cause Firestore rule failure for 'startLocationAddress'. Profile Address: City: ${driverProfile.address?.city}, Zip: ${driverProfile.address?.zip}. Form Input: '${startLocationAddress}'`);
       return { success: false, error: "Could not determine a valid start location address for the ryd. Please ensure your profile has a city/zip or specify a start address in the form." };
     }
-
 
     const activeRydPayload: Omit<ActiveRyd, 'id'> = {
       driverId: userId,
@@ -124,8 +143,10 @@ export async function createActiveRydForEventAction(
     };
     
     const payloadForLogging = {...activeRydPayload};
-    delete (payloadForLogging as any).createdAt; 
-    delete (payloadForLogging as any).updatedAt;
+    // @ts-ignore
+    delete payloadForLogging.createdAt; 
+    // @ts-ignore
+    delete payloadForLogging.updatedAt;
     console.log("====================================================================================");
     console.log("[Action: createActiveRydForEventAction] FINAL ActiveRyd payload for Firestore (before addDoc, excluding serverTimestamps):", JSON.stringify(payloadForLogging, null, 2));
     console.log("====================================================================================");
@@ -151,10 +172,10 @@ export async function createActiveRydForEventAction(
         let detailedClientMessage = `Firestore Add Operation Failed. Code: ${errCode}. Message: ${errMsg}.`;
         if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
             detailedClientMessage += ` This indicates a Firestore security rule violation for 'activeRydz' creation. Please double-check these specific conditions in your Firestore rules and data:
-1. Driver Profile (UID: ${userId}): The 'canDrive' field must be explicitly true.
-2. Event Details (ID: ${eventId}): The 'location' field must be non-empty (this becomes 'finalDestinationAddress' in the ryd document).
-3. Start Location: The 'startLocationAddress' (from form input '${startLocationAddress}' or profile fallback '${driverProfile.address?.city || driverProfile.address?.zip || "Driver's general area"}') must result in a non-empty string.
-4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string between "1" and "8" in 'vehicleDetails.passengerCapacity'.
+1. Driver Profile (UID: ${userId}, Fetched: ${driverProfileSnap?.exists()}): The 'canDrive' field must be explicitly true. Current value: ${driverProfile?.canDrive}.
+2. Event Details (ID: ${eventId}, Fetched: ${eventDocSnap?.exists()}): The 'location' field must be non-empty (this becomes 'finalDestinationAddress' in the ryd document). Current event location: '${eventData?.location}'.
+3. Start Location: The 'startLocationAddress' (from form input '${startLocationAddress}' or profile fallback '${driverProfile?.address?.city || driverProfile?.address?.zip || "Driver's general area"}') must result in a non-empty string. Resolved start location: '${finalStartLocationAddress}'.
+4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string between "1" and "8" in 'vehicleDetails.passengerCapacity'. Current capacity: '${String(seatsAvailable)}'.
 5. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).
 Review the server-side logs (if visible) for the exact payload being sent to Firestore just before this error.`;
         }
@@ -165,33 +186,39 @@ Review the server-side logs (if visible) for the exact payload being sent to Fir
     }
 
   } catch (error: any) {
+    // This is the outermost catch, for errors occurring before the activeRydz addDoc try-catch
+    const errCode = error.code || 'UNKNOWN_OUTER_CATCH_CODE';
+    const errMsg = error.message || 'No message';
+    const errorFullName = Object.prototype.toString.call(error);
+
     console.error(`\n\n************************************************************************************`);
-    console.error(`[Action: createActiveRydForEventAction] CRITICAL GENERAL ERROR (outer catch). UID: ${userId}. Error:`, error.message);
+    console.error(`[Action: createActiveRydForEventAction] CRITICAL GENERAL ERROR (outer catch). UID: ${userId}. Error Code: ${errCode}, Message: ${errMsg}`);
     console.error("[Action: createActiveRydForEventAction] Error Name:", error.name);
     console.error("[Action: createActiveRydForEventAction] Error Stack:", error.stack);
     console.error("[Action: createActiveRydForEventAction] Full General Error Object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     console.error(`************************************************************************************\n\n`);
     
-    let generalErrorMessage = "Could not submit drive offer due to an unexpected server error.";
-    const errorFullName = Object.prototype.toString.call(error);
+    let generalErrorMessage = `Submission failed (Outer Catch - Pre-write Phase). Error Code: ${errCode}, Message: ${errMsg}.`;
 
-    if (error.message) {
-        if (error.message.startsWith("The selected event does not have a location specified") ||
-            error.message.startsWith("Could not determine a valid start location address") ||
-            error.message.startsWith("Driver's primary vehicle is not set or is empty")) {
-            generalErrorMessage = error.message; // Pass through specific pre-check errors
-        } else if (error.message === 'Missing or insufficient permissions.') {
-             generalErrorMessage = `Submission failed (Outer Catch): Missing or insufficient permissions. This suggests an issue *before* the Firestore write attempt, or an unhandled Firestore error. UID: ${userId}. Key items to check:
-1. Driver Profile (UID: ${userId}): 'canDrive' must be true.
-2. Event (ID: ${eventId}): Must exist and have a non-empty 'location'.
-3. Start Location: Must resolve to a non-empty string.
-4. Primary Vehicle: Must be set in driver's profile.
+    // Check if it's one of the specific errors we added unique messages for
+    if (errMsg.includes("Failed to fetch driver profile") || 
+        errMsg.includes("Failed to fetch event data") ||
+        errMsg.includes("User is not registered as a driver") ||
+        errMsg.includes("Driver's primary vehicle is not set") ||
+        errMsg.includes("The selected event does not have a location specified") ||
+        errMsg.includes("Could not determine a valid start location address")) {
+        generalErrorMessage = errMsg; // Use the more specific message
+    } else if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
+        generalErrorMessage = `Submission failed (Outer Catch): Missing or insufficient permissions. This suggests an issue *before* the Firestore write attempt for 'activeRydz', possibly with reading user profile or event data. UID: ${userId}, EventID: ${eventId}. Key items to check in Firestore data and rules:
+1. User Profile Read Access: Is /users/${userId} readable by the authenticated user? Does it exist?
+2. Event Data Read Access: Is /events/${eventId} readable? Does it exist?
+3. Driver Profile Validations: 'canDrive' must be true. Fetched driver profile: ${JSON.stringify(driverProfile, null, 1)}.
+4. Event Data Validations: Event 'location' must be non-empty. Fetched event data: ${JSON.stringify(eventData, null, 1)}.
+5. Start Location: Must resolve to a non-empty string. Input: '${startLocationAddress}'.
+6. Primary Vehicle: Must be set in driver's profile.
 Full error details if possible: Name: ${error.name}, Type: ${errorFullName}, Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
-        } else {
-            generalErrorMessage = `Outer catch: ${error.message}. Type: ${errorFullName}. Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
-        }
     } else {
-        generalErrorMessage = `Outer catch: An unknown error occurred. Type: ${errorFullName}. Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+        generalErrorMessage = `Outer catch: ${errMsg}. Type: ${errorFullName}. Raw: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
     }
     
     console.error(`[Action: createActiveRydForEventAction] Constructed OUTER CATCH General error message for client: ${generalErrorMessage}`);
