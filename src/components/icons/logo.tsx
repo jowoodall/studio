@@ -9,8 +9,8 @@ interface LogoProps {
 
 export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
   // Increased sizes
-  const containerHeightClass = iconOnly ? "h-8" : "h-12"; // Was h-7 : h-10. Now 32px : 48px
-  const containerWidthClass = iconOnly ? "w-[80px]" : "w-[120px]"; // Was w-[70px] : w-[100px]
+  const containerHeightClass = iconOnly ? "h-8" : "h-12"; // 32px : 48px
+  const containerWidthClass = iconOnly ? "w-[80px]" : "w-[120px]"; // 80px : 120px
 
   return (
     <div
@@ -26,7 +26,7 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
         src="/logo.png" 
         alt="MyRydz Logo"
         fill 
-        sizes="100vw"
+        sizes="120px" // Updated sizes prop based on max CSS width of container
         className={cn(
           "object-contain" 
         )}
