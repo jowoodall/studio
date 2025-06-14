@@ -26,6 +26,7 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
         src="/logo.png" 
         alt="MyRydz Logo"
         fill 
+        sizes="100vw"
         className={cn(
           "object-contain" 
         )}

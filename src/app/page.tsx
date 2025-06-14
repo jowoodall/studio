@@ -53,6 +53,7 @@ export default function LandingPage() {
                 src="https://placehold.co/1200x675.png"
                 alt="MyRydz in action"
                 fill
+                priority
                 className="object-cover"
                 data-ai-hint="community carpooling app"
               />
