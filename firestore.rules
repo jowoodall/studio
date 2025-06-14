@@ -4,127 +4,232 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Rules for user profiles
+    // Helper function to check if a user is an admin
+    function isAdmin(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+             get(/databases/$(database)/documents/users/$(userId)).data.role == 'admin';
+    }
+
+    // Helper function to check if a user is the owner of a document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Helper function to check if user is a parent of a student
+    function isParentOf(studentId) {
+      return exists(/databases/$(database)/documents/users/$(studentId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/users/$(studentId)).data.associatedParentIds;
+    }
+
+    // Helper function to check if user is a student managed by a parent
+    function isManagedBy(parentId) {
+        return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               parentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.associatedParentIds;
+    }
+
+
+    // Default Deny: No access to unspecified paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection
     match /users/{userId} {
-      // Allow users to read their own profile and other basic profiles if authenticated
-      allow read: if request.auth.uid != null;
-      // Allow users to create their own profile (e.g., on signup)
-      allow create: if request.auth.uid != null && request.auth.uid == userId;
-      // Allow users to update their own profile
-      allow update: if request.auth.uid != null && request.auth.uid == userId;
-      // Generally, disallow direct deletion of user profiles from client
-      allow delete: if false;
+      allow read: if request.auth.uid != null; // Any authenticated user can read any user profile for now
+
+      allow create: if request.auth.uid == userId &&
+                       request.resource.data.uid == userId &&
+                       request.resource.data.email == request.auth.token.email &&
+                       request.resource.data.role in ['student', 'parent', 'driver', 'admin'] && // driver role may not be set at signup
+                       request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
+                       request.resource.data.createdAt == request.time &&
+                       (!('canDrive' in request.resource.data) || request.resource.data.canDrive is bool) &&
+                       (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl is string) &&
+                       (!('dataAiHint' in request.resource.data) || request.resource.data.dataAiHint is string) &&
+                       (!('bio' in request.resource.data) || request.resource.data.bio is string) &&
+                       (!('phone' in request.resource.data) || request.resource.data.phone is string) &&
+                       // Ensure preferences is a map if it exists
+                       (!('preferences' in request.resource.data) || request.resource.data.preferences is map) &&
+                       // Ensure preferences.notifications is a string if it exists within preferences
+                       (!('preferences' in request.resource.data) || !('notifications' in request.resource.data.preferences) || request.resource.data.preferences.notifications is string) &&
+                       // Ensure preferences.preferredPickupRadius is a string if it exists within preferences
+                       (!('preferences' in request.resource.data) || !('preferredPickupRadius' in request.resource.data.preferences) || request.resource.data.preferences.preferredPickupRadius is string) &&
+                       // Ensure address is a map if it exists
+                       (!('address' in request.resource.data) || request.resource.data.address is map) &&
+                       // Ensure address.street is a string if it exists within address
+                       (!('address' in request.resource.data) || !('street' in request.resource.data.address) || request.resource.data.address.street is string) &&
+                       // Ensure address.city is a string if it exists within address
+                       (!('address' in request.resource.data) || !('city' in request.resource.data.address) || request.resource.data.address.city is string) &&
+                       // Ensure address.state is a string if it exists within address
+                       (!('address' in request.resource.data) || !('state' in request.resource.data.address) || request.resource.data.address.state is string) &&
+                       // Ensure address.zip is a string if it exists within address
+                       (!('address' in request.resource.data) || !('zip' in request.resource.data.address) || request.resource.data.address.zip is string) &&
+                       // Ensure driverDetails is a map if it exists
+                       (!('driverDetails' in request.resource.data) || request.resource.data.driverDetails is map) &&
+                       (!('managedStudentIds' in request.resource.data) || request.resource.data.managedStudentIds is list) &&
+                       (!('associatedParentIds' in request.resource.data) || request.resource.data.associatedParentIds is list) &&
+                       (!('joinedGroupIds' in request.resource.data) || request.resource.data.joinedGroupIds is list) &&
+                       // Allow only expected fields at creation, prevent extra fields.
+                       request.resource.data.keys().hasOnly([
+                         'uid', 'fullName', 'email', 'role', 'createdAt', 'avatarUrl', 'dataAiHint',
+                         'bio', 'phone', 'preferences', 'address', 'canDrive', 'driverDetails',
+                         'managedStudentIds', 'associatedParentIds', 'joinedGroupIds'
+                       ]);
+
+      allow update: if request.auth.uid == userId || isAdmin(request.auth.uid);
+                    // Add specific field validations for updates if needed
+                    // e.g., users cannot change their own role
+                    // && !('role' in request.resource.data && request.resource.data.role != resource.data.role)
     }
 
-    // Rules for groups
+    // Groups Collection
     match /groups/{groupId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read group details
-      allow create: if request.auth.uid != null 
-                    && request.auth.uid == request.resource.data.createdBy
-                    && request.resource.data.name is string && request.resource.data.name.size() > 0
-                    && request.resource.data.description is string
-                    && request.resource.data.memberIds is list && request.resource.data.memberIds.size() > 0 && request.auth.uid in request.resource.data.memberIds
-                    && request.resource.data.adminIds is list && request.resource.data.adminIds.size() > 0 && request.auth.uid in request.resource.data.adminIds;
-      allow update: if request.auth.uid != null && request.auth.uid in resource.data.adminIds; // Only group admins can update
-      allow delete: if request.auth.uid != null && request.auth.uid in resource.data.adminIds; // Only group admins can delete
-    }
-
-    // Rules for events
-    match /events/{eventId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read event details
-      allow create: if request.auth.uid != null && request.auth.uid == request.resource.data.createdBy;
-      allow update: if request.auth.uid != null && request.auth.uid == resource.data.createdBy; // Only event creator can update
-      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.createdBy; // Only event creator can delete
-    }
-
-    // Rules for event driver states
-    match /eventDriverStates/{stateId} {
-        allow read: if request.auth.uid != null;
-        allow create: if request.auth.uid != null && request.auth.uid == request.resource.data.driverId;
-        allow update: if request.auth.uid != null && request.auth.uid == resource.data.driverId;
-        allow delete: if false; // Or based on specific conditions like event creator
-    }
-
-    // Rules for rydz (requests)
-    match /rydz/{rydId} {
-      allow read: if request.auth.uid != null; 
-      
-      allow create: if request.auth.uid != null
-        && request.auth.uid == request.resource.data.requestedBy
-        && request.resource.data.destination is string && request.resource.data.destination.size() > 0
-        && request.resource.data.pickupLocation is string && request.resource.data.pickupLocation.size() > 0
-        && request.resource.data.rydTimestamp is timestamp
-        && request.resource.data.earliestPickupTimestamp is timestamp
-        && request.resource.data.status is string && request.resource.data.status == "requested"
-        && request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0
-        && (request.resource.data.notes == null || request.resource.data.notes is string) // notes is optional
-        && (request.resource.data.eventId == null || request.resource.data.eventId is string) // eventId is optional
-        && (request.resource.data.eventName == null || request.resource.data.eventName is string) // eventName is optional
-        // Check for expected keys. `createdAt` is handled by serverTimestamp, so not in request.resource.data
-        && request.resource.data.keys().hasAll(['requestedBy', 'destination', 'pickupLocation', 'rydTimestamp', 'earliestPickupTimestamp', 'status', 'passengerIds'])
-        // Size check accounts for optional fields: eventId, eventName, notes. Base 7 keys are always required.
-        && request.resource.data.keys().size() >= 7 && request.resource.data.keys().size() <= 10;
-
-
-      allow update: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy &&
-                       // Allow status changes, linking to an active ryd, and updating notes or passengerIds by requester
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'assignedActiveRydId', 'notes', 'passengerIds', 'updatedAt']);
-      allow delete: if request.auth.uid != null && request.auth.uid == resource.data.requestedBy && resource.data.status == "requested";
-    }
-
-    // Rules for active rydz
-    match /activeRydz/{activeRydId} {
-      allow create: if
-                       // Core permission check: The user (driverId in the doc) must have 'canDrive' set to true.
-                       get(/databases/$(database)/documents/users/$(request.resource.data.driverId)).data.canDrive == true &&
-                       // Validate required fields and their types for the incoming document data
-                       request.resource.data.driverId is string && request.resource.data.driverId.size() > 0 &&
-                       request.resource.data.associatedEventId is string && request.resource.data.associatedEventId.size() > 0 &&
-                       request.resource.data.status is string && request.resource.data.status == "planning" && // Initial status must be "planning"
-                       request.resource.data.vehicleDetails is map &&
-                       request.resource.data.vehicleDetails.make is string && // make can be "N/A"
-                       request.resource.data.vehicleDetails.model is string && // model can be "N/A"
-                       request.resource.data.vehicleDetails.passengerCapacity is string &&
-                       request.resource.data.vehicleDetails.passengerCapacity.matches("^[1-8]$") && // Capacity 1-8
-                       request.resource.data.passengerManifest is list && request.resource.data.passengerManifest.size() == 0 && // Must be empty on create
-                       request.resource.data.actualDepartureTime is timestamp &&
-                       // startLocationAddress must be a non-empty string (can be "Driver's general area")
-                       request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
-                       // finalDestinationAddress must be a non-empty string (comes from eventData.location)
-                       request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
-                       // notes can be an empty string
-                       request.resource.data.notes is string &&
-                       // Key checks (ensure createdAt, updatedAt are NOT checked here as they are set by serverTimestamp by the action)
-                       request.resource.data.keys().hasAll(['driverId', 'associatedEventId', 'status', 'vehicleDetails', 'passengerManifest', 'actualDepartureTime', 'startLocationAddress', 'finalDestinationAddress', 'notes']) &&
-                       request.resource.data.keys().size() == 9; // Exact number of fields sent by client in the action
-
-      // Read rule: Any authenticated user can read activeRydz list for an event.
       allow read: if request.auth.uid != null;
 
-      allow update: if request.auth.uid == resource.data.driverId &&
-                       // Prevent changing immutable fields by the driver
-                       request.resource.data.driverId == resource.data.driverId &&
-                       request.resource.data.associatedEventId == resource.data.associatedEventId &&
-                       // Allow specific fields to be updated by the driver
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                         'status', 'vehicleDetails', 'notes', 'actualDepartureTime', 'estimatedCompletionTime',
-                         'startLocationAddress', 'finalDestinationAddress', 'routePolyline', 'passengerManifest', 'updatedAt'
-                       ]) &&
-                       // Basic validation for passengerManifest items if it's being updated
-                       (request.resource.data.passengerManifest.size() == 0 ||
-                         request.resource.data.passengerManifest.all(item,
-                           item.userId is string && item.userId.size() > 0 &&
-                           item.originalRydRequestId is string && item.originalRydRequestId.size() > 0 &&
-                           item.pickupAddress is string && item.pickupAddress.size() > 0 &&
-                           item.destinationAddress is string && item.destinationAddress.size() > 0 &&
-                           item.status is string && (
-                             item.status == "awaiting_pickup" || item.status == "on_board" ||
-                             item.status == "dropped_off" || item.status == "missed_pickup" ||
-                             item.status == "cancelled_by_passenger"
-                           )
-                           // Optional fields in manifest don't need explicit type checks here if they can be absent
-                         ));
-      allow delete: if false; // Generally, don't allow client deletion; archive or mark as cancelled instead.
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.adminIds[0] == request.auth.uid && // Creator is the first admin
+                       request.resource.data.memberIds[0] == request.auth.uid && // Creator is the first member
+                       request.resource.data.adminIds.size() == 1 &&
+                       request.resource.data.memberIds.size() == 1 &&
+                       request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+                       request.resource.data.description is string &&
+                       request.resource.data.keys().hasAll(['name', 'description', 'createdBy', 'createdAt', 'memberIds', 'adminIds', 'imageUrl', 'dataAiHint']) &&
+                       request.resource.data.keys().size() == 8;
+
+
+      allow update: if request.auth.uid != null &&
+                       (request.auth.uid in resource.data.adminIds) && // Only admins of the group can update
+                       // Prevent changing createdBy or createdAt
+                       !('createdBy' in request.resource.data && request.resource.data.createdBy != resource.data.createdBy) &&
+                       !('createdAt' in request.resource.data && request.resource.data.createdAt != resource.data.createdAt) &&
+                       // Validate updated fields (example: name must remain a non-empty string)
+                       (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() > 0)) &&
+                       (!('description' in request.resource.data) || request.resource.data.description is string) &&
+                       (!('imageUrl' in request.resource.data) || request.resource.data.imageUrl is string) &&
+                       (!('dataAiHint' in request.resource.data) || request.resource.data.dataAiHint is string) &&
+                       (!('memberIds' in request.resource.data) || request.resource.data.memberIds is list) &&
+                       (!('adminIds' in request.resource.data) || (request.resource.data.adminIds is list && request.resource.data.adminIds.size() > 0)); // Must always have at least one admin
     }
+
+    // Events Collection
+    match /events/{eventId} {
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+                       request.resource.data.eventTimestamp is timestamp &&
+                       request.resource.data.location is string && request.resource.data.location.size() > 0 &&
+                       request.resource.data.eventType is string && request.resource.data.eventType.size() > 0 &&
+                       request.resource.data.associatedGroupIds is list &&
+                       // Ensure description is a string if it exists
+                       (!('description' in request.resource.data) || request.resource.data.description is string);
+
+      allow update: if request.auth.uid != null &&
+                       resource.data.createdBy == request.auth.uid; // Only creator can update for now
+                       // Add specific field validations for updates if needed
+    }
+
+    // Rydz (Requests) Collection
+    match /rydz/{rydId} {
+      allow read: if request.auth.uid != null && // Basic auth check
+                     (request.auth.uid == resource.data.requestedBy || // Requester can read
+                      (resource.data.passengerIds.hasAny([request.auth.uid])) || // Passengers can read
+                      // Allow parent to read if any of their managed students are passengers
+                      (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent' &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStudentIds.hasAny(resource.data.passengerIds)) ||
+                      isAdmin(request.auth.uid)); // Admin can read
+
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.requestedBy == request.auth.uid &&
+                       request.resource.data.destination is string && request.resource.data.destination.size() > 0 &&
+                       request.resource.data.pickupLocation is string && request.resource.data.pickupLocation.size() > 0 &&
+                       request.resource.data.rydTimestamp is timestamp &&
+                       request.resource.data.earliestPickupTimestamp is timestamp &&
+                       request.resource.data.status == 'requested' && // Initial status must be 'requested'
+                       request.resource.data.passengerIds is list && request.resource.data.passengerIds.size() > 0 && // Must have at least one passenger
+                       request.resource.data.passengerIds[0] == request.auth.uid || // If student requests, they are a passenger
+                       (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && // If parent requests for students
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent' &&
+                        request.resource.data.passengerIds.removeAll(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStudentIds).size() == 0); // All passengers are managed by this parent
+                       // Add more specific field validations as needed
+
+      allow update: if request.auth.uid != null &&
+                       ((request.auth.uid == resource.data.requestedBy && resource.data.status == 'requested') || // Requester can update if still in 'requested' state
+                        (request.auth.uid == resource.data.driverId) || // Assigned driver can update
+                        isAdmin(request.auth.uid));
+                        // Add specific field validations for updates
+    }
+
+    // ActiveRydz (Offered Drives) Collection
+    match /activeRydz/{activeRydId} {
+      allow read: if request.auth.uid != null; // Authenticated users can read active rydz details
+
+      allow create: if
+          // 0. User must be authenticated
+          request.auth.uid != null &&
+          // 1. Driver must be able to drive (checks the user document of the person creating this ActiveRyd)
+          get(/databases/$(database)/documents/users/$(request.resource.data.driverId)).data.canDrive == true &&
+          // 2. driverId must be a non-empty string and match the authenticated user making the request
+          request.resource.data.driverId is string && request.resource.data.driverId == request.auth.uid &&
+          // 3. associatedEventId must be a non-empty string
+          request.resource.data.associatedEventId is string && request.resource.data.associatedEventId.size() > 0 &&
+          // 4. status must be "planning"
+          request.resource.data.status is string && request.resource.data.status == "planning" &&
+          // 5. vehicleDetails must be a map
+          request.resource.data.vehicleDetails is map &&
+          // 6. vehicleDetails.make must be a string (can be "N/A" if primary vehicle is "N/A")
+          request.resource.data.vehicleDetails.make is string &&
+          // 7. vehicleDetails.model must be a string (can be "N/A" if primary vehicle is "N/A")
+          request.resource.data.vehicleDetails.model is string &&
+          // 8. vehicleDetails.passengerCapacity must be a string representing a number from "1" to "8"
+          request.resource.data.vehicleDetails.passengerCapacity is string &&
+          request.resource.data.vehicleDetails.passengerCapacity.matches("^[1-8]$") &&
+          // 9. passengerManifest must be an empty list at creation
+          request.resource.data.passengerManifest is list && request.resource.data.passengerManifest.size() == 0 &&
+          // 10. actualDepartureTime must be a timestamp
+          request.resource.data.actualDepartureTime is timestamp &&
+          // 11. startLocationAddress must be a non-empty string
+          request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
+          // 12. finalDestinationAddress must be a non-empty string (derived from eventData.location)
+          request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
+          // 13. notes must be a string (can be empty)
+          request.resource.data.notes is string &&
+          // 14. Check for exact number of keys to prevent extra fields
+          // createdAt and updatedAt are server-generated, so not in request.resource.data for create
+          request.resource.data.keys().hasAll(['driverId', 'associatedEventId', 'status', 'vehicleDetails', 'passengerManifest', 'actualDepartureTime', 'startLocationAddress', 'finalDestinationAddress', 'notes']) &&
+          request.resource.data.keys().size() == 9;
+
+
+      allow update: if request.auth.uid != null &&
+                       (request.auth.uid == resource.data.driverId || // Driver can update their own ryd
+                        // Allow passengers (or their parents) to update their specific manifest item status (e.g., cancel)
+                        // This is more complex and might need granular field checks:
+                        // e.g., request.auth.uid in resource.data.passengerManifest.map(p => p.userId)
+                        // For simplicity, allow driver or admin for now.
+                        isAdmin(request.auth.uid));
+                        // Add more specific field validations here
+    }
+
+    // eventDriverStates Collection
+    match /eventDriverStates/{stateId} {
+      // stateId is composite: eventId_driverId
+      allow read: if request.auth.uid != null;
+      allow write: if request.auth.uid != null &&
+                      request.auth.uid == request.resource.data.driverId && // Only the driver can update their own status
+                      request.resource.data.eventId is string && request.resource.data.eventId.size() > 0 &&
+                      request.resource.data.driverId is string && request.resource.data.driverId.size() > 0 &&
+                      request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
+                      // If status is 'driving' or 'full_car', seatsAvailable should be number or not present
+                      (request.resource.data.status in ['driving', 'full_car'] ?
+                         (!('seatsAvailable' in request.resource.data) || request.resource.data.seatsAvailable is number) :
+                         true // For other statuses, seatsAvailable doesn't matter as much for validation here
+                      ) &&
+                      request.resource.data.updatedAt == request.time;
+    }
+
   }
 }
+
+    
