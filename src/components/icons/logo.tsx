@@ -8,13 +8,14 @@ interface LogoProps {
 }
 
 export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
-  const containerHeightClass = iconOnly ? "h-7" : "h-10"; // Tailwind classes for height (28px or 40px)
-  const containerWidthClass = iconOnly ? "w-[70px]" : "w-[100px]"; // Tailwind classes for width (70px or 100px)
+  // Increased sizes
+  const containerHeightClass = iconOnly ? "h-8" : "h-12"; // Was h-7 : h-10. Now 32px : 48px
+  const containerWidthClass = iconOnly ? "w-[80px]" : "w-[120px]"; // Was w-[70px] : w-[100px]
 
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center", // Added justify-center and relative
+        "relative flex items-center justify-center", 
         containerHeightClass,
         containerWidthClass,
         className
@@ -22,11 +23,11 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
       {...props}
     >
       <Image
-        src="/logo.png" // Assumes public/logo.png.
+        src="/logo.png" 
         alt="MyRydz Logo"
-        fill // Makes the image fill the parent div
+        fill 
         className={cn(
-          "object-contain" // Ensures aspect ratio is maintained
+          "object-contain" 
         )}
         priority
       />
