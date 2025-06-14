@@ -8,21 +8,30 @@ interface LogoProps {
 }
 
 export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
-  const size = iconOnly ? 28 : 40; // h-7 vs h-10 approx
+  const containerHeightClass = iconOnly ? "h-7" : "h-10"; // Tailwind classes for height (28px or 40px)
+  const containerWidthClass = iconOnly ? "w-[70px]" : "w-[100px]"; // Tailwind classes for width (70px or 100px)
 
   return (
-    <div className={cn("flex items-center gap-2", className)} {...props}>
+    <div
+      className={cn(
+        "relative flex items-center justify-center", // Added justify-center and relative
+        containerHeightClass,
+        containerWidthClass,
+        "bg-yellow-300", // DEBUG: Bright background for the container
+        className
+      )}
+      {...props}
+    >
       <Image
-        src="/logo.png" // Assumes the logo is in public/logo.png
+        src="/logo.png" // Assumes public/logo.png
         alt="MyRydz Logo"
-        width={size * 2.5} // Assuming the logo content is wider than it is tall, adjust as needed
-        height={size}
-        className="object-contain" // Ensures the logo scales nicely within the dimensions
-        priority // Preload logo as it's likely LCP
+        fill // Makes the image fill the parent div
+        className={cn(
+          "object-contain", // Ensures aspect ratio is maintained
+          "border-2 border-red-500" // DEBUG: Red border for the image itself
+        )}
+        priority
       />
-      {/* The text "MyRydz" is part of the image, so no separate span is needed. */}
-      {/* If iconOnly was meant to show a version *without* the text, a different image asset would be ideal. */}
-      {/* For now, iconOnly just makes the whole logo smaller. */}
     </div>
   );
 }
