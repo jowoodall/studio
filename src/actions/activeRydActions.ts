@@ -37,7 +37,7 @@ export async function createActiveRydForEventAction(
   try {
     // Fetch Driver Profile
     try {
-      console.log(`[Action: createActiveRydForEventAction] Attempting to fetch driver profile for userId: ${userId}...`);
+      console.log(`[Action: createActiveRydForEventAction] Attempting to fetch driver profile for userId: ${userId}... (This is the userId passed into the action)`);
       const driverProfileRef = doc(db, "users", userId);
       const driverProfileSnap = await getDoc(driverProfileRef);
       console.log(`[Action: createActiveRydForEventAction] Fetched driver profile snap. Exists: ${driverProfileSnap.exists()}`);
@@ -171,12 +171,12 @@ export async function createActiveRydForEventAction(
         
         let detailedClientMessage = `Firestore Add Operation Failed. Code: ${errCode}. Message: ${errMsg}.`;
         if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
-            detailedClientMessage += ` This indicates a Firestore security rule violation for 'activeRydz' creation. Please double-check these specific conditions in your Firestore rules and data against the payload being sent (see server logs if available):
-1. Driver Profile (UID: ${userId}): 'canDrive' must be true. (Current value from fetched profile: ${driverProfile?.canDrive}).
-2. Event Details (ID: ${eventId}): 'location' (becomes 'finalDestinationAddress') must be non-empty. (Current event location: '${eventData?.location}').
-3. Start Location: 'startLocationAddress' must be non-empty. (Resolved start location: '${finalStartLocationAddress}').
-4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string "1"-"8" in 'vehicleDetails.passengerCapacity'. (Current capacity in payload: '${String(seatsAvailable)}').
-5. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).
+            detailedClientMessage += ` This indicates a Firestore security rule violation for 'activeRydz' creation. Please double-check these specific conditions in your Firestore rules and data against the payload being sent (see server logs if available):\n
+1. Driver Profile (UID: ${userId}): 'canDrive' must be true. (Current value from fetched profile: ${driverProfile?.canDrive}).\n
+2. Event Details (ID: ${eventId}): 'location' (becomes 'finalDestinationAddress') must be non-empty. (Current event location: '${eventData?.location}').\n
+3. Start Location: 'startLocationAddress' must be non-empty. (Resolved start location: '${finalStartLocationAddress}').\n
+4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string "1"-"8" in 'vehicleDetails.passengerCapacity'. (Current capacity in payload: '${String(seatsAvailable)}').\n
+5. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).\n
 Review the server-side logs (if visible) for the exact payload being sent to Firestore just before this error. The payload was logged as 'FINAL ActiveRyd payload for Firestore'.`;
         }
         // Include the raw error to help with debugging if logs aren't available.
