@@ -6,45 +6,29 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input"; // Keep for potential future use
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft, Info, MapPin } from "lucide-react";
+import { AlertTriangle, Car, Loader2, ArrowLeft } from "lucide-react";
 import { useForm } from "react-hook-form";
-import * as z from "zod";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { type EventData, UserRole } from "@/types";
+import { type EventData } from "@/types"; // Keep for event display
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
-import { createActiveRydForEventAction } from "@/actions/activeRydActions";
-import { offerDriveFormServerSchema } from '@/schemas/activeRydSchemas';
 import { format } from "date-fns";
 
-// Client-side schema for the form
-const offerDriveClientFormSchema = z.object({
-  seatsAvailable: z.coerce.number().min(1, "Must offer at least 1 seat.").max(8, "Cannot offer more than 8 seats."),
-  departureTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
-  startLocationAddress: z.string().max(150, "Address cannot exceed 150 characters.").optional(),
-  pickupInstructions: z.string().max(300, "Instructions cannot exceed 300 characters.").optional(),
-});
-
-type OfferDriveClientFormValues = z.infer<typeof offerDriveClientFormSchema>;
-
-// Mock events data - keep for fallback if needed, but we'll fetch real event data
-const mockEventsData: { [key: string]: { name: string; location: string, date: Timestamp } } = {
-  "1": { name: "School Annual Day", location: "Northwood High Auditorium", date: Timestamp.fromDate(new Date(Date.now() + 86400000 * 5)) }, // 5 days from now
-  "2": { name: "Community Soccer Match", location: "City Sports Complex", date: Timestamp.fromDate(new Date(Date.now() + 86400000 * 10)) },
-  "3": { name: "Tech Conference 2024", location: "Downtown Convention Center", date: Timestamp.fromDate(new Date(Date.now() + 86400000 * 15)) },
-};
+// Step 1: Import the simplified schema and action
+import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
+import { createActiveRydForEventAction_Step1 } from "@/actions/activeRydActions";
 
 interface ResolvedPageParams {
   eventId: string;
 }
 
-export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+export default function OfferDrivePageStep1({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const params = use(paramsPromise);
   const { eventId } = params || {};
 
@@ -56,15 +40,21 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const [eventError, setEventError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const form = useForm<OfferDriveClientFormValues>({
-    resolver: zodResolver(offerDriveClientFormSchema),
+  const form = useForm<OfferDriveFormStep1Values>({
+    resolver: zodResolver(offerDriveFormStep1Schema),
     defaultValues: {
+      eventId: eventId || "",
       seatsAvailable: 2,
-      departureTime: "09:00",
-      startLocationAddress: "",
-      pickupInstructions: "",
+      notes: "",
     },
   });
+
+  // Effect to set eventId in form once it's resolved from params
+  useEffect(() => {
+    if (eventId && !form.getValues("eventId")) {
+      form.setValue("eventId", eventId);
+    }
+  }, [eventId, form]);
 
   useEffect(() => {
     const fetchEventDetails = async () => {
@@ -86,8 +76,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         }
       } catch (e) {
         console.error("Error fetching event details:", e);
-        setEventError("Failed to load event details. Using mock data as fallback.");
-        setEventDetails(mockEventsData[eventId] ? {id: eventId, ...mockEventsData[eventId]} as EventData : null);
+        setEventError("Failed to load event details.");
+        setEventDetails(null);
       } finally {
         setIsLoadingEvent(false);
       }
@@ -95,86 +85,64 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     fetchEventDetails();
   }, [eventId]);
 
-  async function onSubmit(data: OfferDriveClientFormValues) {
-    console.log("[OfferDrivePage] onSubmit triggered. Client form data:", data);
+  async function onSubmit(data: OfferDriveFormStep1Values) {
+    console.log("[OfferDrivePage_Step1] onSubmit triggered. Client form data:", data);
 
-    if (!authUser || !userProfile) {
-      console.error("[OfferDrivePage] AuthUser or UserProfile missing. AuthUser:", authUser, "UserProfile:", userProfile);
-      toast({ title: "Authentication Error", description: "You must be logged in to offer a drive.", variant: "destructive" });
-      return;
-    }
-    if (!userProfile.canDrive) {
-      console.error("[OfferDrivePage] User cannot drive. Profile:", userProfile);
-      toast({ title: "Not a Driver", description: "Your profile indicates you are not registered as a driver.", variant: "destructive" });
+    if (!authUser) {
+      toast({ title: "Authentication Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
     if (!eventDetails) {
-      console.error("[OfferDrivePage] EventDetails missing.");
       toast({ title: "Event Error", description: "Event details are not loaded.", variant: "destructive" });
       return;
+    }
+    // Ensure eventId from form matches current event if critical, or just use data.eventId
+     if (data.eventId !== eventId) {
+        console.warn(`[OfferDrivePage_Step1] Form eventId (${data.eventId}) differs from page eventId (${eventId}). Using form's.`);
+        // This might happen if navigation occurs while form is partially filled.
+        // Depending on desired behavior, you might want to prevent submission or re-validate.
     }
 
     setIsSubmitting(true);
     
-    const actionPayload = {
-      eventId: eventDetails.id,
-      seatsAvailable: data.seatsAvailable,
-      departureTime: data.departureTime,
-      startLocationAddress: data.startLocationAddress || "", 
-      pickupInstructions: data.pickupInstructions || "",
-    };
-    console.log("[OfferDrivePage] Prepared actionPayload for server schema validation:", actionPayload);
+    // The data should already match OfferDriveFormStep1Values due to form's resolver
+    const result = await createActiveRydForEventAction_Step1(authUser.uid, data); 
+    console.log("[OfferDrivePage_Step1] Server action result:", result);
 
-    const validationResult = offerDriveFormServerSchema.safeParse(actionPayload);
-    if (!validationResult.success) {
-        console.error("[OfferDrivePage] Client-side validation failed for server schema:", validationResult.error.flatten());
-        toast({ title: "Validation Error", description: "Form data is invalid. Please check your inputs.", variant: "destructive" });
-        validationResult.error.issues.forEach(issue => {
-          form.setError(issue.path[0] as keyof OfferDriveClientFormValues, { message: issue.message });
-        });
-        setIsSubmitting(false);
-        return;
-    }
-    console.log("[OfferDrivePage] Server schema validation successful. Calling server action with UID:", authUser.uid, "and validated data:", validationResult.data);
-
-    const result = await createActiveRydForEventAction(authUser.uid, validationResult.data); 
-    console.log("[OfferDrivePage] Server action result:", result);
-
-    if (result.success && result.activeRydId) {
+    if (result.success) {
       toast({
-        title: "Ryd Offer Submitted!",
-        description: `Your offer to drive for "${eventDetails.name}" has been posted. Ryd ID: ${result.activeRydId}`,
+        title: "Offer Submitted (Step 1)",
+        description: result.message,
       });
-      form.reset();
-      // Potentially redirect: router.push(`/rydz/tracking/${result.activeRydId}`);
+      console.log("Received data from server action:", result.receivedData);
+      form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
     } else {
       toast({
-        title: "Submission Failed",
-        description: result.error || "An unknown error occurred.",
+        title: "Submission Failed (Step 1)",
+        description: result.message || result.error || "An unknown error occurred.",
         variant: "destructive",
       });
       if (result.issues) {
-         console.error("[OfferDrivePage] Server Action Validation Issues from result:", result.issues);
          result.issues.forEach(issue => {
-            form.setError(issue.path[0] as keyof OfferDriveClientFormValues, { message: issue.message });
+            form.setError(issue.path[0] as keyof OfferDriveFormStep1Values, { message: issue.message });
          });
       }
     }
     setIsSubmitting(false);
   }
   
-  const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent;
+  const isLoadingPage = authLoading || isLoadingEvent;
 
   if (isLoadingPage) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground">Loading event and profile data...</p>
+        <p className="text-muted-foreground">Loading event data...</p>
       </div>
     );
   }
   
-  if (!authUser || !userProfile) {
+  if (!authUser) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -182,19 +150,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         <p className="text-muted-foreground">You must be logged in to offer a drive.</p>
         <Button asChild className="mt-4">
           <Link href={`/login?redirect=/events/${eventId}/offer-drive`}>Log In</Link>
-        </Button>
-      </div>
-    );
-  }
-
-  if (!userProfile.canDrive) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-10">
-        <Info className="w-16 h-16 text-blue-500 mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Driver Profile Required</h2>
-        <p className="text-muted-foreground px-4">To offer a drive, please update your profile to indicate you can drive and provide necessary driver details.</p>
-        <Button asChild className="mt-4">
-          <Link href="/profile/edit">Update Profile</Link>
         </Button>
       </div>
     );
@@ -218,8 +173,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   return (
     <>
       <PageHeader
-        title={`Offer to Drive: ${eventDetails.name}`}
-        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}.`}
+        title={`Offer to Drive (Step 1): ${eventDetails.name}`}
+        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Basic Offer.`}
         actions={
             <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/rydz`}>
@@ -234,14 +189,27 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
             <Car className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer Details</CardTitle>
+          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer (Basic)</CardTitle>
           <CardDescription className="text-center">
-            Confirm your availability and vehicle capacity for this event.
+            Confirm seats and add optional notes.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+               <FormField
+                control={form.control}
+                name="eventId"
+                render={({ field }) => (
+                  <FormItem className="hidden"> {/* Hidden but necessary for submission */}
+                    <FormLabel>Event ID</FormLabel>
+                    <FormControl>
+                      <Input {...field} readOnly />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="seatsAvailable"
@@ -268,46 +236,13 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
               <FormField
                 control={form.control}
-                name="departureTime"
+                name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Your Proposed Departure Time (for event date: {format(eventDate, "MMM d")})</FormLabel>
-                    <FormControl>
-                      <Input type="time" {...field} />
-                    </FormControl>
-                    <FormDescription>What time will you be departing for the event?</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="startLocationAddress"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center"><MapPin className="mr-1.5 h-4 w-4 text-muted-foreground"/>Your Starting Point / Pickup Area (Optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., My Home Address, Downtown Area"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>If different from your profile address, or a general area. If blank, your profile's city/zip will be used.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="pickupInstructions"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Pickup Instructions/Notes (Optional)</FormLabel>
+                    <FormLabel>Notes (Optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="e.g., 'I can pick up within a 5-mile radius of downtown.' or 'Text me when you're ready.'"
+                        placeholder="e.g., 'Flexible with pickup times.'"
                         className="resize-none"
                         rows={3}
                         {...field}
@@ -322,16 +257,13 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                 <p><span className="font-semibold">Event:</span> {eventDetails.name}</p>
                 <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
                 <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
-                {userProfile.driverDetails?.primaryVehicle && (
-                    <p><span className="font-semibold">Your Vehicle:</span> {userProfile.driverDetails.primaryVehicle}</p>
-                )}
               </div>
 
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting Offer...</>
                 ) : (
-                  <><Car className="mr-2 h-4 w-4" /> Submit Drive Offer</>
+                  <><Car className="mr-2 h-4 w-4" /> Submit Basic Offer</>
                 )}
               </Button>
             </form>
