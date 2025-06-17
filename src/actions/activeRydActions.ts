@@ -9,7 +9,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import type { UserProfileData } from '@/types';
 
 export async function createActiveRydForEventAction_Step1(
-  userId: string, // This would be authUser.uid from the client
+  userId: string,
   data: OfferDriveFormStep1Values
 ): Promise<{ success: boolean; message: string; error?: string; issues?: z.ZodIssue[] }> {
   console.log("[Action: createActiveRydForEventAction_Step1] Action called (Step 2).");
@@ -18,7 +18,8 @@ export async function createActiveRydForEventAction_Step1(
     console.error("[Action: createActiveRydForEventAction_Step1] Error: userId not provided (Step 2).");
     return { success: false, message: "User ID not provided. Authentication failed." };
   }
-  console.log(`[Action: createActiveRydForEventAction_Step1] Processing for userId: ${userId}`, "with form data:", JSON.stringify(data, null, 2));
+  // Ensure the entire object is stringified and part of a single string argument
+  console.log(`[Action: createActiveRydForEventAction_Step1] Processing for userId: ${userId} with form data:\n${JSON.stringify(data, null, 2)}`);
 
   const validationResult = offerDriveFormStep1Schema.safeParse(data);
   if (!validationResult.success) {
@@ -27,7 +28,6 @@ export async function createActiveRydForEventAction_Step1(
   }
   console.log("[Action: createActiveRydForEventAction_Step1] Server-side input data validation successful (Step 2).");
 
-  // --- Step 2: Fetch and Validate Driver's Profile ---
   try {
     console.log(`[Action: createActiveRydForEventAction_Step1] Attempting to fetch driver profile for UID: ${userId}`);
     const driverProfileRef = doc(db, "users", userId);
@@ -35,7 +35,7 @@ export async function createActiveRydForEventAction_Step1(
 
     if (!driverProfileSnap.exists()) {
       console.error(`[Action: createActiveRydForEventAction_Step1] Driver profile not found for UID: ${userId}`);
-      return { success: false, message: `Driver profile not found for UID: ${userId}. Ensure a user document exists.` };
+      return { success: false, message: `Driver profile not found for UID: ${userId}. Ensure a user document exists in Firestore at /users/${userId}.` };
     }
 
     const driverData = driverProfileSnap.data() as UserProfileData;
@@ -46,7 +46,7 @@ export async function createActiveRydForEventAction_Step1(
       return {
         success: false,
         message: "Your profile indicates you are not registered or permitted to drive. Please update your profile.",
-        error: "User not permitted to drive."
+        error: `User profile for ${userId} does not have 'canDrive' set to true.`
       };
     }
     console.log(`[Action: createActiveRydForEventAction_Step1] Driver ${userId} is permitted to drive.`);
@@ -55,23 +55,18 @@ export async function createActiveRydForEventAction_Step1(
     console.error(`[Action: createActiveRydForEventAction_Step1] Critical Error fetching driver profile for UID ${userId}:`, e);
     let errorMessage = `Failed to fetch driver profile (UID: ${userId}).`;
     if (e.code === 'permission-denied') {
-      // This is the most likely scenario if request.auth is null or not the expected user on the server
-      errorMessage = `Permission Denied: Could not fetch your user profile (UID: ${userId}) from the server action. This usually means the server environment is not running with your authenticated identity when accessing Firestore, or there's a fundamental issue with Firestore rules deployment or propagation. Please verify server authentication context if possible (Code: ${e.code}).`;
+      errorMessage = `Permission Denied: Could not read your user profile (UID: ${userId}) from Firestore within the server action. This strongly suggests the server action is not running with your authenticated identity. Check Firestore rules and server authentication context. Code: ${e.code}. Message: ${e.message || 'Unknown Firebase error'}.`;
     } else {
-      errorMessage += ` Error: ${e.message || 'Unknown error'}.`;
+      errorMessage += ` Error: ${e.message || 'Unknown error'}. Code: ${e.code || 'N/A'}.`;
     }
     return {
       success: false,
-      message: "An error occurred while verifying driver status.", // Generic client message
-      error: errorMessage // Detailed error for client console/toast
+      message: "An error occurred while verifying driver status.",
+      error: errorMessage
     };
   }
-  // --- End of Step 2 ---
 
-
-  // If we reach here, basic validation and driver profile check passed.
-  // For this step, we are NOT interacting with Firestore further for 'activeRydz'.
-  const successMessage = `Step 2 successful! Driver profile validated. Offer for event ${validationResult.data.eventId} with ${validationResult.data.seatsAvailable} seats received. Notes: ${validationResult.data.notes || 'N/A'}`;
+  const successMessage = `Step 2 successful! Driver profile validated for ${userId}. Offer for event ${validationResult.data.eventId} with ${validationResult.data.seatsAvailable} seats received. Notes: ${validationResult.data.notes || 'N/A'}`;
   console.log(`[Action: createActiveRydForEventAction_Step1] ${successMessage}`);
 
   return {
