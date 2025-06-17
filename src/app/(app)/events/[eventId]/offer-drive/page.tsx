@@ -86,7 +86,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   async function onSubmit(data: OfferDriveFormStep1Values) {
     console.log("[OfferDrivePage_Step1] onSubmit triggered. Client form data:", data);
 
-    if (!authUser || !userProfile) { // Ensure userProfile is also available
+    if (!authUser || !userProfile) { 
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
       return;
     }
@@ -100,24 +100,24 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
 
     setIsSubmitting(true);
     
-    // Pass client-side profile information to the server action
     const result = await createActiveRydForEventAction_Step1(
       authUser.uid, 
       data,
-      userProfile.fullName, // Pass fullName
-      userProfile.canDrive || false // Pass canDrive status, default to false if undefined
+      userProfile.fullName, 
+      userProfile.canDrive || false,
+      eventDetails.name // Pass the event name from client-side fetched eventDetails
     ); 
     console.log("[OfferDrivePage_Step1] Server action result:", result);
 
     if (result.success) {
       toast({
-        title: "Offer Submitted (Step 1 - Modified)",
+        title: "Offer Submitted (Step 3 - Modified)",
         description: result.message,
       });
       form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
     } else {
       toast({
-        title: "Submission Failed (Step 1 - Modified)",
+        title: "Submission Failed (Step 3 - Modified)",
         description: result.message || result.error || "An unknown error occurred.",
         variant: "destructive",
       });
@@ -130,7 +130,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     setIsSubmitting(false);
   }
   
-  const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent; // Include isLoadingProfile
+  const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent;
 
   if (isLoadingPage) {
     return (
@@ -141,7 +141,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     );
   }
   
-  if (!authUser || !userProfile) { // Check for userProfile as well
+  if (!authUser || !userProfile) { 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -260,7 +260,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
               
               <div className="p-3 bg-destructive/10 rounded-md text-xs text-destructive-foreground border border-destructive/30">
                  <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                 <span className="font-semibold">Security Note:</span> For debugging purposes, this action currently relies on client-provided 'Can Drive' status. In production, the server must re-verify this from Firestore.
+                 <span className="font-semibold">Security Note:</span> For debugging purposes, this action now relies on client-provided event name and 'Can Drive' status. In production, the server must re-verify these from Firestore.
               </div>
 
 

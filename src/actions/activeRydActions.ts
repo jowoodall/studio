@@ -1,27 +1,29 @@
 
 'use server';
-console.log("[File: activeRydActions.ts] File loaded on server (Step 3 - Re-fetching event details).");
+console.log("[File: activeRydActions.ts] File loaded on server (Step 3 - Modified to use client-provided event name).");
 
 import * as z from 'zod';
 import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
-import { db } from '@/lib/firebase'; // Re-add db import
-import { doc, getDoc, type Timestamp } from 'firebase/firestore'; // Re-add getDoc and Timestamp
-import type { EventData } from '@/types'; // Re-add EventData type
+// Firestore getDoc and Timestamp are removed as we are not fetching the event from Firestore in this step
+// import { db } from '@/lib/firebase';
+// import { doc, getDoc, type Timestamp } from 'firebase/firestore';
+// import type { EventData } from '@/types';
 
 export async function createActiveRydForEventAction_Step1(
   userId: string,
   data: OfferDriveFormStep1Values,
   clientProvidedFullName: string,
-  clientProvidedCanDrive: boolean
+  clientProvidedCanDrive: boolean,
+  clientProvidedEventName: string // New parameter for event name
 ): Promise<{ success: boolean; message: string; error?: string; issues?: z.ZodIssue[] }> {
-  console.log("[Action: createActiveRydForEventAction_Step1] Action called (Step 3 - Re-fetching event details).");
+  console.log("[Action: createActiveRydForEventAction_Step1] Action called (Step 3 - Using client-provided event name).");
 
   if (!userId) {
     console.error("[Action: createActiveRydForEventAction_Step1] Error: userId not provided.");
     return { success: false, message: "User ID not provided. Authentication failed." };
   }
   
-  console.log(`[Action: createActiveRydForEventAction_Step1] Processing for userId: ${userId}, clientFullName: ${clientProvidedFullName}, clientCanDrive: ${clientProvidedCanDrive} with form data:\n${JSON.stringify(data, null, 2)}`);
+  console.log(`[Action: createActiveRydForEventAction_Step1] Processing for userId: ${userId}, clientFullName: ${clientProvidedFullName}, clientCanDrive: ${clientProvidedCanDrive}, clientEventName: ${clientProvidedEventName} with form data:\n${JSON.stringify(data, null, 2)}`);
 
   const validationResult = offerDriveFormStep1Schema.safeParse(data);
   if (!validationResult.success) {
@@ -31,7 +33,7 @@ export async function createActiveRydForEventAction_Step1(
   const validatedData = validationResult.data;
   console.log("[Action: createActiveRydForEventAction_Step1] Server-side input data validation successful.");
 
-  // Driver permission check (still using client-provided data for this step)
+  // Driver permission check (using client-provided data)
   if (!clientProvidedCanDrive) {
     console.error(`[Action: createActiveRydForEventAction_Step1] User ${userId} (${clientProvidedFullName}) is not permitted to drive based on client-provided status.`);
     return {
@@ -42,46 +44,16 @@ export async function createActiveRydForEventAction_Step1(
   }
   console.log(`[Action: createActiveRydForEventAction_Step1] Driver ${userId} (${clientProvidedFullName}) is permitted to drive (based on client-provided status).`);
 
-  // Step 3: Attempt to fetch event details
-  let eventDetails: EventData | null = null;
-  let eventNameForMessage = `event ID ${validatedData.eventId}`;
-  try {
-    console.log(`[Action: createActiveRydForEventAction_Step1] Attempting to fetch event details for eventId: ${validatedData.eventId}`);
-    const eventDocRef = doc(db, "events", validatedData.eventId);
-    const eventDocSnap = await getDoc(eventDocRef);
+  // Step 3: Event details are now provided by the client (clientProvidedEventName)
+  // The server-side fetch for event details is removed for this step.
+  // let eventDetails: EventData | null = null; // Not needed
+  let eventNameForMessage = clientProvidedEventName || `event ID ${validatedData.eventId}`; // Use client-provided name
 
-    if (eventDocSnap.exists()) {
-      eventDetails = eventDocSnap.data() as EventData;
-      eventNameForMessage = eventDetails.name || eventNameForMessage;
-      console.log(`[Action: createActiveRydForEventAction_Step1] Successfully fetched event: ${eventDetails.name}`);
-    } else {
-      console.error(`[Action: createActiveRydForEventAction_Step1] Event with ID "${validatedData.eventId}" not found in Firestore.`);
-      return {
-        success: false,
-        message: "Event details could not be found.",
-        error: `Event with ID "${validatedData.eventId}" does not exist.`,
-      };
-    }
-  } catch (e: any) {
-    console.error(`[Action: createActiveRydForEventAction_Step1] Error fetching event details for eventId ${validatedData.eventId}:`, e);
-    let specificError = `Failed to fetch event details for event ID ${validatedData.eventId}.`;
-    if (e.code === 'permission-denied') {
-      specificError += " This indicates a Firestore read permission issue. Please check your Firestore rules for the '/events' collection and ensure the server authentication context allows reading this document.";
-    } else {
-      specificError += ` (Error: ${e.message || 'Unknown Firestore error'})`;
-    }
-    return {
-      success: false,
-      message: "An error occurred while fetching event information.",
-      error: specificError,
-    };
-  }
-
-  // If we reach here, driver check passed (using client data) and event details were fetched.
-  // Further steps (like creating activeRydz document) would go here.
+  // If we reach here, driver check passed (using client data) and event name is available from client.
+  // Further steps (like creating activeRydz document) would go here in a later step.
   // For now, we'll return success.
 
-  const successMessage = `Step 3 successful! Offer from ${clientProvidedFullName} (${userId}) for event "${eventNameForMessage}" with ${validatedData.seatsAvailable} seats received. Event details fetched. Notes: ${validatedData.notes || 'N/A'}`;
+  const successMessage = `Step 3 successful! Offer from ${clientProvidedFullName} (${userId}) for event "${eventNameForMessage}" with ${validatedData.seatsAvailable} seats received. Event name confirmed via client. Notes: ${validatedData.notes || 'N/A'}`;
   console.log(`[Action: createActiveRydForEventAction_Step1] ${successMessage}`);
 
   return {
