@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Input } from "@/components/ui/input"; // Keep for potential future use
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -15,12 +15,11 @@ import { AlertTriangle, Car, Loader2, ArrowLeft } from "lucide-react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { type EventData } from "@/types"; // Keep for event display
+import { type EventData } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 
-// Step 1: Import the simplified schema and action
 import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
 import { createActiveRydForEventAction_Step1 } from "@/actions/activeRydActions";
 
@@ -49,7 +48,6 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     },
   });
 
-  // Effect to set eventId in form once it's resolved from params
   useEffect(() => {
     if (eventId && !form.getValues("eventId")) {
       form.setValue("eventId", eventId);
@@ -88,37 +86,38 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   async function onSubmit(data: OfferDriveFormStep1Values) {
     console.log("[OfferDrivePage_Step1] onSubmit triggered. Client form data:", data);
 
-    if (!authUser) {
-      toast({ title: "Authentication Error", description: "You must be logged in.", variant: "destructive" });
+    if (!authUser || !userProfile) { // Ensure userProfile is also available
+      toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
       return;
     }
     if (!eventDetails) {
       toast({ title: "Event Error", description: "Event details are not loaded.", variant: "destructive" });
       return;
     }
-    // Ensure eventId from form matches current event if critical, or just use data.eventId
-     if (data.eventId !== eventId) {
+    if (data.eventId !== eventId) {
         console.warn(`[OfferDrivePage_Step1] Form eventId (${data.eventId}) differs from page eventId (${eventId}). Using form's.`);
-        // This might happen if navigation occurs while form is partially filled.
-        // Depending on desired behavior, you might want to prevent submission or re-validate.
     }
 
     setIsSubmitting(true);
     
-    // The data should already match OfferDriveFormStep1Values due to form's resolver
-    const result = await createActiveRydForEventAction_Step1(authUser.uid, data); 
+    // Pass client-side profile information to the server action
+    const result = await createActiveRydForEventAction_Step1(
+      authUser.uid, 
+      data,
+      userProfile.fullName, // Pass fullName
+      userProfile.canDrive || false // Pass canDrive status, default to false if undefined
+    ); 
     console.log("[OfferDrivePage_Step1] Server action result:", result);
 
     if (result.success) {
       toast({
-        title: "Offer Submitted (Step 1)",
+        title: "Offer Submitted (Step 1 - Modified)",
         description: result.message,
       });
-      console.log("Received data from server action:", result.receivedData);
       form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
     } else {
       toast({
-        title: "Submission Failed (Step 1)",
+        title: "Submission Failed (Step 1 - Modified)",
         description: result.message || result.error || "An unknown error occurred.",
         variant: "destructive",
       });
@@ -131,23 +130,23 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     setIsSubmitting(false);
   }
   
-  const isLoadingPage = authLoading || isLoadingEvent;
+  const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent; // Include isLoadingProfile
 
   if (isLoadingPage) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground">Loading event data...</p>
+        <p className="text-muted-foreground">Loading event and profile data...</p>
       </div>
     );
   }
   
-  if (!authUser) {
+  if (!authUser || !userProfile) { // Check for userProfile as well
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Access Denied</h2>
-        <p className="text-muted-foreground">You must be logged in to offer a drive.</p>
+        <p className="text-muted-foreground">You must be logged in and your profile loaded to offer a drive.</p>
         <Button asChild className="mt-4">
           <Link href={`/login?redirect=/events/${eventId}/offer-drive`}>Log In</Link>
         </Button>
@@ -201,7 +200,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
                 control={form.control}
                 name="eventId"
                 render={({ field }) => (
-                  <FormItem className="hidden"> {/* Hidden but necessary for submission */}
+                  <FormItem className="hidden">
                     <FormLabel>Event ID</FormLabel>
                     <FormControl>
                       <Input {...field} readOnly />
@@ -258,6 +257,12 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
                 <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
                 <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
               </div>
+              
+              <div className="p-3 bg-destructive/10 rounded-md text-xs text-destructive-foreground border border-destructive/30">
+                 <AlertTriangle className="inline h-4 w-4 mr-1.5" />
+                 <span className="font-semibold">Security Note:</span> For debugging purposes, this action currently relies on client-provided 'Can Drive' status. In production, the server must re-verify this from Firestore.
+              </div>
+
 
               <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile}>
                 {isSubmitting ? (
