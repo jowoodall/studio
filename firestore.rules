@@ -1,173 +1,168 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null && request.auth.uid != null;
-    }
-
-    function isUser(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function userRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
-    function isDriver(userId) {
-      let userDoc = get(/databases/$(database)/documents/users/$(userId)).data;
-      return userDoc.canDrive == true;
-    }
-
-    function isAdmin() {
-      return isAuthenticated() && userRole() == 'admin';
-    }
-
-    function isParent() {
-      return isAuthenticated() && userRole() == 'parent';
-    }
-    
-    function isStudent() {
-      return isAuthenticated() && userRole() == 'student';
-    }
-
     // Users Collection
+    // - Users can read any profile if authenticated.
+    // - Users can only create their own profile document.
+    // - Users can only update their own profile document.
+    // - Admin role can update any user document (for administrative purposes).
+    // - Deletion of user profiles is typically handled by server-side logic or admin tools, not directly by users.
     match /users/{userId} {
-      allow read: if isAuthenticated(); // Any authenticated user can read any user profile for now.
-                                        // Consider if this should be more restrictive (e.g., only self or admins).
+      allow read: if request.auth.uid != null;
       allow create: if request.auth.uid == userId && 
-                      request.resource.data.uid == userId &&
-                      request.resource.data.email == request.auth.token.email &&
-                      request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
-                      request.resource.data.role in ['student', 'parent'] && // Initially, users can only sign up as student or parent
-                      !exists(/databases/$(database)/documents/users/$(userId)); // Prevent overwriting existing profiles through create
-                      
-      allow update: if isUser(userId) || isAdmin(); // User can update their own profile, or an admin can.
-                                                  // Add specific field validations for updates if needed.
-                                                  // Disallow role changes by non-admins:
-                                                  // e.g. !(request.resource.data.role != resource.data.role && !isAdmin())
-      allow delete: if isAdmin(); // Only admins can delete user profiles.
+                       request.resource.data.uid == userId &&
+                       request.resource.data.email == request.auth.token.email &&
+                       request.resource.data.role in ['student', 'parent', 'admin'] &&
+                       (request.resource.data.canDrive is bool || request.resource.data.canDrive == null) &&
+                       (request.resource.data.fullName is string || request.resource.data.fullName == null) &&
+                       (request.resource.data.avatarUrl is string || request.resource.data.avatarUrl == null) &&
+                       (request.resource.data.dataAiHint is string || request.resource.data.dataAiHint == null) &&
+                       (request.resource.data.bio is string || request.resource.data.bio == null) &&
+                       (request.resource.data.phone is string || request.resource.data.phone == null) &&
+                       (request.resource.data.preferences is map || request.resource.data.preferences == null) &&
+                       (request.resource.data.address is map || request.resource.data.address == null) &&
+                       (request.resource.data.driverDetails is map || request.resource.data.driverDetails == null) &&
+                       (request.resource.data.managedStudentIds is list || request.resource.data.managedStudentIds == null) &&
+                       (request.resource.data.associatedParentIds is list || request.resource.data.associatedParentIds == null) &&
+                       (request.resource.data.joinedGroupIds is list || request.resource.data.joinedGroupIds == null) &&
+                       request.resource.data.createdAt == request.time;
+
+      allow update: if request.auth.uid == userId || 
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // No direct client-side delete for users typically.
     }
 
     // Groups Collection
+    // - Authenticated users can read any group.
+    // - Authenticated users can create groups; creator becomes admin and member.
+    // - Group admins can update group details and manage member/admin lists.
+    // - Group members can update their own membership status (e.g., leave a group - requires server logic or specific rule).
+    // - Deletion by group admins only.
     match /groups/{groupId} {
-      allow read: if isAuthenticated(); // Any authenticated user can view group details.
-      allow create: if isAuthenticated() && 
-                      request.resource.data.createdBy == request.auth.uid &&
-                      request.auth.uid in request.resource.data.memberIds &&
-                      request.auth.uid in request.resource.data.adminIds &&
-                      request.resource.data.name is string && request.resource.data.name.size() > 0 &&
-                      request.resource.data.description is string;
-                      
-      allow update: if isAuthenticated() && 
-                      (request.auth.uid in resource.data.adminIds || isAdmin()) &&
-                      // Prevent changing createdBy, createdAt
-                      request.resource.data.createdBy == resource.data.createdBy &&
-                      request.resource.data.createdAt == resource.data.createdAt; 
-                      // Admins can add/remove members/admins.
-                      // Ensure memberIds and adminIds are lists of strings (UIDs).
-
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.createdBy || isAdmin()); // Creator or admin can delete.
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.adminIds[0] == request.auth.uid && // Creator is the first admin
+                       request.resource.data.memberIds[0] == request.auth.uid && // Creator is the first member
+                       request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+                       request.resource.data.description is string &&
+                       request.resource.data.createdAt == request.time;
+      allow update: if request.auth.uid != null && 
+                       (resource.data.adminIds.hasAny([request.auth.uid]) || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow delete: if request.auth.uid != null && 
+                       (resource.data.adminIds.hasAny([request.auth.uid]) || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     // Events Collection
+    // - Authenticated users can read any event.
+    // - Authenticated users can create events.
+    // - Event creators or admins can update/delete events.
     match /events/{eventId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.createdBy == request.auth.uid;
-                      // Validate event data: name, eventTimestamp, location, eventType must exist
-                      // request.resource.data.name is string && request.resource.data.name.size() > 0 &&
-                      // request.resource.data.eventTimestamp is timestamp &&
-                      // request.resource.data.location is string && request.resource.data.location.size() > 0 &&
-                      // request.resource.data.eventType is string && request.resource.data.eventType.size() > 0;
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.createdBy || isAdmin());
-                      // Prevent changing createdBy, createdAt
-                      // request.resource.data.createdBy == resource.data.createdBy &&
-                      // request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.createdBy || isAdmin());
+      allow read: if request.auth.uid != null;
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+                       request.resource.data.location is string && request.resource.data.location.size() > 0 &&
+                       request.resource.data.eventTimestamp is timestamp &&
+                       request.resource.data.createdAt == request.time;
+      allow update: if request.auth.uid != null && 
+                       (resource.data.createdBy == request.auth.uid || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow delete: if request.auth.uid != null && 
+                       (resource.data.createdBy == request.auth.uid || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     // Rydz Collection (Ryd Requests)
+    // - Users can create their own ryd requests.
+    // - Users can read ryd requests they are involved in (requester, passenger).
+    // - Drivers can read ryd requests relevant to them (e.g., assigned, or potentially matching). This can be complex.
+    // - Updates are typically handled by server logic or specific roles (e.g., driver accepting, system assigning).
     match /rydz/{rydId} {
-      allow read: if isAuthenticated(); // Or more specific: if request.auth.uid == resource.data.requestedBy || (resource.data.driverId != null && request.auth.uid == resource.data.driverId) || isAdmin()
-      allow create: if isAuthenticated() && 
-                      request.resource.data.requestedBy == request.auth.uid &&
-                      request.resource.data.passengerIds[0] == request.auth.uid || // If student requests for self
-                      (isParent() && request.resource.data.requestedBy == request.auth.uid && request.resource.data.passengerIds.size() > 0) && // If parent requests for student(s)
-                      request.resource.data.status == 'requested' &&
-                      request.resource.data.destination is string && request.resource.data.destination.size() > 0 &&
-                      request.resource.data.pickupLocation is string && request.resource.data.pickupLocation.size() > 0 &&
-                      request.resource.data.rydTimestamp is timestamp &&
-                      request.resource.data.earliestPickupTimestamp is timestamp;
-
-      allow update: if isAuthenticated() && 
-                      (request.auth.uid == resource.data.requestedBy || // Requester can update (e.g., cancel)
-                       (resource.data.driverId != null && request.auth.uid == resource.data.driverId) || // Assigned driver can update
-                       isAdmin()); // Admin can update
-                      // Specific field update logic (e.g. status changes) can be more granular.
-                      // Ensure requestedBy, createdAt cannot be changed.
-                      // request.resource.data.requestedBy == resource.data.requestedBy &&
-                      // request.resource.data.createdAt == resource.data.createdAt;
-                      
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.requestedBy || isAdmin()); // Requester or admin can delete
+      allow read: if request.auth.uid != null && 
+                     (resource.data.requestedBy == request.auth.uid || 
+                      resource.data.passengerIds.hasAny([request.auth.uid]) ||
+                      resource.data.driverId == request.auth.uid ||
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.requestedBy == request.auth.uid &&
+                       request.resource.data.status == 'requested' &&
+                       request.resource.data.passengerIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.createdAt == request.time;
+      // Updates should be more granular, e.g., driver can update status to 'driver_assigned'
+      // This is a simplified update rule for now.
+      allow update: if request.auth.uid != null && 
+                       (resource.data.requestedBy == request.auth.uid || 
+                        resource.data.driverId == request.auth.uid || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      // Deletion might be restricted or handled by server logic (e.g., user cancelling their own request if status allows)
+      allow delete: if request.auth.uid != null && 
+                       (resource.data.requestedBy == request.auth.uid || 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
-    
-    // ActiveRydz Collection (Offered/In-Progress Rydz)
-    match /activeRydz/{activeRydId} {
-      // Who can read an active ryd? Driver, passengers, admins.
-      allow read: if isAuthenticated() &&
-                      (request.auth.uid == resource.data.driverId ||
-                       request.auth.uid in resource.data.passengerManifest.map(p => p.userId) || // This requires passengerManifest to be populated
-                       isAdmin());
-                       
-      allow create: if isAuthenticated() &&
-                      isDriver(request.resource.data.driverId) && // The creator must be a registered driver
-                      request.auth.uid == request.resource.data.driverId && // The authenticated user must be the driver
-                      request.resource.data.status == 'planning' && // Ryd must start in 'planning' status
-                      request.resource.data.passengerManifest == [] && // Passenger manifest must be empty on creation
-                      request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
-                      request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
-                      request.resource.data.vehicleDetails.passengerCapacity is string && 
-                      request.resource.data.vehicleDetails.passengerCapacity.matches("^[1-8]$") && // Ensure capacity is "1" through "8"
-                      // Ensure associatedEventId points to a real event if provided
-                      (request.resource.data.associatedEventId == null || exists(/databases/$(database)/documents/events/$(request.resource.data.associatedEventId))) &&
-                      // Ensure event has a location if associatedEventId is provided
-                      (request.resource.data.associatedEventId == null || get(/databases/$(database)/documents/events/$(request.resource.data.associatedEventId)).data.location.size() > 0);
 
-      allow update: if isAuthenticated() &&
-                      (request.auth.uid == resource.data.driverId || // Driver can update
-                       isAdmin()); // Admin can update
-                      // More granular checks for specific fields are recommended.
-                      // e.g., only driver can change status from 'planning' to 'awaiting_passengers'
-                      // Ensure driverId, createdAt cannot be changed.
-                      // request.resource.data.driverId == resource.data.driverId &&
-                      // request.resource.data.createdAt == resource.data.createdAt;
-                      
-      allow delete: if isAuthenticated() &&
-                      (request.auth.uid == resource.data.driverId || // Driver can delete (e.g., if in planning)
-                       isAdmin()); // Admin can delete
+    // ActiveRydz Collection (Offered/In-Progress Rydz)
+    // - Users can read active rydz they are part of (driver, passenger).
+    // - Only drivers can create their own active rydz.
+    // - Drivers can update active rydz they are driving.
+    // - Passengers might update their manifest status (e.g., cancelled_by_passenger) - requires specific logic.
+    match /activeRydz/{activeRydId} {
+      allow read: if request.auth.uid != null &&
+                     (resource.data.driverId == request.auth.uid ||
+                      resource.data.passengerManifest.hasAny([request.auth.uid]) || // This check needs careful implementation
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+
+      allow create: if request.auth.uid != null &&
+                       request.resource.data.driverId == request.auth.uid &&
+                       // Driver must be marked as canDrive in their profile
+                       get(/databases/$(database)/documents/users/$(request.resource.data.driverId)).data.canDrive == true &&
+                       // Event must exist and have a location if associatedEventId is present
+                       (request.resource.data.associatedEventId == null || 
+                        (get(/databases/$(database)/documents/events/$(request.resource.data.associatedEventId)).data.location != null &&
+                         get(/databases/$(database)/documents/events/$(request.resource.data.associatedEventId)).data.location != "")) &&
+                       // Vehicle capacity must be a string "1" through "8"
+                       request.resource.data.vehicleDetails.passengerCapacity in ["1", "2", "3", "4", "5", "6", "7", "8"] &&
+                       // finalDestinationAddress must be non-empty (from event or manually entered)
+                       request.resource.data.finalDestinationAddress is string && request.resource.data.finalDestinationAddress.size() > 0 &&
+                       // startLocationAddress must be non-empty (from form or profile)
+                       request.resource.data.startLocationAddress is string && request.resource.data.startLocationAddress.size() > 0 &&
+                       request.resource.data.status == 'planning' &&
+                       request.resource.data.passengerManifest.size() == 0 && // Must start with an empty manifest
+                       request.resource.data.createdAt == request.time;
+
+      allow update: if request.auth.uid != null &&
+                       (resource.data.driverId == request.auth.uid ||
+                        // Allow a passenger to update their own manifest item's status (e.g., to cancel)
+                        // This is a more complex rule if you allow passengers to directly modify parts of the manifest.
+                        // For now, keeping it simple: only driver or admin.
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      // Deletion by driver or admin.
+      allow delete: if request.auth.uid != null &&
+                       (resource.data.driverId == request.auth.uid ||
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     // EventDriverStates Collection
+    // - Event creators or group admins associated with the event can read statuses.
+    // - Drivers can update their own status for an event.
     match /eventDriverStates/{stateId} {
-      allow read: if isAuthenticated(); // Any authenticated user can see driver statuses for an event.
-      allow create: if isAuthenticated() && 
-                      request.resource.data.driverId == request.auth.uid && // User creating their own status
-                      request.resource.data.eventId is string && request.resource.data.eventId.size() > 0 &&
-                      request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
-                      // If 'driving' or 'full_car', seatsAvailable must be provided (or handled by client to be 0 for full_car)
-                      ((request.resource.data.status == 'driving' || request.resource.data.status == 'full_car') ? request.resource.data.seatsAvailable is number : true);
-
-      allow update: if isAuthenticated() && request.auth.uid == resource.data.driverId; // Only the driver can update their own status.
-                      // request.resource.data.driverId == resource.data.driverId && // driverId cannot change
-                      // request.resource.data.eventId == resource.data.eventId && // eventId cannot change
-                      // request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car'] &&
-                      // ((request.resource.data.status == 'driving' || request.resource.data.status == 'full_car') ? request.resource.data.seatsAvailable is number : true);
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.driverId; // Driver can remove their status.
+      // Allow read if user is the driver, or creator of the event, or admin
+      allow read: if request.auth.uid != null &&
+                     (resource.data.driverId == request.auth.uid ||
+                      get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.createdBy == request.auth.uid ||
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      
+      // Allow create/update if user is the driver in the document
+      allow write: if request.auth.uid != null &&
+                      request.resource.data.driverId == request.auth.uid &&
+                      request.resource.data.eventId != null &&
+                      (request.resource.data.status in ['driving', 'not_driving', 'pending_response', 'full_car']) &&
+                      (request.resource.data.status == 'driving' || request.resource.data.status == 'full_car' ? request.resource.data.seatsAvailable is number : true) &&
+                      (request.resource.data.seatsAvailable == null || request.resource.data.seatsAvailable >= 0);
     }
   }
 }
-
-    

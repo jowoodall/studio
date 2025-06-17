@@ -52,7 +52,16 @@ export async function createActiveRydForEventAction(
       const errCode = profileError.code || 'UNKNOWN_PROFILE_FETCH_CODE';
       const errMsg = profileError.message || 'No message';
       console.error(`[Action: createActiveRydForEventAction] ERROR FETCHING DRIVER PROFILE for UID ${userId}. Code: ${errCode}, Message: ${errMsg}`, JSON.stringify(profileError, Object.getOwnPropertyNames(profileError)));
-      return { success: false, error: `Failed to fetch driver profile (UID: ${userId}). Code: ${errCode}. Message: ${errMsg}. This might be a Firestore read permission issue for '/users/${userId}'.` };
+      
+      let detailedClientMessage = `Failed to fetch driver profile (UID: ${userId}). Code: ${errCode}. Message: ${errMsg}.`;
+      if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied')) {
+          detailedClientMessage += ` This strongly suggests an issue with the server's authentication context when trying to read '/users/${userId}'. Ensure the server action environment has proper Firebase authentication state.`;
+      } else {
+          detailedClientMessage += ` This might be a Firestore read permission issue for '/users/${userId}' or a network problem.`;
+      }
+      detailedClientMessage += ` | Raw Error (Server): ${JSON.stringify(profileError, Object.getOwnPropertyNames(profileError))}`;
+      console.error(`[Action: createActiveRydForEventAction] Constructed PROFILE FETCH error message for client: ${detailedClientMessage}`);
+      return { success: false, error: detailedClientMessage };
     }
 
     // Validate Driver Profile
@@ -98,7 +107,14 @@ export async function createActiveRydForEventAction(
       const errCode = eventFetchError.code || 'UNKNOWN_EVENT_FETCH_CODE';
       const errMsg = eventFetchError.message || 'No message';
       console.error(`[Action: createActiveRydForEventAction] ERROR FETCHING EVENT DATA for EventID ${eventId}. Code: ${errCode}, Message: ${errMsg}`, JSON.stringify(eventFetchError, Object.getOwnPropertyNames(eventFetchError)));
-      return { success: false, error: `Failed to fetch event data (ID: ${eventId}). Code: ${errCode}. Message: ${errMsg}. This might be a Firestore read permission issue for '/events/${eventId}'.` };
+      
+      let detailedClientMessage = `Failed to fetch event data (ID: ${eventId}). Code: ${errCode}. Message: ${errMsg}.`;
+      if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied')) {
+          detailedClientMessage += ` This indicates a Firestore read permission issue for '/events/${eventId}'. Ensure authenticated users can read events or check server auth context.`;
+      }
+      detailedClientMessage += ` | Raw Error (Server): ${JSON.stringify(eventFetchError, Object.getOwnPropertyNames(eventFetchError))}`;
+      console.error(`[Action: createActiveRydForEventAction] Constructed EVENT FETCH error message for client: ${detailedClientMessage}`);
+      return { success: false, error: detailedClientMessage };
     }
 
     // Validate Event Data
@@ -169,17 +185,17 @@ export async function createActiveRydForEventAction(
         console.error(`[Action: createActiveRydForEventAction] Full Firestore Error Object being caught by addDoc catch:`, JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError), 2));
         console.error(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n`);
         
-        let detailedClientMessage = `Firestore Add Operation Failed. Code: ${errCode}. Message: ${errMsg}.`;
+        let detailedClientMessage = `Firestore Add Operation Failed for 'activeRydz'. Code: ${errCode}. Message: ${errMsg}.`;
         if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
             detailedClientMessage += ` This indicates a Firestore security rule violation for 'activeRydz' creation. Please double-check these specific conditions in your Firestore rules and data against the payload being sent (see server logs if available):\n
 1. Driver Profile (UID: ${userId}): 'canDrive' must be true. (Current value from fetched profile: ${driverProfile?.canDrive}).\n
 2. Event Details (ID: ${eventId}): 'location' (becomes 'finalDestinationAddress') must be non-empty. (Current event location: '${eventData?.location}').\n
 3. Start Location: 'startLocationAddress' must be non-empty. (Resolved start location: '${finalStartLocationAddress}').\n
 4. Vehicle Capacity: Seats offered ('${seatsAvailable}') must translate to a string "1"-"8" in 'vehicleDetails.passengerCapacity'. (Current capacity in payload: '${String(seatsAvailable)}').\n
-5. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).\n
+5. Server Authentication: The server action may not have the correct Firebase authentication context to satisfy 'request.auth.uid' checks in rules.\n
+6. Payload Integrity: The data structure sent to Firestore must exactly match all rule conditions (field types, required fields, specific values like status='planning', empty passengerManifest).\n
 Review the server-side logs (if visible) for the exact payload being sent to Firestore just before this error. The payload was logged as 'FINAL ActiveRyd payload for Firestore'.`;
         }
-        // Include the raw error to help with debugging if logs aren't available.
         detailedClientMessage += ` | Raw Error (Server): ${JSON.stringify(firestoreError, Object.getOwnPropertyNames(firestoreError))}`;
         
         console.error(`[Action: createActiveRydForEventAction] Constructed INNER CATCH Firestore error message for client: ${detailedClientMessage}`);
@@ -208,7 +224,7 @@ Review the server-side logs (if visible) for the exact payload being sent to Fir
         errMsg.includes("Could not determine a valid start location address")) {
         generalErrorMessage = errMsg; // Use the more specific message already crafted
     } else if (errCode === 'permission-denied' || errMsg.toLowerCase().includes('permission denied') || errMsg.toLowerCase().includes('missing or insufficient permissions')) {
-        generalErrorMessage = `Submission failed (Outer Catch): Missing or insufficient permissions. This suggests an issue *before* the Firestore write attempt, or an unhandled Firestore error. UID: ${userId}. Key items to check:
+        generalErrorMessage = `Submission failed (Outer Catch): Missing or insufficient permissions. This suggests an issue *before* the Firestore write attempt, possibly with server authentication context or an unhandled Firestore error. UID: ${userId}. Key items to check:
 1. Driver Profile (UID: ${userId}): 'canDrive' must be true.
 2. Event (ID: ${eventId}): Must exist and have a non-empty 'location'.
 3. Start Location: Must resolve to a non-empty string.
