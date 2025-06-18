@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -8,8 +9,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag
-} from "lucide-react";
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag, UserCheck
+} from "lucide-react"; // Added UserCheck
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -21,9 +22,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus, PassengerManifestStatus } from "@/types"; 
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types"; 
+import { PassengerManifestStatus, UserRole } from "@/types"; // Imported PassengerManifestStatus and UserRole
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
+import { requestToJoinActiveRydAction } from "@/actions/activeRydActions"; // Import the action
 
 interface GroupMember {
   id: string;
@@ -55,7 +58,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const resolvedParams = use(paramsPromise); 
   const { eventId } = resolvedParams || {}; 
   const { toast } = useToast();
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth(); // Added authUserProfile
 
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
@@ -84,6 +87,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [isUpdatingDriverState, setIsUpdatingDriverState] = useState(false);
   const [editingSeatsForDriver, setEditingSeatsForDriver] = useState<string | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<number | undefined>(undefined);
+
+  const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({}); // For loading state of join buttons
 
 
   const fetchEventDetails = useCallback(async () => {
@@ -482,6 +487,37 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     "pending_response": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
   };
 
+  const handleRequestToJoin = async (activeRydId: string) => {
+    if (!authUser || !authUserProfile) {
+      toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
+      return;
+    }
+    if (authUserProfile.role !== UserRole.STUDENT) {
+      toast({ title: "Action Not Available", description: "Only students can directly request to join from here. Parents should use the 'Request Ryd' page.", variant: "destructive" });
+      return;
+    }
+
+    setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: true }));
+    try {
+      const result = await requestToJoinActiveRydAction({
+        activeRydId,
+        passengerUserId: authUser.uid,
+        requestedByUserId: authUser.uid,
+      });
+
+      if (result.success) {
+        toast({ title: "Request Sent!", description: result.message });
+        fetchActiveRydzForEvent(eventId); // Refresh the list
+      } else {
+        toast({ title: "Request Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: false }));
+    }
+  };
+
   if (authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingDriverStates) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
@@ -781,7 +817,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const vehicleModel = activeRyd.vehicleDetails?.model || "";
             const vehicleColor = activeRyd.vehicleDetails?.color || "";
             const vehicleLicense = activeRyd.vehicleDetails?.licensePlate || "";
-            const vehiclePassengerCapacity = activeRyd.vehicleDetails?.passengerCapacity || "N/A";
+            const vehiclePassengerCapacity = parseInt(activeRyd.vehicleDetails?.passengerCapacity || "0", 10);
             let vehicleDisplay = `${vehicleMake} ${vehicleModel}`.trim();
             if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
             if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
@@ -792,6 +828,26 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const actualDeparture = activeRyd.actualDepartureTime instanceof Timestamp ? activeRyd.actualDepartureTime.toDate() : null;
 
             const displayDepartureTime = actualDeparture || proposedDeparture;
+
+            // Join button logic
+            const isStudent = authUserProfile?.role === UserRole.STUDENT;
+            const currentActivePassengers = activeRyd.passengerManifest.filter(
+              p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && 
+                   p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+                   p.status !== PassengerManifestStatus.MISSED_PICKUP
+            ).length;
+            const isRydFull = currentActivePassengers >= vehiclePassengerCapacity;
+            const joinableStatuses = [ActiveRyd.ActiveRydStatus.PLANNING, ActiveRyd.ActiveRydStatus.AWAITING_PASSENGERS];
+            const isRydJoinableStatus = joinableStatuses.includes(activeRyd.status);
+            
+            const hasAlreadyRequested = authUser ? activeRyd.passengerManifest.some(
+              p => p.userId === authUser.uid && 
+                   p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+                   p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
+            ) : false;
+            
+            const canRequestToJoin = isStudent && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested;
+            const joinButtonLoading = isJoiningRyd[activeRyd.id];
 
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -827,13 +883,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   )}
                   <div className="flex items-center">
                     <Users className="mr-1.5 h-4 w-4" /> 
-                    Seats Offered: {vehiclePassengerCapacity}
+                    Seats Offered: {vehiclePassengerCapacity} ({vehiclePassengerCapacity - currentActivePassengers} available)
                   </div>
                 </div>
 
                 {activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0 && (
                     <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({activeRyd.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER).length} / {vehiclePassengerCapacity}):</h4>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({currentActivePassengers} / {vehiclePassengerCapacity}):</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
                             {activeRyd.passengerManifest.map(pItem => {
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
@@ -858,12 +914,38 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     </div>
                 )}
               </CardContent>
-              <CardFooter className="border-t pt-4">
+              <CardFooter className="border-t pt-4 flex flex-col gap-2">
                 <Button variant="default" className="w-full" asChild>
                   <Link href={`/rydz/tracking/${activeRyd.id}`}>
                     View Details / Manage
                   </Link>
                 </Button>
+                {canRequestToJoin && (
+                  <Button 
+                    variant="outline" 
+                    className="w-full text-green-600 border-green-500 hover:bg-green-500/10 hover:text-green-700"
+                    onClick={() => handleRequestToJoin(activeRyd.id)}
+                    disabled={joinButtonLoading}
+                  >
+                    {joinButtonLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCheck className="mr-2 h-4 w-4" />}
+                    Request to Join Ryd
+                  </Button>
+                )}
+                {isStudent && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && (
+                  <Button variant="outline" className="w-full" disabled>
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
+                  </Button>
+                )}
+                {isStudent && !canRequestToJoin && isRydJoinableStatus && isRydFull && (
+                    <Button variant="outline" className="w-full" disabled>
+                        <Info className="mr-2 h-4 w-4 text-orange-500"/> Ryd is Full
+                    </Button>
+                )}
+                 {isStudent && !canRequestToJoin && !isRydJoinableStatus && (
+                    <Button variant="outline" className="w-full" disabled>
+                        <Info className="mr-2 h-4 w-4 text-muted-foreground"/> Not Accepting Passengers
+                    </Button>
+                )}
               </CardFooter>
             </Card>
           )})}
@@ -1035,3 +1117,4 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     
 
     
+
