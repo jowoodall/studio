@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree // Added MapPinned, Palmtree (using Clock for times)
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus // Added ThumbsUp, UserPlus
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem } from "@/types"; 
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types"; 
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
@@ -43,6 +43,14 @@ interface DisplayActiveRyd extends ActiveRyd {
   eventName?: string;
 }
 
+interface DisplayRydRequestData extends RydData {
+  id: string; // Ensure RydData has id or add it here
+  requesterProfile?: UserProfileData;
+  passengerUserProfiles?: UserProfileData[];
+  eventName?: string;
+}
+
+
 export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const resolvedParams = use(paramsPromise); 
   const { eventId } = resolvedParams || {}; 
@@ -56,6 +64,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [activeRydzList, setActiveRydzList] = useState<DisplayActiveRyd[]>([]);
   const [isLoadingActiveRydz, setIsLoadingActiveRydz] = useState<boolean>(true);
   const [activeRydzError, setActiveRydzError] = useState<string | null>(null);
+
+  const [rydRequestsList, setRydRequestsList] = useState<DisplayRydRequestData[]>([]);
+  const [isLoadingRydRequests, setIsLoadingRydRequests] = useState<boolean>(true);
+  const [rydRequestsError, setRydRequestsError] = useState<string | null>(null);
 
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
@@ -197,7 +209,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             passengerProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[];
           }
           
-          return { ...activeRyd, driverProfile, passengerProfiles, eventName: eventDetails?.name };
+          return { ...activeRyd, id: docSnap.id, driverProfile, passengerProfiles, eventName: eventDetails?.name };
         };
         fetchedActiveRydzPromises.push(promise());
       });
@@ -221,6 +233,83 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
   }, [toast, eventDetails?.name]); 
 
+  const fetchRydRequestsForEvent = useCallback(async (currentEventId: string) => {
+    if (!currentEventId) {
+        setRydRequestsError("Event ID is missing for RydRequests fetch.");
+        setIsLoadingRydRequests(false);
+        setRydRequestsList([]);
+        return;
+    }
+    setIsLoadingRydRequests(true);
+    setRydRequestsError(null);
+    try {
+        const rydRequestsCollectionRef = collection(db, "rydz");
+        const q = query(
+            rydRequestsCollectionRef,
+            where("eventId", "==", currentEventId),
+            where("status", "in", ["requested", "searching_driver"]),
+            orderBy("createdAt", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        const fetchedRydRequestsPromises: Promise<DisplayRydRequestData | null>[] = [];
+
+        querySnapshot.forEach((docSnap) => {
+            const rydRequest = { id: docSnap.id, ...docSnap.data() } as RydData & {id: string}; // Ensure id is part of the type
+
+            const promise = async (): Promise<DisplayRydRequestData | null> => {
+                let requesterProfile: UserProfileData | undefined = undefined;
+                if (rydRequest.requestedBy) {
+                    try {
+                        const userDocRef = doc(db, "users", rydRequest.requestedBy);
+                        const userDocSnap = await getDoc(userDocRef);
+                        if (userDocSnap.exists()) {
+                            requesterProfile = userDocSnap.data() as UserProfileData;
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to fetch requester profile for ${rydRequest.requestedBy}`, e);
+                    }
+                }
+
+                let passengerUserProfiles: UserProfileData[] = [];
+                if (rydRequest.passengerIds && rydRequest.passengerIds.length > 0) {
+                    const profilesPromises = rydRequest.passengerIds.map(async (userId) => {
+                        try {
+                            const userDocRef = doc(db, "users", userId);
+                            const userDocSnap = await getDoc(userDocRef);
+                            return userDocSnap.exists() ? userDocSnap.data() as UserProfileData : null;
+                        } catch (e) {
+                            console.warn(`Failed to fetch passenger profile for ${userId}`, e);
+                            return null;
+                        }
+                    });
+                    passengerUserProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as UserProfileData[];
+                }
+                
+                return { ...rydRequest, requesterProfile, passengerUserProfiles, eventName: eventDetails?.name };
+            };
+            fetchedRydRequestsPromises.push(promise());
+        });
+        
+        const resolvedRydRequests = (await Promise.all(fetchedRydRequestsPromises)).filter(Boolean) as DisplayRydRequestData[];
+        setRydRequestsList(resolvedRydRequests);
+
+    } catch (e: any) {
+        console.error("Error fetching ryd requests:", e);
+        let detailedError = "Failed to load ryd requests for this event.";
+        if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
+            detailedError = "A Firestore index is required to load ryd requests. Please check the browser's console for a link to create it.";
+        } else if (e.code === 'permission-denied') {
+            detailedError = "Permission denied when fetching ryd requests. Check Firestore security rules.";
+        }
+        setRydRequestsError(detailedError);
+        setRydRequestsList([]);
+        toast({ title: "Error Loading Ryd Requests", description: detailedError, variant: "destructive", duration: 10000 });
+    } finally {
+        setIsLoadingRydRequests(false);
+    }
+  }, [toast, eventDetails?.name]);
+
+
   useEffect(() => {
     fetchEventDetails();
     fetchAllGroups();
@@ -230,11 +319,14 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   useEffect(() => {
     if (eventId && eventDetails) { 
       fetchActiveRydzForEvent(eventId);
+      fetchRydRequestsForEvent(eventId); // Fetch ryd requests as well
     } else if (eventId && !eventDetails && !isLoadingEvent && eventError) {
       setIsLoadingActiveRydz(false);
       setActiveRydzList([]);
+      setIsLoadingRydRequests(false);
+      setRydRequestsList([]);
     }
-  }, [eventId, eventDetails, isLoadingEvent, eventError, fetchActiveRydzForEvent]);
+  }, [eventId, eventDetails, isLoadingEvent, eventError, fetchActiveRydzForEvent, fetchRydRequestsForEvent]);
 
 
   useEffect(() => {
@@ -803,6 +895,124 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           </CardContent>
         </Card>
       )}
+
+      {/* Ryd Requests List Section */}
+      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Requested Rydz for this Event</h3>
+      {isLoadingRydRequests && (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="ml-3 text-muted-foreground">Loading ryd requests...</p>
+        </div>
+      )}
+
+      {rydRequestsError && (
+        <Card className="text-center py-10 shadow-md bg-destructive/10 border-destructive">
+          <CardHeader>
+            <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
+            <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Ryd Requests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
+              {rydRequestsError}
+            </CardDescription>
+            <Button onClick={() => eventId && fetchRydRequestsForEvent(eventId)} variant="secondary">Try Again</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoadingRydRequests && !rydRequestsError && rydRequestsList.length > 0 && (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {rydRequestsList.map((request) => {
+            const requesterName = request.requesterProfile?.fullName || "Unknown User";
+            const requesterAvatar = request.requesterProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${requesterName.split(" ").map(n=>n[0]).join("")}`;
+            const requesterDataAiHint = request.requesterProfile?.dataAiHint || "user photo";
+            const rydDateTime = request.rydTimestamp instanceof Timestamp ? request.rydTimestamp.toDate() : null;
+            const earliestPickup = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+
+            return (
+            <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
+              <CardHeader>
+                 <div className="flex items-center gap-3 mb-2">
+                    <Avatar className="h-12 w-12">
+                        <AvatarImage src={requesterAvatar} alt={requesterName} data-ai-hint={requesterDataAiHint}/>
+                        <AvatarFallback>{requesterName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                        <Link href={`/profile/view/${request.requestedBy}`} className="font-semibold hover:underline">{requesterName}</Link>
+                        <p className="text-xs text-muted-foreground">Requested a Ryd</p>
+                    </div>
+                </div>
+                <Badge variant="outline" className="w-fit capitalize">{request.status.replace(/_/g, ' ')}</Badge>
+              </CardHeader>
+              <CardContent className="flex-grow pt-2 space-y-1.5">
+                <div className="text-sm text-muted-foreground space-y-1">
+                  {rydDateTime && (
+                    <div className="flex items-center">
+                      <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                      Needed by: {format(rydDateTime, "MMM d, p")}
+                    </div>
+                  )}
+                   {earliestPickup && (
+                    <div className="flex items-center">
+                      <Clock className="mr-1.5 h-4 w-4" /> 
+                      Earliest Pickup: {format(earliestPickup, "p")}
+                    </div>
+                  )}
+                  {request.pickupLocation && (
+                    <div className="flex items-center"><MapPinIcon className="mr-1.5 h-4 w-4" /> From: {request.pickupLocation}</div>
+                  )}
+                  {request.destination && (
+                    <div className="flex items-center"><Flag className="mr-1.5 h-4 w-4" /> To: {request.eventName || request.destination}</div>
+                  )}
+                </div>
+                
+                {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
+                    <div className="mt-3">
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers:</h4>
+                        <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
+                            {request.passengerUserProfiles.map(p => (
+                                <li key={p.uid}>
+                                    {p.fullName || `User ${p.uid.substring(0,6)}...`}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                {request.notes && (
+                    <div className="mt-3">
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Notes:</h4>
+                        <p className="text-xs bg-muted/30 p-2 rounded-md whitespace-pre-wrap">{request.notes}</p>
+                    </div>
+                )}
+              </CardContent>
+              <CardFooter className="border-t pt-4">
+                <Button variant="outline" className="w-full" disabled> {/* Action TBD */}
+                  <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill (Future)
+                </Button>
+              </CardFooter>
+            </Card>
+          )})}
+        </div>
+      )}
+      {!isLoadingRydRequests && !rydRequestsError && rydRequestsList.length === 0 && (
+        <Card className="text-center py-12 shadow-md">
+          <CardHeader>
+            <UserPlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <CardTitle className="font-headline text-2xl">No Ryd Requests Yet</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription className="mb-6">
+              There are currently no ryd requests for {eventDetails.name}.
+            </CardDescription>
+            <Button asChild>
+               <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
+                <PlusCircle className="mr-2 h-4 w-4" /> Be the First to Request
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
@@ -816,5 +1026,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
 
     
+
 
 
