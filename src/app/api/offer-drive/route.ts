@@ -2,7 +2,7 @@
 // src/app/api/offer-drive/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
 import * as z from 'zod';
-import { offerDriveFormSchema } from '@/schemas/activeRydSchemas'; // Updated import
+import { offerDriveFormSchema } from '@/schemas/activeRydSchemas'; 
 import admin from '@/lib/firebaseAdmin'; 
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import type { UserProfileData, EventData, ActiveRyd, ActiveRydStatus } from '@/types';
@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('[API Route: /api/offer-drive] Received request body:', JSON.stringify(body, null, 2));
 
-    // Use the updated schema for validation
     const validationResult = offerDriveFormSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -70,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     let eventDetails: EventData;
     let eventNameForMessage: string;
-    let eventDateForDeparture: Date;
+    let eventDateForTimestamps: Date;
     try {
       const eventDocRef = db.collection('events').doc(validatedData.eventId);
       const eventDocSnap = await eventDocRef.get();
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
       }
       eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
       eventNameForMessage = eventDetails.name;
-      eventDateForDeparture = eventDetails.eventTimestamp.toDate(); // For combining with proposedDepartureTime
+      eventDateForTimestamps = eventDetails.eventTimestamp.toDate(); 
       console.log(`[API Route: /api/offer-drive] Successfully fetched event details: "${eventNameForMessage}" (ID: ${validatedData.eventId})`);
     } catch (error: any) {
       console.error(`[API Route: /api/offer-drive] Error fetching event details for eventId ${validatedData.eventId}:`, error);
@@ -89,13 +88,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API Route: /api/offer-drive] Attempting to create activeRydz document for eventId: ${validatedData.eventId}, driverId: ${verifiedUserId}`);
     
-    // Combine event date with proposed departure time
-    const [hours, minutes] = validatedData.proposedDepartureTime.split(':').map(Number);
-    const proposedDepartureDateTime = new Date(eventDateForDeparture);
-    proposedDepartureDateTime.setHours(hours, minutes, 0, 0);
+    const [departureHours, departureMinutes] = validatedData.proposedDepartureTime.split(':').map(Number);
+    const proposedDepartureDateTime = new Date(eventDateForTimestamps);
+    proposedDepartureDateTime.setHours(departureHours, departureMinutes, 0, 0);
     const proposedDepartureFirestoreTimestamp = Timestamp.fromDate(proposedDepartureDateTime);
 
-    // Split vehicleMakeModel
+    const [arrivalHours, arrivalMinutes] = validatedData.plannedArrivalTime.split(':').map(Number);
+    const plannedArrivalDateTime = new Date(eventDateForTimestamps);
+    plannedArrivalDateTime.setHours(arrivalHours, arrivalMinutes, 0, 0);
+    const plannedArrivalFirestoreTimestamp = Timestamp.fromDate(plannedArrivalDateTime);
+
     const vehicleParts = validatedData.vehicleMakeModel.split(' ');
     const make = vehicleParts[0] || "";
     const model = vehicleParts.slice(1).join(' ') || "";
@@ -115,7 +117,8 @@ export async function POST(request: NextRequest) {
           licensePlate: validatedData.licensePlate || "",
       },
       proposedDepartureTime: proposedDepartureFirestoreTimestamp,
-      startLocationAddress: validatedData.driverStartLocation || userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD",
+      plannedArrivalTime: plannedArrivalFirestoreTimestamp, // New field
+      startLocationAddress: validatedData.driverStartLocation || (userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD"),
       finalDestinationAddress: eventDetails.location, 
     };
 

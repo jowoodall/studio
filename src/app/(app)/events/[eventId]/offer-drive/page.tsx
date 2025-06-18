@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield } from "lucide-react"; // Added Clock, Palette, Shield for new fields
+import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2 } from "lucide-react"; // Added CalendarCheck2
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -20,13 +20,13 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 
-import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas'; // Updated import
+import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas';
 
 interface ResolvedPageParams {
   eventId: string;
 }
 
-export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) { // Renamed to OfferDrivePage
+export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const params = use(paramsPromise);
   const { eventId } = params || {};
 
@@ -38,17 +38,18 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const [eventError, setEventError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const form = useForm<OfferDriveFormValues>({ // Updated type
+  const form = useForm<OfferDriveFormValues>({
     resolver: zodResolver(offerDriveFormSchema),
     defaultValues: {
       eventId: eventId || "",
       seatsAvailable: 2,
       notes: "",
-      proposedDepartureTime: "17:00", // Default departure time
-      vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "", // Pre-fill from profile if available
+      proposedDepartureTime: "17:00", 
+      plannedArrivalTime: "17:30", // Default planned arrival time
+      vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "", 
       vehicleColor: "",
       licensePlate: "",
-      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "", // Pre-fill from profile address
+      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "", 
     },
   });
 
@@ -59,7 +60,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   }, [eventId, form]);
   
   useEffect(() => {
-    // Pre-fill vehicle and start location from userProfile once it's loaded
     if (userProfile) {
       if (!form.getValues("vehicleMakeModel") && userProfile.driverDetails?.primaryVehicle) {
         form.setValue("vehicleMakeModel", userProfile.driverDetails.primaryVehicle);
@@ -84,7 +84,15 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         const eventDocRef = doc(db, "events", eventId);
         const eventDocSnap = await getDoc(eventDocRef);
         if (eventDocSnap.exists()) {
-          setEventDetails({ id: eventDocSnap.id, ...eventDocSnap.data() } as EventData);
+          const fetchedEvent = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
+          setEventDetails(fetchedEvent);
+          if (fetchedEvent.eventTimestamp) {
+            const eventDateObj = fetchedEvent.eventTimestamp.toDate();
+            // Set default planned arrival time based on event time, if not already set by user
+            if (!form.getValues("plannedArrivalTime") || form.getValues("plannedArrivalTime") === "17:30") { // Check if it's still the initial default
+                 form.setValue("plannedArrivalTime", format(eventDateObj, "HH:mm"));
+            }
+          }
         } else {
           setEventError('Event with ID "' + eventId + '" not found.');
           setEventDetails(null); 
@@ -98,9 +106,9 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       }
     };
     fetchEventDetails();
-  }, [eventId]);
+  }, [eventId, form]); // Added form to dependency array for setValue
 
-  async function onSubmit(data: OfferDriveFormValues) { // Updated type
+  async function onSubmit(data: OfferDriveFormValues) {
     console.log("[OfferDrivePage] onSubmit triggered for API route. Client form data:", data);
 
     if (!authUser || !userProfile) { 
@@ -124,7 +132,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       return;
     }
 
-    // Payload now includes all form fields
     const payload = { ...data }; 
     
     console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
@@ -152,6 +159,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
             seatsAvailable: 2, 
             notes: "",
             proposedDepartureTime: "17:00",
+            plannedArrivalTime: eventDetails?.eventTimestamp ? format(eventDetails.eventTimestamp.toDate(), "HH:mm") : "17:30",
             vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
             vehicleColor: "",
             licensePlate: "",
@@ -285,20 +293,36 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                 )}
               />
               
-              <FormField
-                  control={form.control}
-                  name="proposedDepartureTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center"><Clock className="mr-2 h-4 w-4 text-muted-foreground"/>Proposed Departure Time (from your start location)</FormLabel>
-                      <FormControl>
-                        <Input type="time" {...field} />
-                      </FormControl>
-                      <FormDescription>What time do you plan to leave for the event?</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                    control={form.control}
+                    name="proposedDepartureTime"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="flex items-center"><Clock className="mr-2 h-4 w-4 text-muted-foreground"/>Proposed Departure Time</FormLabel>
+                        <FormControl>
+                            <Input type="time" {...field} />
+                        </FormControl>
+                        <FormDescription>When you plan to leave your start location.</FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                 <FormField
+                    control={form.control}
+                    name="plannedArrivalTime"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="flex items-center"><CalendarCheck2 className="mr-2 h-4 w-4 text-muted-foreground"/>Planned Arrival Time</FormLabel>
+                        <FormControl>
+                            <Input type="time" {...field} />
+                        </FormControl>
+                        <FormDescription>When you aim to arrive at the event.</FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+              </div>
 
               <FormField
                   control={form.control}
@@ -358,7 +382,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     )}
                 />
               </div>
-
 
               <FormField
                 control={form.control}

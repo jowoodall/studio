@@ -44,10 +44,8 @@ export interface UserProfileData {
   driverDetails?: {
     ageRange?: string;
     drivingExperience?: string;
-    primaryVehicle?: string; // This could store make & model together
+    primaryVehicle?: string; 
     passengerCapacity?: string;
-    // Vehicle color & license plate could also go here if primarily tied to driver,
-    // but putting them on ActiveRyd makes sense if a driver uses different cars.
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
@@ -68,25 +66,25 @@ export interface GroupData {
 }
 
 export interface EventData {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
-  eventTimestamp: Timestamp; // Combined date and time
+  eventTimestamp: Timestamp; 
   location: string;
   description?: string;
-  eventType: string; // e.g., 'school', 'sports'
-  createdBy: string; // User UID of the event creator
-  createdAt: Timestamp; // Firestore server timestamp
-  associatedGroupIds: string[]; // Array of Group UIDs
+  eventType: string; 
+  createdBy: string; 
+  createdAt: Timestamp; 
+  associatedGroupIds: string[]; 
 }
 
 export type EventDriverStatus = "driving" | "not_driving" | "pending_response" | "full_car";
 
 export interface EventDriverStateData {
-  id: string; // Composite key: `${eventId}_${driverId}`
+  id: string; 
   eventId: string;
   driverId: string;
   status: EventDriverStatus;
-  seatsAvailable?: number; // Relevant if status is 'driving'
+  seatsAvailable?: number; 
   updatedAt: Timestamp;
 }
 
@@ -103,38 +101,36 @@ export type RydStatus =
   | 'no_driver_found';
 
 export interface RydData {
-  // id will be the Firestore document ID, not stored in the document itself
-  requestedBy: string; // UID of the user who requested the ryd
-  eventId?: string; // ID of the associated event, if any
-  eventName?: string; // Custom event name if not linked to an existing event
+  requestedBy: string; 
+  eventId?: string; 
+  eventName?: string; 
   
-  destination: string; // Full address of the destination
-  pickupLocation: string; // Full address of the pickup location
+  destination: string; 
+  pickupLocation: string; 
 
-  rydTimestamp: Timestamp; // Requested date and time for the ryd (EVENT START TIME)
-  earliestPickupTimestamp: Timestamp; // Earliest time the user wishes to be picked up
+  rydTimestamp: Timestamp; 
+  earliestPickupTimestamp: Timestamp; 
   
-  status: RydStatus; // Current status of the ryd
+  status: RydStatus; 
   
-  driverId?: string; // UID of the assigned driver
-  passengerIds: string[]; // UIDs of passengers, requester is usually the first
+  driverId?: string; 
+  passengerIds: string[]; 
   
-  notes?: string; // Additional notes from the requester
+  notes?: string; 
   
-  createdAt: Timestamp; // When the ryd request was created
-  updatedAt?: Timestamp; // When the ryd was last updated
-  assignedActiveRydId?: string; // ID of the ActiveRyd this request is part of
+  createdAt: Timestamp; 
+  updatedAt?: Timestamp; 
+  assignedActiveRydId?: string; 
 }
 
-// New types for ActiveRyd
 export enum ActiveRydStatus {
-  PLANNING = 'planning', // Driver is setting up the ryd, adding stops
-  AWAITING_PASSENGERS = 'awaiting_passengers', // Ryd is set, driver waiting for pickup time or passenger confirmations
-  IN_PROGRESS_PICKUP = 'in_progress_pickup', // Driver is actively picking up passengers
-  IN_PROGRESS_ROUTE = 'in_progress_route', // All passengers picked up, en route to final destinations/event
-  COMPLETED = 'completed', // All passengers dropped off, ryd finished
+  PLANNING = 'planning', 
+  AWAITING_PASSENGERS = 'awaiting_passengers', 
+  IN_PROGRESS_PICKUP = 'in_progress_pickup', 
+  IN_PROGRESS_ROUTE = 'in_progress_route', 
+  COMPLETED = 'completed', 
   CANCELLED_BY_DRIVER = 'cancelled_by_driver',
-  CANCELLED_BY_SYSTEM = 'cancelled_by_system', // e.g. no passengers, critical issue
+  CANCELLED_BY_SYSTEM = 'cancelled_by_system', 
 }
 
 export enum PassengerManifestStatus {
@@ -146,39 +142,40 @@ export enum PassengerManifestStatus {
 }
 
 export interface PassengerManifestItem {
-  userId: string; // The passenger's UID
-  originalRydRequestId: string; // The ID of the RydData (request) this manifest item fulfills
-  pickupAddress: string; // Specific pickup address for this passenger for this ryd
-  destinationAddress: string; // Specific destination for this passenger for this ryd
-  status: PassengerManifestStatus; // Current status of this passenger in the manifest
-  pickupOrder?: number; // Optional: for route optimization by the driver
-  dropoffOrder?: number; // Optional: for route optimization by the driver
-  estimatedPickupTime?: Timestamp; // Optional: specific ETA for this passenger's pickup
-  actualPickupTime?: Timestamp; // Optional: when the passenger was actually picked up
-  estimatedDropoffTime?: Timestamp; // Optional: specific ETA for this passenger's dropoff
-  actualDropoffTime?: Timestamp; // Optional: when the passenger was actually dropped off
-  notes?: string; // Optional: any specific notes for this passenger on this ryd (e.g., from driver)
+  userId: string; 
+  originalRydRequestId: string; 
+  pickupAddress: string; 
+  destinationAddress: string; 
+  status: PassengerManifestStatus; 
+  pickupOrder?: number; 
+  dropoffOrder?: number; 
+  estimatedPickupTime?: Timestamp; 
+  actualPickupTime?: Timestamp; 
+  estimatedDropoffTime?: Timestamp; 
+  actualDropoffTime?: Timestamp; 
+  notes?: string; 
 }
 
 export interface ActiveRyd {
-  id: string; // Firestore document ID
-  driverId: string; // UID of the assigned driver
+  id: string; 
+  driverId: string; 
   vehicleDetails?: { 
     make?: string;
     model?: string;
-    color?: string; // New
-    licensePlate?: string; // New
+    color?: string; 
+    licensePlate?: string; 
     passengerCapacity?: string; 
   };
   status: ActiveRydStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  proposedDepartureTime?: Timestamp; // Changed from actualDepartureTime to reflect it's a proposal from the driver
+  proposedDepartureTime?: Timestamp; 
+  plannedArrivalTime?: Timestamp; // New field
   estimatedCompletionTime?: Timestamp;
-  startLocationAddress?: string; // Driver's declared starting point/area for this specific ryd
-  finalDestinationAddress?: string; // Main event location or final drop-off for the entire ryd
-  routePolyline?: string; // Optional: Encoded polyline for map display
+  startLocationAddress?: string; 
+  finalDestinationAddress?: string; 
+  routePolyline?: string; 
   passengerManifest: PassengerManifestItem[];
-  associatedEventId?: string; // Optional: Link to an EventData document
-  notes?: string; // General notes for this ActiveRyd (e.g., by driver or system)
+  associatedEventId?: string; 
+  notes?: string; 
 }
