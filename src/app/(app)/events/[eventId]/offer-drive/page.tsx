@@ -225,7 +225,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     <>
       <PageHeader
         title={`Offer to Drive: ${eventDetails.name}`}
-        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Specify your ryd details.`}
+        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP 'at' p")}. Specify your ryd details.`}
         actions={
             <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/rydz`}>
@@ -379,9 +379,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                 )}
               />
               
-              <div className="p-3 bg-muted/50 rounded-md text-sm">
+              <div className="p-3 bg-muted/50 rounded-md text-sm space-y-1">
                 <p><span className="font-semibold">Event:</span> {eventDetails.name}</p>
                 <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
+                <p><span className="font-semibold">Time:</span> {format(eventDate, "p")}</p>
                 <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
               </div>
 
