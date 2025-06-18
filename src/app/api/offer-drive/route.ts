@@ -2,10 +2,11 @@
 // src/app/api/offer-drive/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
 import * as z from 'zod';
-import { offerDriveFormSchema } from '@/schemas/activeRydSchemas'; 
-import admin from '@/lib/firebaseAdmin'; 
+import { offerDriveFormSchema } from '@/schemas/activeRydSchemas';
+import admin from '@/lib/firebaseAdmin';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
-import type { UserProfileData, EventData, ActiveRyd, ActiveRydStatus } from '@/types';
+import type { UserProfileData, EventData, ActiveRyd } from '@/types';
+import { ActiveRydStatus } from '@/types'; // Import ActiveRydStatus
 
 export async function POST(request: NextRequest) {
   console.log('[API Route: /api/offer-drive] POST request received.');
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, message: 'User profile not found. Cannot verify driver status.' }, { status: 404 });
       }
       userProfile = userDocSnap.data() as UserProfileData;
-      console.log(`[API Route: /api/offer-drive] Successfully fetched user profile for UID: ${verifiedUserId}. Full Name: ${userProfile.fullName}, Can Drive: ${userProfile.canDrive}`);
+      console.log(`[API Route: /api/offer-drive] Successfully fetched user profile for UID: ${verifiedUserId}. Can Drive: ${userProfile.canDrive}`);
 
       if (!userProfile.canDrive) {
         console.warn(`[API Route: /api/offer-drive] User ${verifiedUserId} (${userProfile.fullName}) is not permitted to drive (server-verified).`);
@@ -79,15 +80,48 @@ export async function POST(request: NextRequest) {
       }
       eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
       eventNameForMessage = eventDetails.name;
-      eventDateForTimestamps = eventDetails.eventTimestamp.toDate(); 
+      eventDateForTimestamps = eventDetails.eventTimestamp.toDate();
       console.log(`[API Route: /api/offer-drive] Successfully fetched event details: "${eventNameForMessage}" (ID: ${validatedData.eventId})`);
     } catch (error: any) {
       console.error(`[API Route: /api/offer-drive] Error fetching event details for eventId ${validatedData.eventId}:`, error);
       return NextResponse.json({ success: false, message: `Error fetching event details: ${error.message}`, errorDetails: error.code }, { status: 500 });
     }
 
+    // Check for existing active ryd offers by this driver for this event
+    try {
+      console.log(`[API Route: /api/offer-drive] Checking for existing ryd offers by driver ${verifiedUserId} for event ${validatedData.eventId}`);
+      const activeRydzCollectionRef = db.collection("activeRydz");
+      const existingRydQuery = activeRydzCollectionRef
+        .where("driverId", "==", verifiedUserId)
+        .where("associatedEventId", "==", validatedData.eventId);
+
+      const querySnapshot = await existingRydQuery.get();
+      let hasActiveOffer = false;
+      if (!querySnapshot.empty) {
+        querySnapshot.forEach(doc => {
+          const existingRyd = doc.data() as ActiveRyd;
+          // Consider an offer active if it's not cancelled
+          if (existingRyd.status !== ActiveRydStatus.CANCELLED_BY_DRIVER && existingRyd.status !== ActiveRydStatus.CANCELLED_BY_SYSTEM) {
+            hasActiveOffer = true;
+          }
+        });
+      }
+
+      if (hasActiveOffer) {
+        const message = `You already have an active ryd offer for the event: "${eventNameForMessage}". You can manage or cancel it from your rydz list.`;
+        console.warn(`[API Route: /api/offer-drive] Driver ${verifiedUserId} already has an active offer for event ${validatedData.eventId}. Blocking new offer.`);
+        return NextResponse.json({ success: false, message: message }, { status: 409 }); // 409 Conflict
+      }
+      console.log(`[API Route: /api/offer-drive] No existing active ryd offers found for driver ${verifiedUserId} for event ${validatedData.eventId}. Proceeding to create new offer.`);
+
+    } catch (error: any) {
+        console.error(`[API Route: /api/offer-drive] Error checking for existing ryd offers:`, error);
+        return NextResponse.json({ success: false, message: `Error verifying existing offers: ${error.message}` }, { status: 500 });
+    }
+
+
     console.log(`[API Route: /api/offer-drive] Attempting to create activeRydz document for eventId: ${validatedData.eventId}, driverId: ${verifiedUserId}`);
-    
+
     const [departureHours, departureMinutes] = validatedData.proposedDepartureTime.split(':').map(Number);
     const proposedDepartureDateTime = new Date(eventDateForTimestamps);
     proposedDepartureDateTime.setHours(departureHours, departureMinutes, 0, 0);
@@ -104,7 +138,7 @@ export async function POST(request: NextRequest) {
 
     const activeRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
       driverId: verifiedUserId,
-      status: 'planning' as ActiveRydStatus.PLANNING,
+      status: ActiveRydStatus.PLANNING,
       createdAt: FieldValue.serverTimestamp() as Timestamp,
       passengerManifest: [],
       associatedEventId: validatedData.eventId,
@@ -117,16 +151,16 @@ export async function POST(request: NextRequest) {
           licensePlate: validatedData.licensePlate || "",
       },
       proposedDepartureTime: proposedDepartureFirestoreTimestamp,
-      plannedArrivalTime: plannedArrivalFirestoreTimestamp, // New field
+      plannedArrivalTime: plannedArrivalFirestoreTimestamp,
       startLocationAddress: validatedData.driverStartLocation || (userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD"),
-      finalDestinationAddress: eventDetails.location, 
+      finalDestinationAddress: eventDetails.location,
     };
 
     try {
       const activeRydzCollectionRef = db.collection("activeRydz");
       const docRef = await activeRydzCollectionRef.add(activeRydObject);
       console.log(`[API Route: /api/offer-drive] Successfully created activeRydz document with ID: ${docRef.id}`);
-      
+
       const successMessage = `Successfully offered to drive for "${eventNameForMessage}"! Your Ryd offer ID is ${docRef.id}.`;
       console.log(`[API Route: /api/offer-drive] ${successMessage}`);
 
@@ -159,3 +193,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
+
+    
