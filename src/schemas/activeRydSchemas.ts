@@ -10,7 +10,8 @@ export const offerDriveFormSchema = z.object({
   vehicleMakeModel: z.string().min(3, "Vehicle make and model must be at least 3 characters.").max(50, "Vehicle make and model cannot exceed 50 characters."),
   vehicleColor: z.string().max(30, "Vehicle color cannot exceed 30 characters.").optional(),
   licensePlate: z.string().max(15, "License plate cannot exceed 15 characters.").optional(),
-  driverStartLocation: z.string().min(5, "Starting location must be at least 5 characters.").max(150, "Starting location cannot exceed 150 characters."),
+  driverStartLocation: z.string().min(3, "Starting location must be at least 3 characters.").max(150, "Starting location cannot exceed 150 characters."),
 });
 
 export type OfferDriveFormValues = z.infer<typeof offerDriveFormSchema>;
+
