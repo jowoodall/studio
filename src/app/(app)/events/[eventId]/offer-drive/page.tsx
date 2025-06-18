@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2 } from "lucide-react"; // Added CalendarCheck2
+import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -45,7 +45,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       seatsAvailable: 2,
       notes: "",
       proposedDepartureTime: "17:00", 
-      plannedArrivalTime: "17:30", // Default planned arrival time
+      plannedArrivalTime: "17:30", 
       vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "", 
       vehicleColor: "",
       licensePlate: "",
@@ -68,7 +68,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
          form.setValue("driverStartLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
       }
     }
-  }, [userProfile, form, eventId]);
+  }, [userProfile, form]);
 
 
   useEffect(() => {
@@ -87,10 +87,32 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           const fetchedEvent = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
           setEventDetails(fetchedEvent);
           if (fetchedEvent.eventTimestamp) {
-            const eventDateObj = fetchedEvent.eventTimestamp.toDate();
-            // Set default planned arrival time based on event time, if not already set by user
-            if (!form.getValues("plannedArrivalTime") || form.getValues("plannedArrivalTime") === "17:30") { // Check if it's still the initial default
-                 form.setValue("plannedArrivalTime", format(eventDateObj, "HH:mm"));
+            const eventDateObj = fetchedEvent.eventTimestamp.toDate(); // This is the actual event date and time
+            const currentPlannedArrivalTime = form.getValues("plannedArrivalTime");
+            const currentProposedDepartureTime = form.getValues("proposedDepartureTime");
+
+            // Handle Planned Arrival Time
+            if (!currentPlannedArrivalTime || currentPlannedArrivalTime === "17:30") { // If it's the initial default
+              const eventStartTimeStr = format(eventDateObj, "HH:mm");
+              form.setValue("plannedArrivalTime", eventStartTimeStr);
+              // Now, also set proposed departure based on this new planned arrival time
+              const departureDateObj = new Date(eventDateObj.getTime());
+              departureDateObj.setHours(departureDateObj.getHours() - 1);
+              form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
+            } else {
+              // Planned arrival time was already set (e.g., by user or previous load).
+              // Let's still check if proposed departure is default and set it based on current planned arrival.
+              if (!currentProposedDepartureTime || currentProposedDepartureTime === "17:00") {
+                  const [arrHours, arrMinutes] = currentPlannedArrivalTime.split(':').map(Number);
+                  if (!isNaN(arrHours) && !isNaN(arrMinutes)) {
+                      const arrivalDateTimeForCalc = new Date(eventDateObj); // Use event's date part for consistency
+                      arrivalDateTimeForCalc.setHours(arrHours, arrMinutes, 0, 0);
+                      
+                      const departureDateObj = new Date(arrivalDateTimeForCalc.getTime());
+                      departureDateObj.setHours(departureDateObj.getHours() - 1);
+                      form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
+                  }
+              }
             }
           }
         } else {
@@ -105,8 +127,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         setIsLoadingEvent(false);
       }
     };
-    fetchEventDetails();
-  }, [eventId, form]); // Added form to dependency array for setValue
+    if (eventId) {
+        fetchEventDetails();
+    }
+  }, [eventId, form]);
 
   async function onSubmit(data: OfferDriveFormValues) {
     console.log("[OfferDrivePage] onSubmit triggered for API route. Client form data:", data);
@@ -154,12 +178,26 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           title: "Offer Submitted (API)",
           description: result.message,
         });
+        
+        // Reset form with intelligent defaults for times
+        let resetPlannedArrivalTime = "17:30";
+        let resetProposedDepartureTime = "17:00";
+        
+        if (eventDetails?.eventTimestamp) {
+            const eventDateForReset = eventDetails.eventTimestamp.toDate();
+            resetPlannedArrivalTime = format(eventDateForReset, "HH:mm");
+            
+            const departureDateForReset = new Date(eventDateForReset.getTime());
+            departureDateForReset.setHours(departureDateForReset.getHours() - 1);
+            resetProposedDepartureTime = format(departureDateForReset, "HH:mm");
+        }
+
         form.reset({ 
             eventId: eventId || "", 
             seatsAvailable: 2, 
             notes: "",
-            proposedDepartureTime: "17:00",
-            plannedArrivalTime: eventDetails?.eventTimestamp ? format(eventDetails.eventTimestamp.toDate(), "HH:mm") : "17:30",
+            proposedDepartureTime: resetProposedDepartureTime,
+            plannedArrivalTime: resetPlannedArrivalTime,
             vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
             vehicleColor: "",
             licensePlate: "",
@@ -423,3 +461,4 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     </>
   );
 }
+
