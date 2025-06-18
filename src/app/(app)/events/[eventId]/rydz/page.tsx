@@ -506,7 +506,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
       if (result.success) {
         toast({ title: "Request Sent!", description: result.message });
-        fetchActiveRydzForEvent(eventId); // Refresh the list
+        if(eventId) fetchActiveRydzForEvent(eventId); // Refresh the list
       } else {
         toast({ title: "Request Failed", description: result.message, variant: "destructive" });
       }
@@ -828,13 +828,19 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             const displayDepartureTime = actualDeparture || proposedDeparture;
 
-            // Join button logic
-            const isStudent = authUserProfile?.role === UserRole.STUDENT;
             const currentActivePassengers = activeRyd.passengerManifest.filter(
               p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
                    p.status !== PassengerManifestStatus.MISSED_PICKUP
             ).length;
+            
+            const displayedPassengers = activeRyd.passengerManifest.filter(item =>
+              item.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+              item.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+              item.status !== PassengerManifestStatus.MISSED_PICKUP
+            );
+
+            const isStudent = authUserProfile?.role === UserRole.STUDENT;
             const isRydFull = currentActivePassengers >= vehiclePassengerCapacity;
             const joinableStatuses = [ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS];
             const isRydJoinableStatus = joinableStatuses.includes(activeRyd.status);
@@ -886,11 +892,11 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </div>
                 </div>
 
-                {activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0 && (
+                {displayedPassengers.length > 0 && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({currentActivePassengers} / {vehiclePassengerCapacity}):</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
-                            {activeRyd.passengerManifest.map(pItem => {
+                            {displayedPassengers.map(pItem => {
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
                                 return (
                                 <li key={pItem.userId}>
@@ -902,8 +908,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         </ul>
                     </div>
                 )}
-                 {(!activeRyd.passengerManifest || activeRyd.passengerManifest.length === 0) && (
-                     <p className="text-xs text-muted-foreground mt-2">No passengers currently listed for this ryd.</p>
+                 {displayedPassengers.length === 0 && (
+                     <p className="text-xs text-muted-foreground mt-2">No active passengers currently listed for this ryd.</p>
                  )}
 
                 {activeRyd.notes && (
