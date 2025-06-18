@@ -21,7 +21,8 @@ import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 
 import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
-import { createActiveRydForEventAction_Step1 } from "@/actions/activeRydActions";
+// We will no longer call createActiveRydForEventAction_Step1 directly from here.
+// import { createActiveRydForEventAction_Step1 } from "@/actions/activeRydActions";
 
 interface ResolvedPageParams {
   eventId: string;
@@ -69,7 +70,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
         if (eventDocSnap.exists()) {
           setEventDetails({ id: eventDocSnap.id, ...eventDocSnap.data() } as EventData);
         } else {
-          setEventError(`Event with ID "${eventId}" not found.`);
+          setEventError('Event with ID "' + eventId + '" not found.');
           setEventDetails(null); 
         }
       } catch (e) {
@@ -84,7 +85,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   }, [eventId]);
 
   async function onSubmit(data: OfferDriveFormStep1Values) {
-    console.log("[OfferDrivePage_Step1] onSubmit triggered. Client form data:", data);
+    console.log("[OfferDrivePage_Step1] onSubmit triggered for API route. Client form data:", data);
 
     if (!authUser || !userProfile) { 
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
@@ -100,34 +101,56 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
 
     setIsSubmitting(true);
     
-    const result = await createActiveRydForEventAction_Step1(
-      authUser.uid, 
-      data,
-      userProfile.fullName, 
-      userProfile.canDrive || false,
-      eventDetails.name // Pass the event name from client-side fetched eventDetails
-    ); 
-    console.log("[OfferDrivePage_Step1] Server action result:", result);
-
-    if (result.success) {
-      toast({
-        title: "Offer Submitted (Step 3 - Modified)",
-        description: result.message,
+    const payload = {
+      ...data, // eventId, seatsAvailable, notes from form schema
+      userId: authUser.uid, // Will be verified by Admin SDK using ID token in later steps
+      clientProvidedFullName: userProfile.fullName,
+      clientProvidedCanDrive: userProfile.canDrive || false,
+      clientProvidedEventName: eventDetails.name, // Pass the event name
+    };
+    
+    try {
+      const response = await fetch('/api/offer-drive', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // In future steps, we will add:
+          // 'Authorization': `Bearer ${await authUser.getIdToken()}`,
+        },
+        body: JSON.stringify(payload),
       });
-      form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
-    } else {
+
+      const result = await response.json();
+      console.log("[OfferDrivePage_Step1] API route response:", result);
+
+      if (response.ok && result.success) {
+        toast({
+          title: "Offer Submitted (via API)",
+          description: result.message,
+        });
+        form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
+      } else {
+        toast({
+          title: "Submission Failed (via API)",
+          description: result.message || result.errorDetails || "An unknown error occurred from API.",
+          variant: "destructive",
+        });
+        if (result.issues) {
+           result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => { // More specific type for issue
+              form.setError(issue.path[0] as keyof OfferDriveFormStep1Values, { message: issue.message });
+           });
+        }
+      }
+    } catch (error: any) {
+      console.error("[OfferDrivePage_Step1] Error calling API route:", error);
       toast({
-        title: "Submission Failed (Step 3 - Modified)",
-        description: result.message || result.error || "An unknown error occurred.",
+        title: "Client-Side Error",
+        description: `Failed to call API: ${error.message || "Unknown error"}`,
         variant: "destructive",
       });
-      if (result.issues) {
-         result.issues.forEach(issue => {
-            form.setError(issue.path[0] as keyof OfferDriveFormStep1Values, { message: issue.message });
-         });
-      }
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   }
   
   const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent;
@@ -172,7 +195,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   return (
     <>
       <PageHeader
-        title={`Offer to Drive (Step 1): ${eventDetails.name}`}
+        title={`Offer to Drive (API): ${eventDetails.name}`}
         description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Basic Offer.`}
         actions={
             <Button variant="outline" asChild>
@@ -188,9 +211,9 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
             <Car className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer (Basic)</CardTitle>
+          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer (Basic - API)</CardTitle>
           <CardDescription className="text-center">
-            Confirm seats and add optional notes.
+            Confirm seats and add optional notes. Submitted via API route.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -258,17 +281,17 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
                 <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
               </div>
               
-              <div className="p-3 bg-destructive/10 rounded-md text-xs text-destructive-foreground border border-destructive/30">
+              <div className="p-3 bg-blue-500/10 rounded-md text-xs text-blue-700 border border-blue-500/30">
                  <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                 <span className="font-semibold">Security Note:</span> For debugging purposes, this action now relies on client-provided event name and 'Can Drive' status. In production, the server must re-verify these from Firestore.
+                 <span className="font-semibold">Refactor Note:</span> This form now submits to a Next.js API route (/api/offer-drive) instead of a Server Action. Server-side Firebase interactions will use the Admin SDK in subsequent steps.
               </div>
 
 
               <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile}>
                 {isSubmitting ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting Offer...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting Offer (API)...</>
                 ) : (
-                  <><Car className="mr-2 h-4 w-4" /> Submit Basic Offer</>
+                  <><Car className="mr-2 h-4 w-4" /> Submit Offer (API)</>
                 )}
               </Button>
             </form>
