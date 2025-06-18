@@ -1080,16 +1080,11 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => {
-                      toast({
-                        title: "Fulfill Request (Action Pending)",
-                        description: `You've indicated interest in fulfilling request ID: ${request.id}. Full functionality will be implemented soon.`,
-                      });
-                      console.log(`User ${authUserProfile.uid} wants to fulfill request ID: ${request.id} for event: ${eventDetails.name}`);
-                      // Future: router.push(`/rydz/offer-fulfillment?requestId=${request.id}&eventId=${eventId}`);
-                    }}
+                    asChild
                   >
-                    <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill
+                    <Link href={`/events/${eventId}/offer-drive?requestId=${request.id}`}>
+                        <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill
+                    </Link>
                   </Button>
                 )}
                 {!canCurrentUserOfferToFulfill && (
