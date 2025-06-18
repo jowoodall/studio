@@ -26,6 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRouter, useSearchParams } from "next/navigation"; // Import useRouter and useSearchParams
 
 
 interface ManagedStudentSelectItem {
@@ -66,6 +67,9 @@ type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema
 export default function RydRequestPage() { 
   const { toast } = useToast();
   const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const router = useRouter(); // Initialize useRouter
+  const searchParams = useSearchParams(); // Initialize useSearchParams
+
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [availableEvents, setAvailableEvents] = useState<EventData[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
@@ -241,7 +245,9 @@ export default function RydRequestPage() {
         title: "Ryd Requested!", 
         description: `Your request (ID: ${docRef.id}) for a ryd to ${rydRequestPayload.eventName || rydRequestPayload.destination} has been submitted.`, 
       });
-      form.reset();
+      // Redirect after successful submission
+      const redirectUrl = searchParams.get('redirectUrl');
+      router.push(redirectUrl || '/rydz/upcoming'); // Fallback to upcoming rydz if no redirectUrl
     } catch (error) {
         let errorMessage = "Could not submit your ryd request. Please try again.";
         const firebaseError = error as any;

@@ -410,6 +410,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }
   
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
+  const redirectBackUrl = `/events/${eventId}/rydz`;
   
   return (
     <>
@@ -419,7 +420,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
-              <Link href={`/rydz/request?eventId=${eventId}`}>
+              <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
                 <span className="flex items-center">
                   <PlusCircle className="mr-2 h-4 w-4" /> Request Ryd
                 </span>
@@ -787,7 +788,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             </CardDescription>
             <div className="flex justify-center gap-4">
                 <Button asChild>
-                <Link href={`/rydz/request?eventId=${eventId}`}>
+                <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
                     <span className="flex items-center">
                       <PlusCircle className="mr-2 h-4 w-4" /> Request a Ryd
                     </span>
@@ -815,4 +816,5 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
 
     
+
 

@@ -32,6 +32,8 @@ export default function DashboardPage() {
     title: `${event.title} - ${event.description}`,
   }));
 
+  const redirectUrl = "/dashboard";
+
   return (
     <>
       <PageHeader
@@ -39,7 +41,7 @@ export default function DashboardPage() {
         description="Manage your rydz, groups, and events all in one place."
         actions={
           <Button asChild>
-            <Link href="/rydz/request">
+            <Link href={`/rydz/request?redirectUrl=${encodeURIComponent(redirectUrl)}`}>
               <PlusCircle className="mr-2 h-4 w-4" /> Request a New Ryd
             </Link>
           </Button>
