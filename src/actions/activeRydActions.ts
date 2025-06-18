@@ -1,11 +1,13 @@
 
 'use server';
 
-import { db } from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
+import admin from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { ActiveRyd, PassengerManifestItem, UserProfileData, ActiveRydStatus as ARStatus, UserRole} from '@/types';
 import { PassengerManifestStatus } from '@/types';
 import * as z from 'zod';
+
+const db = admin.firestore(); // Get Firestore instance from the admin SDK
 
 // Helper function to get user profile
 async function getUserProfile(userId: string): Promise<UserProfileData | null> {
