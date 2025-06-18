@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -7,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { 
+import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
   CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag, UserCheck
 } from "lucide-react"; // Added UserCheck
@@ -22,8 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types"; 
-import { PassengerManifestStatus, UserRole } from "@/types"; // Imported PassengerManifestStatus and UserRole
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types";
+import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types"; // Imported ActiveRydStatus here
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction } from "@/actions/activeRydActions"; // Import the action
@@ -42,12 +41,12 @@ interface ResolvedPageParams { eventId: string; }
 
 interface DisplayActiveRyd extends ActiveRyd {
   driverProfile?: UserProfileData;
-  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[]; 
+  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[];
   eventName?: string;
 }
 
 interface DisplayRydRequestData extends RydData {
-  id: string; 
+  id: string;
   requesterProfile?: UserProfileData;
   passengerUserProfiles?: UserProfileData[];
   eventName?: string;
@@ -55,8 +54,8 @@ interface DisplayRydRequestData extends RydData {
 
 
 export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
-  const resolvedParams = use(paramsPromise); 
-  const { eventId } = resolvedParams || {}; 
+  const resolvedParams = use(paramsPromise);
+  const { eventId } = resolvedParams || {};
   const { toast } = useToast();
   const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth(); // Added authUserProfile
 
@@ -174,14 +173,14 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       const q = query(
         activeRydzCollectionRef,
         where("associatedEventId", "==", currentEventId),
-        orderBy("createdAt", "desc") 
+        orderBy("createdAt", "desc")
       );
       const querySnapshot = await getDocs(q);
       const fetchedActiveRydzPromises: Promise<DisplayActiveRyd | null>[] = [];
 
       querySnapshot.forEach((docSnap) => {
         const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        
+
         const promise = async (): Promise<DisplayActiveRyd | null> => {
           let driverProfile: UserProfileData | undefined = undefined;
           if (activeRyd.driverId) {
@@ -213,12 +212,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             });
             passengerProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[];
           }
-          
+
           return { ...activeRyd, id: docSnap.id, driverProfile, passengerProfiles, eventName: eventDetails?.name };
         };
         fetchedActiveRydzPromises.push(promise());
       });
-      
+
       const resolvedActiveRydz = (await Promise.all(fetchedActiveRydzPromises)).filter(Boolean) as DisplayActiveRyd[];
       setActiveRydzList(resolvedActiveRydz);
 
@@ -236,7 +235,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     } finally {
       setIsLoadingActiveRydz(false);
     }
-  }, [toast, eventDetails?.name]); 
+  }, [toast, eventDetails?.name]);
 
   const fetchRydRequestsForEvent = useCallback(async (currentEventId: string) => {
     if (!currentEventId) {
@@ -289,12 +288,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     });
                     passengerUserProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as UserProfileData[];
                 }
-                
+
                 return { ...rydRequest, requesterProfile, passengerUserProfiles, eventName: eventDetails?.name };
             };
             fetchedRydRequestsPromises.push(promise());
         });
-        
+
         const resolvedRydRequests = (await Promise.all(fetchedRydRequestsPromises)).filter(Boolean) as DisplayRydRequestData[];
         setRydRequestsList(resolvedRydRequests);
 
@@ -313,7 +312,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setRydRequestsList([]);
         toast({ title: "Error Loading Ryd Requests", description: detailedError, variant: "destructive", duration: 10000 });
     } finally {
-        setIsLoadingRydRequests(false);
+      setIsLoadingRydRequests(false);
     }
   }, [toast, eventDetails?.name]);
 
@@ -325,9 +324,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }, [fetchEventDetails, fetchAllGroups, fetchEventDriverStates]);
 
   useEffect(() => {
-    if (eventId && eventDetails) { 
+    if (eventId && eventDetails) {
       fetchActiveRydzForEvent(eventId);
-      fetchRydRequestsForEvent(eventId); 
+      fetchRydRequestsForEvent(eventId);
     } else if (eventId && !eventDetails && !isLoadingEvent && eventError) {
       setIsLoadingActiveRydz(false);
       setActiveRydzList([]);
@@ -367,8 +366,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                             avatarUrl: userData.avatarUrl || `https://placehold.co/100x100.png?text=${(userData.fullName || "U").split(" ").map(n=>n[0]).join("")}`,
                                             dataAiHint: userData.dataAiHint || "driver photo",
                                             canDrive: true,
-                                            rating: undefined, 
-                                            rydzCompleted: undefined, 
+                                            rating: undefined,
+                                            rydzCompleted: undefined,
                                         });
                                         driverIdsProcessed.add(memberId);
                                     }
@@ -400,7 +399,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       toast({ title: "Error", description: "Event details not loaded or user not authenticated.", variant: "destructive" });
       return;
     }
-    if (eventDetails.createdBy !== authUser.uid) { 
+    if (eventDetails.createdBy !== authUser.uid) {
         toast({ title: "Permission Denied", description: "Only the event creator can manage associated groups.", variant: "destructive"});
         return;
     }
@@ -409,7 +408,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     const newSelectedGroups = currentAssociatedGroups.includes(groupIdToToggle)
       ? currentAssociatedGroups.filter(id => id !== groupIdToToggle)
       : [...currentAssociatedGroups, groupIdToToggle];
-    
+
     try {
       const eventDocRef = doc(db, "events", eventDetails.id);
       await updateDoc(eventDocRef, { associatedGroupIds: newSelectedGroups });
@@ -458,10 +457,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     };
 
     try {
-      await setDoc(stateDocRef, newStateData, { merge: true }); 
+      await setDoc(stateDocRef, newStateData, { merge: true });
       setEventDriverStates(prevStates => {
         const existingStateIndex = prevStates.findIndex(s => s.id === stateDocId);
-        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() }; 
+        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() };
         if (existingStateIndex > -1) {
           const newStates = [...prevStates];
           newStates[existingStateIndex] = updatedStateEntry;
@@ -470,7 +469,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         return [...prevStates, updatedStateEntry];
       });
       toast({ title: "Status Updated", description: "Your driving status for this event has been updated." });
-      setEditingSeatsForDriver(null); 
+      setEditingSeatsForDriver(null);
     } catch (error) {
       console.error("Error updating driver status:", error);
       toast({ title: "Update Failed", description: "Could not update your driving status.", variant: "destructive" });
@@ -527,7 +526,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  if (eventError || !eventDetails) { 
+  if (eventError || !eventDetails) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -539,10 +538,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       </div>
     );
   }
-  
+
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
   const redirectBackUrl = `/events/${eventId}/rydz`;
-  
+
   return (
     <>
       <PageHeader
@@ -575,7 +574,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           {currentAssociatedGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2 mb-4">
               {currentAssociatedGroups.map(groupId => {
-                const group = allFetchedGroups.find(g => g.id === groupId); 
+                const group = allFetchedGroups.find(g => g.id === groupId);
                 return group ? (
                   <Badge key={groupId} variant="secondary">
                     {group.name}
@@ -624,9 +623,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                       {filteredGroupsForPopover.map((group) => (
                         <CommandItem
                           key={group.id}
-                          value={group.id} 
+                          value={group.id}
                           onSelect={() => {
-                            handleGroupSelection(group.id); 
+                            handleGroupSelection(group.id);
                           }}
                         >
                           <Check
@@ -680,24 +679,24 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                     </Avatar>
                                     <div className="flex-1">
                                       <span className="font-medium">{driver.name} {isCurrentUserDriver && "(You)"}</span>
-                                      {driver.rating !== undefined && ( 
+                                      {driver.rating !== undefined && (
                                         <div className="flex items-center text-xs text-muted-foreground mt-0.5">
                                           <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
                                           {driver.rating.toFixed(1)}
-                                          {driver.rydzCompleted !== undefined && 
+                                          {driver.rydzCompleted !== undefined &&
                                             <span className="ml-1">({driver.rydzCompleted} rydz)</span>
                                           }
                                         </div>
                                       )}
                                     </div>
                                 </div>
-                                
+
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
                                     {isCurrentUserDriver && (
                                       <div className="flex flex-col sm:flex-row gap-2 items-stretch w-full sm:w-auto">
-                                        <Button 
-                                          variant={driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "default" : "outline"} 
-                                          size="sm" 
+                                        <Button
+                                          variant={driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "default" : "outline"}
+                                          size="sm"
                                           onClick={() => {
                                             setEditingSeatsForDriver(driver.id);
                                             setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 1);
@@ -711,9 +710,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                           {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? <CheckCircle2 className="mr-1.5 h-4 w-4" /> : <Car className="mr-1.5 h-4 w-4" />}
                                           {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "Driving" : "I Can Drive"}
                                         </Button>
-                                        <Button 
-                                          variant={driverStateInfo.status === 'not_driving' ? "destructive" : "outline"} 
-                                          size="sm" 
+                                        <Button
+                                          variant={driverStateInfo.status === 'not_driving' ? "destructive" : "outline"}
+                                          size="sm"
                                           onClick={() => handleDriverStatusUpdate("not_driving")}
                                           disabled={isUpdatingDriverState}
                                           className="flex-grow sm:flex-grow-0"
@@ -758,10 +757,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                           )}
                                       </Badge>
                                     )}
-                                    
+
                                     {!isCurrentUserDriver && (
                                         <Button variant="outline" size="sm" asChild className="w-full sm:w-auto mt-2 sm:mt-0">
-                                            <Link href={`/profile/view/${driver.id}`}> 
+                                            <Link href={`/profile/view/${driver.id}`}>
                                                 <span className="flex items-center">
                                                     <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
                                                 </span>
@@ -812,7 +811,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const driverName = activeRyd.driverProfile?.fullName || "Unknown Driver";
             const driverAvatar = activeRyd.driverProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${driverName.split(" ").map(n=>n[0]).join("")}`;
             const driverDataAiHint = activeRyd.driverProfile?.dataAiHint || "driver photo";
-            
+
             const vehicleMake = activeRyd.vehicleDetails?.make || "";
             const vehicleModel = activeRyd.vehicleDetails?.model || "";
             const vehicleColor = activeRyd.vehicleDetails?.color || "";
@@ -832,20 +831,20 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             // Join button logic
             const isStudent = authUserProfile?.role === UserRole.STUDENT;
             const currentActivePassengers = activeRyd.passengerManifest.filter(
-              p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && 
+              p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
                    p.status !== PassengerManifestStatus.MISSED_PICKUP
             ).length;
             const isRydFull = currentActivePassengers >= vehiclePassengerCapacity;
-            const joinableStatuses = [ActiveRyd.ActiveRydStatus.PLANNING, ActiveRyd.ActiveRydStatus.AWAITING_PASSENGERS];
+            const joinableStatuses = [ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS];
             const isRydJoinableStatus = joinableStatuses.includes(activeRyd.status);
-            
+
             const hasAlreadyRequested = authUser ? activeRyd.passengerManifest.some(
-              p => p.userId === authUser.uid && 
+              p => p.userId === authUser.uid &&
                    p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
             ) : false;
-            
+
             const canRequestToJoin = isStudent && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested;
             const joinButtonLoading = isJoiningRyd[activeRyd.id];
 
@@ -868,13 +867,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 <div className="text-sm text-muted-foreground space-y-1">
                   {displayDepartureTime && (
                     <div className="flex items-center">
-                      <Clock className="mr-1.5 h-4 w-4" /> 
+                      <Clock className="mr-1.5 h-4 w-4" />
                       Departs: {format(displayDepartureTime, "MMM d, p")} {actualDeparture ? "(Actual)" : "(Proposed)"}
                     </div>
                   )}
                   {plannedArrival && (
                      <div className="flex items-center">
-                      <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                      <CalendarDays className="mr-1.5 h-4 w-4" />
                       Arrives by: {format(plannedArrival, "MMM d, p")} (Planned)
                     </div>
                   )}
@@ -882,7 +881,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     <div className="flex items-center"><MapPinned className="mr-1.5 h-4 w-4" /> From: {activeRyd.startLocationAddress}</div>
                   )}
                   <div className="flex items-center">
-                    <Users className="mr-1.5 h-4 w-4" /> 
+                    <Users className="mr-1.5 h-4 w-4" />
                     Seats Offered: {vehiclePassengerCapacity} ({vehiclePassengerCapacity - currentActivePassengers} available)
                   </div>
                 </div>
@@ -921,8 +920,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </Link>
                 </Button>
                 {canRequestToJoin && (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full text-green-600 border-green-500 hover:bg-green-500/10 hover:text-green-700"
                     onClick={() => handleRequestToJoin(activeRyd.id)}
                     disabled={joinButtonLoading}
@@ -1031,13 +1030,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 <div className="text-sm text-muted-foreground space-y-1">
                   {rydDateTime && (
                     <div className="flex items-center">
-                      <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                      <CalendarDays className="mr-1.5 h-4 w-4" />
                       Needed by: {format(rydDateTime, "MMM d, p")}
                     </div>
                   )}
                    {earliestPickup && (
                     <div className="flex items-center">
-                      <Clock className="mr-1.5 h-4 w-4" /> 
+                      <Clock className="mr-1.5 h-4 w-4" />
                       Earliest Pickup: {format(earliestPickup, "p")}
                     </div>
                   )}
@@ -1048,7 +1047,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     <div className="flex items-center"><Flag className="mr-1.5 h-4 w-4" /> To: {request.eventName || request.destination}</div>
                   )}
                 </div>
-                
+
                 {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers:</h4>
@@ -1099,22 +1098,5 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
-        
-    
 
     
-
-
-
-
-
-    
-
-
-
-
-
-    
-
-    
-
