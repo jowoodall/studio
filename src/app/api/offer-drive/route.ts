@@ -3,8 +3,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import * as z from 'zod';
 import { offerDriveFormStep1Schema } from '@/schemas/activeRydSchemas';
-import admin from '@/lib/firebaseAdmin'; // Import the initialized admin SDK
-import { Timestamp, FieldValue } from 'firebase-admin/firestore'; // Import Timestamp and FieldValue
+import admin from '@/lib/firebaseAdmin'; 
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import type { UserProfileData, EventData, ActiveRyd, ActiveRydStatus } from '@/types';
 
 export async function POST(request: NextRequest) {
@@ -33,20 +33,12 @@ export async function POST(request: NextRequest) {
 
     const verifiedUserId = decodedToken.uid;
 
+    // Expecting a leaner payload now
     const body = await request.json();
     console.log('[API Route: /api/offer-drive] Received request body:', JSON.stringify(body, null, 2));
 
-    // Client provided data (clientProvidedFullName and clientProvidedEventName are mainly for messages now)
-    // eventId, seatsAvailable, notes are the core form data
-    const {
-      eventId,
-      seatsAvailable,
-      notes,
-      clientProvidedFullName, // Used for user-friendly messages
-    } = body;
-
-    const coreFormData = { eventId, seatsAvailable, notes };
-    const validationResult = offerDriveFormStep1Schema.safeParse(coreFormData);
+    // Core form data is eventId, seatsAvailable, notes
+    const validationResult = offerDriveFormStep1Schema.safeParse(body);
 
     if (!validationResult.success) {
       console.error('[API Route: /api/offer-drive] Core form data validation failed:', validationResult.error.flatten());
@@ -57,7 +49,6 @@ export async function POST(request: NextRequest) {
 
     const db = admin.firestore();
 
-    // Step 5.3: Re-fetch driver's 'canDrive' status using Admin SDK and verifiedUserId
     let userProfile: UserProfileData;
     try {
       const userDocRef = db.collection('users').doc(verifiedUserId);
@@ -67,7 +58,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, message: 'User profile not found. Cannot verify driver status.' }, { status: 404 });
       }
       userProfile = userDocSnap.data() as UserProfileData;
-      console.log(`[API Route: /api/offer-drive] Successfully fetched user profile for UID: ${verifiedUserId}. Can Drive: ${userProfile.canDrive}`);
+      console.log(`[API Route: /api/offer-drive] Successfully fetched user profile for UID: ${verifiedUserId}. Full Name: ${userProfile.fullName}, Can Drive: ${userProfile.canDrive}`);
 
       if (!userProfile.canDrive) {
         console.warn(`[API Route: /api/offer-drive] User ${verifiedUserId} (${userProfile.fullName}) is not permitted to drive (server-verified).`);
@@ -79,7 +70,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: `Error verifying driver status: ${error.message}`, errorDetails: error.code }, { status: 500 });
     }
 
-    // Step 5.4: Re-fetch event details using Admin SDK
     let eventDetails: EventData;
     let eventNameForMessage: string;
     try {
@@ -97,24 +87,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: `Error fetching event details: ${error.message}`, errorDetails: error.code }, { status: 500 });
     }
 
-    // Step 5.5: Create activeRydz document using Admin SDK
     console.log(`[API Route: /api/offer-drive] Attempting to create activeRydz document for eventId: ${validatedData.eventId}, driverId: ${verifiedUserId}`);
     
     const activeRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
       driverId: verifiedUserId,
       status: 'planning' as ActiveRydStatus.PLANNING,
-      createdAt: FieldValue.serverTimestamp() as Timestamp, // Use FieldValue for server timestamp
+      createdAt: FieldValue.serverTimestamp() as Timestamp,
       passengerManifest: [],
       associatedEventId: validatedData.eventId,
       notes: validatedData.notes || "",
       vehicleDetails: {
           passengerCapacity: String(validatedData.seatsAvailable) || "0",
-          // Add other vehicle details if available from userProfile.driverDetails
-          make: userProfile.driverDetails?.primaryVehicle?.split(' ')[0] || "", // Example: "Toyota Camry 2020" -> "Toyota"
-          model: userProfile.driverDetails?.primaryVehicle?.split(' ').slice(1).join(' ') || "", // Example: "Camry 2020"
+          make: userProfile.driverDetails?.primaryVehicle?.split(' ')[0] || "",
+          model: userProfile.driverDetails?.primaryVehicle?.split(' ').slice(1).join(' ') || "",
       },
-      finalDestinationAddress: eventDetails.location, // From fetched event details
-      startLocationAddress: userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city}` : "Driver's location TBD", // Example, adjust as needed
+      finalDestinationAddress: eventDetails.location, 
+      startLocationAddress: userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD",
     };
 
     try {
@@ -122,19 +110,19 @@ export async function POST(request: NextRequest) {
       const docRef = await activeRydzCollectionRef.add(activeRydObject);
       console.log(`[API Route: /api/offer-drive] Successfully created activeRydz document with ID: ${docRef.id}`);
       
-      const successMessage = `Successfully offered to drive for "${eventNameForMessage}"! Your Ryd offer ID is ${docRef.id}.`;
+      // Using server-fetched userProfile.fullName and eventNameForMessage
+      const successMessage = `Successfully offered to drive for "${eventNameForMessage}" by ${userProfile.fullName}! Your Ryd offer ID is ${docRef.id}.`;
       console.log(`[API Route: /api/offer-drive] ${successMessage}`);
 
       return NextResponse.json({
         success: true,
         message: successMessage,
         activeRydId: docRef.id,
-      }, { status: 201 }); // 201 Created status
+      }, { status: 201 });
 
     } catch (error: any) {
       console.error(`[API Route: /api/offer-drive] CRITICAL ERROR creating activeRydz document for eventId ${validatedData.eventId}, driverId ${verifiedUserId}:`, error);
       let errorMessage = "Failed to create the ryd offer in Firestore (Admin SDK).";
-       // No need to check e.code for 'permission-denied' here as Admin SDK bypasses rules
       errorMessage = `An unexpected error occurred while creating the ryd offer with Admin SDK: ${error.message || 'Unknown Firestore error'}. (Code: ${error.code || 'N/A'})`;
       console.error("[API Route: /api/offer-drive] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
       return NextResponse.json({

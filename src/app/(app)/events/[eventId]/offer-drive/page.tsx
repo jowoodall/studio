@@ -109,12 +109,11 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
       return;
     }
 
+    // Simplified payload: API route will fetch user profile and event details server-side.
     const payload = {
-      ...data, 
-      // userId is no longer explicitly sent; it will be derived from the ID token on the server
-      clientProvidedFullName: userProfile.fullName,
-      clientProvidedCanDrive: userProfile.canDrive || false, 
-      clientProvidedEventName: eventDetails.name,
+      eventId: data.eventId,
+      seatsAvailable: data.seatsAvailable,
+      notes: data.notes,
     };
     
     console.log("[OfferDrivePage_Step1] Payload for API route:", JSON.stringify(payload, null, 2));
@@ -124,7 +123,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`, // Send the ID token
+          'Authorization': `Bearer ${idToken}`, 
         },
         body: JSON.stringify(payload),
       });
@@ -134,10 +133,12 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
 
       if (response.ok && result.success) {
         toast({
-          title: "Offer Update (API)",
+          title: "Offer Submitted (API)",
           description: result.message,
         });
         form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
+        // Potentially redirect user to a confirmation page or the event rydz page
+        // router.push(`/events/${eventId}/rydz`);
       } else {
         toast({
           title: "Submission Failed (API)",
@@ -191,7 +192,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">{eventError ? "Error Loading Event" : "Event Not Found"}</h2>
-        <p className="text-muted-foreground px-4">{eventError || `The event with ID "${eventId}" could not be found.`}</p>
+        <p className="text-muted-foreground px-4">{eventError || 'Event with ID "' + eventId + '" not found.'}</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
@@ -204,7 +205,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   return (
     <>
       <PageHeader
-        title={`Offer to Drive (API): ${eventDetails.name}`}
+        title={`Offer to Drive: ${eventDetails.name}`}
         description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Basic Offer.`}
         actions={
             <Button variant="outline" asChild>
@@ -292,7 +293,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
               
               <div className="p-3 bg-blue-500/10 rounded-md text-xs text-blue-700 border border-blue-500/30">
                  <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                 <span className="font-semibold">Refactor Note:</span> This form now submits to a Next.js API route (/api/offer-drive). The API route will use Firebase Admin SDK for Firestore operations and user verification.
+                 <span className="font-semibold">Refactor Note:</span> This form submits a lean payload to an API route. The API route uses Firebase Admin SDK for Firestore operations and user/event verification.
               </div>
 
 
