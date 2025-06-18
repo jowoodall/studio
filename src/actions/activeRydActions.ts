@@ -67,8 +67,8 @@ export async function requestToJoinActiveRydAction(
     const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
     // 3. Validations
-    const joinableStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
-    if (!joinableStatuses.includes(activeRydData.status)) {
+    const joinableRydStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
+    if (!joinableRydStatuses.includes(activeRydData.status)) {
       return { success: false, message: `This ryd is no longer accepting new passengers (Status: ${activeRydData.status}).` };
     }
 
@@ -211,6 +211,102 @@ export async function managePassengerJoinRequestAction(
 
   } catch (error: any) {
     console.error("[Action: managePassengerJoinRequestAction] Error processing request:", error);
+    return { 
+        success: false, 
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    };
+  }
+}
+
+interface CancelPassengerSpotInput {
+  activeRydId: string;
+  passengerUserIdToCancel: string;
+  cancellingUserId: string; // UID of the user performing the action
+}
+
+export async function cancelPassengerSpotAction(
+  input: CancelPassengerSpotInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: cancelPassengerSpotAction] Called with input:", input);
+  const { activeRydId, passengerUserIdToCancel, cancellingUserId } = input;
+
+  if (!activeRydId || !passengerUserIdToCancel || !cancellingUserId) {
+    return { success: false, message: "Missing required parameters for cancelling passenger spot." };
+  }
+
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    // 1. Fetch ActiveRyd
+    const activeRydDocSnap = await activeRydDocRef.get();
+    if (!activeRydDocSnap.exists) {
+      return { success: false, message: "ActiveRyd not found." };
+    }
+    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+    // 2. Authorization
+    const cancellingUserProfile = await getUserProfile(cancellingUserId);
+    if (!cancellingUserProfile) {
+      return { success: false, message: "Cancelling user profile not found." };
+    }
+
+    if (cancellingUserId !== passengerUserIdToCancel) {
+      if (cancellingUserProfile.role !== UserRole.PARENT) {
+        return { success: false, message: "Unauthorized: Only parents can cancel for other users." };
+      }
+      if (!cancellingUserProfile.managedStudentIds?.includes(passengerUserIdToCancel)) {
+        return { success: false, message: "Unauthorized: You are not managing this student." };
+      }
+    }
+    
+    // 3. Find passenger in manifest and validate status
+    const passengerIndex = activeRydData.passengerManifest.findIndex(
+      (p) => p.userId === passengerUserIdToCancel
+    );
+
+    if (passengerIndex === -1) {
+      return { success: false, message: "Passenger not found on this ryd." };
+    }
+    
+    const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
+    const passengerProfile = await getUserProfile(passengerUserIdToCancel); // For display name in message
+    const passengerName = passengerProfile?.fullName || `User ${passengerUserIdToCancel.substring(0,6)}`;
+
+    const cancellablePassengerStatuses: PassengerManifestStatus[] = [
+      PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+      PassengerManifestStatus.CONFIRMED_BY_DRIVER,
+      PassengerManifestStatus.AWAITING_PICKUP,
+    ];
+    const nonCancellableRydStatuses: ARStatus[] = [
+      ARStatus.COMPLETED,
+      ARStatus.CANCELLED_BY_DRIVER,
+      ARStatus.CANCELLED_BY_SYSTEM,
+      ARStatus.IN_PROGRESS_ROUTE, // Might be too late to cancel once en route
+      ARStatus.IN_PROGRESS_PICKUP // Might be too late to cancel once pickup sequence started
+    ];
+
+    if (!cancellablePassengerStatuses.includes(passengerToUpdate.status)) {
+      return { success: false, message: `${passengerName} cannot cancel at this stage (Current Status: ${passengerToUpdate.status.replace(/_/g, ' ')}).` };
+    }
+    if (nonCancellableRydStatuses.includes(activeRydData.status)) {
+         return { success: false, message: `This ryd cannot be cancelled by passenger at this stage (Ryd Status: ${activeRydData.status.replace(/_/g, ' ')}).` };
+    }
+
+    // 4. Update passenger status
+    passengerToUpdate.status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
+    const updatedManifest = [...activeRydData.passengerManifest];
+    updatedManifest[passengerIndex] = passengerToUpdate;
+
+    await activeRydDocRef.update({
+      passengerManifest: updatedManifest,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[Action: cancelPassengerSpotAction] Successfully cancelled spot for passenger ${passengerName} on rydId: ${activeRydId}`);
+    return { success: true, message: `Spot for ${passengerName} on the ryd has been successfully cancelled.` };
+
+  } catch (error: any) {
+    console.error("[Action: cancelPassengerSpotAction] Error processing request:", error);
     return { 
         success: false, 
         message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
