@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
   CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag, UserCheck
-} from "lucide-react"; // Added UserCheck
+} from "lucide-react"; // Added UserCheck, ThumbsUp, Flag
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -22,10 +22,10 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
 import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types";
-import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types"; // Imported ActiveRydStatus here
+import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
-import { requestToJoinActiveRydAction } from "@/actions/activeRydActions"; // Import the action
+import { requestToJoinActiveRydAction } from "@/actions/activeRydActions";
 
 interface GroupMember {
   id: string;
@@ -57,7 +57,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const resolvedParams = use(paramsPromise);
   const { eventId } = resolvedParams || {};
   const { toast } = useToast();
-  const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth(); // Added authUserProfile
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth();
 
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
@@ -87,7 +87,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [editingSeatsForDriver, setEditingSeatsForDriver] = useState<string | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<number | undefined>(undefined);
 
-  const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({}); // For loading state of join buttons
+  const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({});
 
 
   const fetchEventDetails = useCallback(async () => {
@@ -506,7 +506,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
       if (result.success) {
         toast({ title: "Request Sent!", description: result.message });
-        if(eventId) fetchActiveRydzForEvent(eventId); // Refresh the list
+        if(eventId) fetchActiveRydzForEvent(eventId); 
       } else {
         toast({ title: "Request Failed", description: result.message, variant: "destructive" });
       }
@@ -1016,6 +1016,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const requesterDataAiHint = request.requesterProfile?.dataAiHint || "user photo";
             const rydDateTime = request.rydTimestamp instanceof Timestamp ? request.rydTimestamp.toDate() : null;
             const earliestPickup = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+            const canCurrentUserOfferToFulfill = authUserProfile?.canDrive;
 
             return (
             <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -1075,9 +1076,27 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
               </CardContent>
               <CardFooter className="border-t pt-4">
-                <Button variant="outline" className="w-full" disabled> {/* Action TBD */}
-                  <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill (Future)
-                </Button>
+                {canCurrentUserOfferToFulfill && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      toast({
+                        title: "Fulfill Request (Action Pending)",
+                        description: `You've indicated interest in fulfilling request ID: ${request.id}. Full functionality will be implemented soon.`,
+                      });
+                      console.log(`User ${authUserProfile.uid} wants to fulfill request ID: ${request.id} for event: ${eventDetails.name}`);
+                      // Future: router.push(`/rydz/offer-fulfillment?requestId=${request.id}&eventId=${eventId}`);
+                    }}
+                  >
+                    <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill
+                  </Button>
+                )}
+                {!canCurrentUserOfferToFulfill && (
+                     <Button variant="outline" className="w-full" disabled>
+                        <Car className="mr-2 h-4 w-4 text-muted-foreground"/> (Drivers can offer to fulfill)
+                    </Button>
+                )}
               </CardFooter>
             </Card>
           )})}
@@ -1104,5 +1123,4 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
-
     
