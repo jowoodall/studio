@@ -3,8 +3,8 @@
 
 import admin from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { ActiveRyd, PassengerManifestItem, UserProfileData, ActiveRydStatus as ARStatus, UserRole} from '@/types';
-import { PassengerManifestStatus } from '@/types';
+import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole} from '@/types';
+import { PassengerManifestStatus, ActiveRydStatus as ARStatus } from '@/types'; // Import ActiveRydStatus as a value with alias
 import * as z from 'zod';
 
 const db = admin.firestore(); // Get Firestore instance from the admin SDK
@@ -135,3 +135,4 @@ export async function requestToJoinActiveRydAction(
     };
   }
 }
+
