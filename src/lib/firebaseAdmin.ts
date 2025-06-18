@@ -4,15 +4,21 @@ import admin from 'firebase-admin';
 // Check if the app is already initialized to prevent re-initialization
 if (!admin.apps.length) {
   try {
-    // Attempt to initialize with application default credentials
-    // This works in Cloud Run, Cloud Functions, App Engine, etc.
-    // For local development, you'd need to set GOOGLE_APPLICATION_CREDENTIALS
-    // to point to your service account key file.
-    // Or, explicitly pass serviceAccount key content if using an env var for it.
-    admin.initializeApp();
-    console.log('[Firebase Admin] Initialized with default credentials.');
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    if (!projectId) {
+      console.error('[Firebase Admin] CRITICAL ERROR: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable is not set. Cannot initialize Admin SDK with specific project ID.');
+      // Optionally, you could still try default init, but it might lead to the 'aud' error again
+      // admin.initializeApp();
+      // console.warn('[Firebase Admin] Initialized with default credentials (project ID not explicitly set). This might lead to audience claim issues.');
+    } else {
+      admin.initializeApp({
+        projectId: projectId,
+        // Credential will be picked up from Application Default Credentials in App Hosting
+      });
+      console.log(`[Firebase Admin] Initialized for project ID: ${projectId}`);
+    }
   } catch (error: any) {
-    console.error('[Firebase Admin] Error initializing with default credentials:', error);
+    console.error('[Firebase Admin] Error initializing with default credentials or specified project ID:', error);
     // Fallback or more specific error handling if needed
     // For example, if you store service account JSON in an environment variable:
     /*
@@ -22,6 +28,7 @@ if (!admin.apps.length) {
         const serviceAccount = JSON.parse(serviceAccountJson);
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
+          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, // Also ensure projectId here
           // databaseURL: `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseio.com` // Optional: if using Realtime Database
         });
         console.log('[Firebase Admin] Initialized with service account from ENV var.');
