@@ -1,30 +1,47 @@
-
 // src/app/api/offer-drive/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
 import * as z from 'zod';
-// Re-using the schema for basic form data validation.
-// Note: This schema doesn't include userId or client-provided details,
-// those will be part of the broader request body for now.
 import { offerDriveFormStep1Schema } from '@/schemas/activeRydSchemas';
+import admin from '@/lib/firebaseAdmin'; // Import the initialized admin SDK
 
 export async function POST(request: NextRequest) {
   try {
+    const authorizationHeader = request.headers.get('Authorization');
+    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+      console.error('[API Route: /api/offer-drive] Missing or malformed Authorization header.');
+      return NextResponse.json({ success: false, message: 'Unauthorized. No token provided.' }, { status: 401 });
+    }
+
+    const idToken = authorizationHeader.split('Bearer ')[1];
+    if (!idToken) {
+      console.error('[API Route: /api/offer-drive] ID token is empty after splitting Bearer.');
+      return NextResponse.json({ success: false, message: 'Unauthorized. Token is empty.' }, { status: 401 });
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+      console.log(`[API Route: /api/offer-drive] ID Token verified for UID: ${decodedToken.uid}`);
+    } catch (error: any) {
+      console.error('[API Route: /api/offer-drive] Error verifying ID Token:', error);
+      return NextResponse.json({ success: false, message: `Authentication failed: ${error.message}`, errorDetails: error.code }, { status: 403 });
+    }
+
+    const verifiedUserId = decodedToken.uid; // This is the authenticated user
+
     const body = await request.json();
     console.log('[API Route: /api/offer-drive] Received request body:', JSON.stringify(body, null, 2));
 
-    // Extract data that the client will send
-    // This includes form data and additional details like userId
     const {
       eventId,
       seatsAvailable,
       notes,
-      userId, // Client will send this; in a real API, we'd get this from a verified ID token
-      clientProvidedFullName,
-      clientProvidedCanDrive,
-      clientProvidedEventName,
+      // userId is now derived from the verified ID token, no longer from client body for security
+      clientProvidedFullName, // Still useful for messages, but primary ID is verifiedUserId
+      clientProvidedCanDrive, // Will be re-verified server-side using Admin SDK later
+      clientProvidedEventName, // Still useful for messages
     } = body;
 
-    // Validate the core form data part of the payload
     const coreFormData = { eventId, seatsAvailable, notes };
     const validationResult = offerDriveFormStep1Schema.safeParse(coreFormData);
 
@@ -33,28 +50,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Invalid form data submitted to API.", issues: validationResult.error.issues }, { status: 400 });
     }
 
-    if (!userId) {
-        console.error('[API Route: /api/offer-drive] userId missing from request body.');
-        return NextResponse.json({ success: false, message: "User ID missing from request." }, { status: 400 });
-    }
+    // Placeholder for Step 5.3: Re-fetch driver's 'canDrive' status using Admin SDK and verifiedUserId
+    // Placeholder for Step 5.4: Re-fetch event details using Admin SDK
+    // Placeholder for Step 5.5: Create activeRydz document using Admin SDK
 
-    // For this initial step, we are not interacting with Firebase Admin SDK or Firestore yet.
-    // We are just confirming the API route is callable and receives data.
-    // The actual logic to verify user (via ID token) and then perform Firestore operations
-    // using Admin SDK will be added in subsequent steps.
-
-    const successMessage = `API Route: Offer from ${clientProvidedFullName || 'User'} (${userId}) for event "${clientProvidedEventName || eventId}" received. (Form data schema validated). Next step: Admin SDK & Firestore.`;
+    const successMessage = `API Route (Step 5.2): Offer from ${clientProvidedFullName || 'User'} (Verified UID: ${verifiedUserId}) for event "${clientProvidedEventName || eventId}" received. Token VERIFIED. Next: Admin SDK Firestore Ops.`;
     console.log(`[API Route: /api/offer-drive] ${successMessage}`);
 
     return NextResponse.json({
       success: true,
       message: successMessage,
-      // activeRydId: 'dummy-api-ryd-id' // Placeholder if we want to mimic the action's return
+      verifiedUserId: verifiedUserId, // Send back the verified UID for confirmation
     }, { status: 200 });
 
   } catch (error: any) {
     console.error('[API Route: /api/offer-drive] Error processing request:', error);
-    // Differentiate between JSON parsing errors and other errors
     let errorMessage = 'Error processing API request.';
     if (error instanceof SyntaxError && error.message.includes("JSON")) {
         errorMessage = "Invalid JSON in request body.";

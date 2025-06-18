@@ -21,8 +21,6 @@ import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 
 import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
-// We will no longer call createActiveRydForEventAction_Step1 directly from here.
-// import { createActiveRydForEventAction_Step1 } from "@/actions/activeRydActions";
 
 interface ResolvedPageParams {
   eventId: string;
@@ -101,21 +99,32 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
 
     setIsSubmitting(true);
     
+    let idToken;
+    try {
+      idToken = await authUser.getIdToken();
+    } catch (error) {
+      console.error("[OfferDrivePage_Step1] Error getting ID token:", error);
+      toast({ title: "Authentication Error", description: "Could not get user ID token. Please try logging in again.", variant: "destructive" });
+      setIsSubmitting(false);
+      return;
+    }
+
     const payload = {
-      ...data, // eventId, seatsAvailable, notes from form schema
-      userId: authUser.uid, // Will be verified by Admin SDK using ID token in later steps
+      ...data, 
+      // userId is no longer explicitly sent; it will be derived from the ID token on the server
       clientProvidedFullName: userProfile.fullName,
-      clientProvidedCanDrive: userProfile.canDrive || false,
-      clientProvidedEventName: eventDetails.name, // Pass the event name
+      clientProvidedCanDrive: userProfile.canDrive || false, 
+      clientProvidedEventName: eventDetails.name,
     };
     
+    console.log("[OfferDrivePage_Step1] Payload for API route:", JSON.stringify(payload, null, 2));
+
     try {
       const response = await fetch('/api/offer-drive', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // In future steps, we will add:
-          // 'Authorization': `Bearer ${await authUser.getIdToken()}`,
+          'Authorization': `Bearer ${idToken}`, // Send the ID token
         },
         body: JSON.stringify(payload),
       });
@@ -125,18 +134,18 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
 
       if (response.ok && result.success) {
         toast({
-          title: "Offer Submitted (via API)",
+          title: "Offer Update (API)",
           description: result.message,
         });
         form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
       } else {
         toast({
-          title: "Submission Failed (via API)",
+          title: "Submission Failed (API)",
           description: result.message || result.errorDetails || "An unknown error occurred from API.",
           variant: "destructive",
         });
         if (result.issues) {
-           result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => { // More specific type for issue
+           result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => {
               form.setError(issue.path[0] as keyof OfferDriveFormStep1Values, { message: issue.message });
            });
         }
@@ -283,7 +292,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
               
               <div className="p-3 bg-blue-500/10 rounded-md text-xs text-blue-700 border border-blue-500/30">
                  <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                 <span className="font-semibold">Refactor Note:</span> This form now submits to a Next.js API route (/api/offer-drive) instead of a Server Action. Server-side Firebase interactions will use the Admin SDK in subsequent steps.
+                 <span className="font-semibold">Refactor Note:</span> This form now submits to a Next.js API route (/api/offer-drive). The API route will use Firebase Admin SDK for Firestore operations and user verification.
               </div>
 
 
