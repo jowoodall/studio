@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin, User, Clock 
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree // Added MapPinned, Palmtree (using Clock for times)
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -681,8 +681,22 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const driverName = activeRyd.driverProfile?.fullName || "Unknown Driver";
             const driverAvatar = activeRyd.driverProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${driverName.split(" ").map(n=>n[0]).join("")}`;
             const driverDataAiHint = activeRyd.driverProfile?.dataAiHint || "driver photo";
-            const vehicleInfo = `${activeRyd.vehicleDetails?.make || ""} ${activeRyd.vehicleDetails?.model || ""}`.trim() || "Vehicle not specified";
-            const departureTime = activeRyd.actualDepartureTime instanceof Timestamp ? activeRyd.actualDepartureTime.toDate() : null;
+            
+            const vehicleMake = activeRyd.vehicleDetails?.make || "";
+            const vehicleModel = activeRyd.vehicleDetails?.model || "";
+            const vehicleColor = activeRyd.vehicleDetails?.color || "";
+            const vehicleLicense = activeRyd.vehicleDetails?.licensePlate || "";
+            const vehiclePassengerCapacity = activeRyd.vehicleDetails?.passengerCapacity || "N/A";
+            let vehicleDisplay = `${vehicleMake} ${vehicleModel}`.trim();
+            if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
+            if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
+            if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
+
+            const proposedDeparture = activeRyd.proposedDepartureTime instanceof Timestamp ? activeRyd.proposedDepartureTime.toDate() : null;
+            const plannedArrival = activeRyd.plannedArrivalTime instanceof Timestamp ? activeRyd.plannedArrivalTime.toDate() : null;
+            const actualDeparture = activeRyd.actualDepartureTime instanceof Timestamp ? activeRyd.actualDepartureTime.toDate() : null;
+
+            const displayDepartureTime = actualDeparture || proposedDeparture;
 
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -694,37 +708,54 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     </Avatar>
                     <div>
                         <Link href={`/profile/view/${activeRyd.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
-                        <p className="text-xs text-muted-foreground">{vehicleInfo}</p>
+                        <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
                     </div>
                 </div>
                 <Badge variant="outline" className="w-fit capitalize">{activeRyd.status.replace(/_/g, ' ')}</Badge>
               </CardHeader>
-              <CardContent className="flex-grow pt-2">
-                <div className="text-sm text-muted-foreground space-y-1 mb-2">
-                  {departureTime && (
+              <CardContent className="flex-grow pt-2 space-y-1.5">
+                <div className="text-sm text-muted-foreground space-y-1">
+                  {displayDepartureTime && (
                     <div className="flex items-center">
                       <Clock className="mr-1.5 h-4 w-4" /> 
-                      Proposed Departure: {format(departureTime, "MMM d, p")}
+                      Departs: {format(displayDepartureTime, "MMM d, p")} {actualDeparture ? "(Actual)" : "(Proposed)"}
+                    </div>
+                  )}
+                  {plannedArrival && (
+                     <div className="flex items-center">
+                      <CalendarDays className="mr-1.5 h-4 w-4" /> 
+                      Arrives by: {format(plannedArrival, "MMM d, p")} (Planned)
                     </div>
                   )}
                   {activeRyd.startLocationAddress && (
-                    <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> From: {activeRyd.startLocationAddress}</div>
+                    <div className="flex items-center"><MapPinned className="mr-1.5 h-4 w-4" /> From: {activeRyd.startLocationAddress}</div>
                   )}
                   <div className="flex items-center">
                     <Users className="mr-1.5 h-4 w-4" /> 
-                    Seats Offered: {activeRyd.vehicleDetails?.passengerCapacity || 'N/A'}
+                    Seats Offered: {vehiclePassengerCapacity}
                   </div>
                 </div>
+
                 {activeRyd.passengerProfiles && activeRyd.passengerProfiles.length > 0 && (
                     <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({activeRyd.passengerProfiles.length}):</h4>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({activeRyd.passengerManifest.filter(p => p.status !== 'cancelled_by_passenger').length} / {vehiclePassengerCapacity}):</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
-                            {activeRyd.passengerProfiles.map(p => (
-                                <li key={p.uid}>{p.fullName} ({p.manifestStatus?.replace(/_/g, ' ') || 'Status unknown'})</li>
-                            ))}
+                            {activeRyd.passengerManifest.map(pItem => {
+                                const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
+                                return (
+                                <li key={pItem.userId}>
+                                    {passengerProfile?.fullName || `User ${pItem.userId.substring(0,6)}...`}
+                                    <span className="text-muted-foreground/80 ml-1">({pItem.status.replace(/_/g, ' ')})</span>
+                                </li>
+                                );
+                            })}
                         </ul>
                     </div>
                 )}
+                 {(!activeRyd.passengerProfiles || activeRyd.passengerProfiles.length === 0) && (
+                     <p className="text-xs text-muted-foreground mt-2">No passengers currently listed for this ryd.</p>
+                 )}
+
                 {activeRyd.notes && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Driver Notes:</h4>
@@ -784,3 +815,4 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
 
     
+
