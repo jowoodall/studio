@@ -1,0 +1,94 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is the owner of a document (e.g., their own profile)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check if user is an admin of a specific group
+    // Assumes group document has an 'adminIds' array field.
+    function isGroupAdmin(groupId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds.hasAny([request.auth.uid]);
+    }
+
+    // Helper function to check if user is the creator of an event
+    // Assumes event document has a 'createdBy' field.
+    function isEventCreator(eventId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/events/$(eventId)).data.createdBy == request.auth.uid;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Allow any authenticated user to read public profile parts
+      allow create: if isOwner(userId); // User can create their own profile (typically on signup)
+                                      // Ensure your signup logic correctly sets the UID.
+      allow update: if isOwner(userId); // User can update their own profile
+    }
+
+    // Groups
+    match /groups/{groupId} {
+      allow read: if isAuthenticated(); // Allow any authenticated user to read group details
+      // Allow group creation if the user is authenticated and is listed as the creator and an admin/member.
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.createdBy &&
+                       request.resource.data.adminIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.memberIds.hasAny([request.auth.uid]);
+      // Allow updates if the user is an admin of that group.
+      // This rule covers changes to name, description, image, etc.
+      // Managing memberIds and adminIds might need more granular field-level rules or Cloud Functions.
+      allow update: if isGroupAdmin(groupId);
+    }
+
+    // Events
+    match /events/{eventId} {
+      allow read: if isAuthenticated(); // Allow any authenticated user to read event details
+      // Allow event creation if user is authenticated and is the creator.
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.createdBy;
+      // Allow updates only by the event creator.
+      allow update: if isEventCreator(eventId);
+    }
+
+    // Ryd Requests (from /rydz/request page)
+    match /rydz/{rydId} {
+      // Allow authenticated users to read ryd requests.
+      // This is needed for the /events/[eventId]/rydz page to list requests.
+      // You might want to refine this to only allow users associated with the event or groups.
+      allow read: if isAuthenticated();
+      // Allow creation if the authenticated user is the one requesting the ryd.
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.requestedBy;
+      // Allow updates by the requester (e.g., to cancel) or an assigned driver.
+      allow update: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.requestedBy ||
+                        (resource.data.driverId != null && request.auth.uid == resource.data.driverId));
+      // Consider delete rules if needed (e.g., requester can delete their own pending request).
+    }
+
+    // Active Rydz (Offered Rydz from /events/[eventId]/offer-drive API)
+    match /activeRydz/{activeRydId} {
+      // Client-side creation is disabled as it's handled by the Admin SDK via an API route.
+      allow create: if false;
+      // Allow authenticated users to read active ryd details.
+      allow read: if isAuthenticated();
+      // Allow updates only by the driver of that active ryd.
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.driverId;
+      // Consider delete rules (e.g., driver can cancel their offer).
+    }
+
+    // Event Driver States (driver responses for an event)
+    match /eventDriverStates/{stateId} {
+      // stateId is typically eventId_driverId
+      allow read: if isAuthenticated();
+      // Allow create and update only if the authenticated user is the driver for this state.
+      allow create, update: if isAuthenticated() && request.auth.uid == request.resource.data.driverId;
+    }
+  }
+}
