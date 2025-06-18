@@ -136,3 +136,84 @@ export async function requestToJoinActiveRydAction(
   }
 }
 
+
+interface ManagePassengerRequestInput {
+  activeRydId: string;
+  passengerUserId: string;
+  newStatus: PassengerManifestStatus.CONFIRMED_BY_DRIVER | PassengerManifestStatus.REJECTED_BY_DRIVER;
+  actingUserId: string; // UID of the driver performing the action
+}
+
+export async function managePassengerJoinRequestAction(
+  input: ManagePassengerRequestInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: managePassengerJoinRequestAction] Called with input:", input);
+  const { activeRydId, passengerUserId, newStatus, actingUserId } = input;
+
+  if (!activeRydId || !passengerUserId || !newStatus || !actingUserId) {
+    return { success: false, message: "Missing required parameters for managing passenger request." };
+  }
+
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    const activeRydDocSnap = await activeRydDocRef.get();
+    if (!activeRydDocSnap.exists) {
+      return { success: false, message: "ActiveRyd not found." };
+    }
+    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+    // Verify the acting user is the driver
+    if (activeRydData.driverId !== actingUserId) {
+      return { success: false, message: "Unauthorized: Only the driver can manage join requests." };
+    }
+
+    const passengerIndex = activeRydData.passengerManifest.findIndex(
+      (p) => p.userId === passengerUserId && p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
+    );
+
+    if (passengerIndex === -1) {
+      return { success: false, message: "Passenger request not found or not in pending state." };
+    }
+
+    const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
+    const passengerProfile = await getUserProfile(passengerUserId);
+    const passengerName = passengerProfile?.fullName || `User ${passengerUserId.substring(0,6)}`;
+
+    if (newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER) {
+      const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
+      const confirmedPassengersCount = activeRydData.passengerManifest.filter(
+        p => p.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER || p.status === PassengerManifestStatus.AWAITING_PICKUP || p.status === PassengerManifestStatus.ON_BOARD
+      ).length;
+
+      if (confirmedPassengersCount >= passengerCapacity) {
+        return { success: false, message: `Cannot approve ${passengerName}: Ryd is already full.` };
+      }
+      passengerToUpdate.status = PassengerManifestStatus.CONFIRMED_BY_DRIVER;
+      // Optionally, set pickupOrder or other details here
+    } else if (newStatus === PassengerManifestStatus.REJECTED_BY_DRIVER) {
+      passengerToUpdate.status = PassengerManifestStatus.REJECTED_BY_DRIVER;
+    } else {
+      return { success: false, message: "Invalid status update." }; // Should not happen with current input type
+    }
+
+    const updatedManifest = [...activeRydData.passengerManifest];
+    updatedManifest[passengerIndex] = passengerToUpdate;
+
+    await activeRydDocRef.update({
+      passengerManifest: updatedManifest,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    
+    const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
+    console.log(`[Action: managePassengerJoinRequestAction] Successfully ${actionVerb} passenger ${passengerName} for rydId: ${activeRydId}`);
+    return { success: true, message: `Passenger ${passengerName}'s request has been ${actionVerb}.` };
+
+  } catch (error: any) {
+    console.error("[Action: managePassengerJoinRequestAction] Error processing request:", error);
+    return { 
+        success: false, 
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    };
+  }
+}

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
@@ -14,6 +14,9 @@ import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { useAuth } from '@/context/AuthContext';
+import { managePassengerJoinRequestAction } from '@/actions/activeRydActions';
+import { Separator } from '@/components/ui/separator';
 
 interface RydDetailsPageParams { rideId: string; }
 
@@ -27,10 +30,13 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const params = use(paramsPromise);
   const { rideId } = params || {};
   const { toast } = useToast();
+  const { user: authUser, loading: authLoading, userProfile: authUserProfile } = useAuth();
 
   const [rydDetails, setRydDetails] = useState<DisplayActiveRydData | null>(null);
   const [isLoadingRyd, setIsLoadingRyd] = useState(true);
   const [rydError, setRydError] = useState<string | null>(null);
+  const [isManagingRequest, setIsManagingRequest] = useState<Record<string, boolean>>({});
+
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
     if (!currentRydId) {
@@ -112,7 +118,35 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   }, [rydDetails, rydError, rideId]);
 
 
-  if (isLoadingRyd) {
+  const handleManageRequest = async (passengerUserId: string, newStatus: PassengerManifestStatus.CONFIRMED_BY_DRIVER | PassengerManifestStatus.REJECTED_BY_DRIVER) => {
+    if (!authUser || !rideId) {
+      toast({ title: "Error", description: "Authentication or Ryd ID missing.", variant: "destructive" });
+      return;
+    }
+    setIsManagingRequest(prev => ({ ...prev, [passengerUserId]: true }));
+    try {
+      const result = await managePassengerJoinRequestAction({
+        activeRydId: rideId,
+        passengerUserId,
+        newStatus,
+        actingUserId: authUser.uid,
+      });
+
+      if (result.success) {
+        toast({ title: "Request Updated", description: result.message });
+        fetchRydDetails(rideId); // Refresh details
+      } else {
+        toast({ title: "Update Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsManagingRequest(prev => ({ ...prev, [passengerUserId]: false }));
+    }
+  };
+
+
+  if (isLoadingRyd || authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -159,12 +193,17 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const vehicleModel = rydDetails.vehicleDetails?.model || "";
   const vehicleColor = rydDetails.vehicleDetails?.color || "";
   const vehicleLicense = rydDetails.vehicleDetails?.licensePlate || "";
-  const vehiclePassengerCapacity = rydDetails.vehicleDetails?.passengerCapacity || "N/A";
+  const vehiclePassengerCapacity = parseInt(rydDetails.vehicleDetails?.passengerCapacity || "0", 10);
   
   let vehicleDisplay = `${vehicleMake} ${vehicleModel}`.trim();
   if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
   if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
   if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
+
+  const isCurrentUserDriver = authUser?.uid === rydDetails.driverId;
+  const pendingJoinRequests = rydDetails.passengerManifest.filter(
+    p => p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
+  );
 
   return (
     <>
@@ -237,7 +276,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               )}
               {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({rydDetails.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER).length} / {vehiclePassengerCapacity})</h4>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({rydDetails.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER).length} / {vehiclePassengerCapacity})</h4>
                   <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
                     {rydDetails.passengerManifest.map((manifestItem) => {
                         const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
@@ -270,8 +309,73 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               </div>
             </CardContent>
           </Card>
+
+          {isCurrentUserDriver && pendingJoinRequests.length > 0 && (
+            <Card className="shadow-lg mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-amber-600" /> Pending Join Requests ({pendingJoinRequests.length})</CardTitle>
+                <CardDescription>Review and respond to passengers who want to join this ryd.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {pendingJoinRequests.map(request => {
+                  const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === request.userId);
+                  const passengerName = passengerProfile?.fullName || `User ${request.userId.substring(0,6)}...`;
+                  const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
+                  const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
+                  const isLoadingAction = isManagingRequest[request.userId];
+
+                  return (
+                    <div key={request.userId} className="p-3 border rounded-md">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={passengerAvatar} alt={passengerName} data-ai-hint={passengerDataAiHint} />
+                            <AvatarFallback>{passengerName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                          </Avatar>
+                          <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
+                        </div>
+                         <p className="text-xs text-muted-foreground">Requested: {request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
+                      </div>
+                      {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
+                      <div className="flex gap-2 mt-2 justify-end">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                          onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.REJECTED_BY_DRIVER)}
+                          disabled={isLoadingAction}
+                        >
+                          {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />} Reject
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.CONFIRMED_BY_DRIVER)}
+                          disabled={isLoadingAction}
+                        >
+                          {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />} Approve
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+           {isCurrentUserDriver && pendingJoinRequests.length === 0 && rydDetails.passengerManifest.length > 0 && (
+             <Card className="shadow-lg mt-6">
+               <CardHeader>
+                <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" /> Join Requests</CardTitle>
+               </CardHeader>
+               <CardContent>
+                <p className="text-sm text-muted-foreground">No pending join requests for this ryd at the moment.</p>
+               </CardContent>
+             </Card>
+           )}
+
         </div>
       </div>
     </>
   );
 }
+
