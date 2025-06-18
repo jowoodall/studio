@@ -14,6 +14,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // Import useRouter
 import { useAuth } from "@/context/AuthContext";
 import { type EventData } from "@/types";
 import { db } from "@/lib/firebase";
@@ -32,7 +33,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
   const { toast } = useToast();
   const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
-  
+  const router = useRouter(); // Initialize useRouter
+
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
@@ -44,12 +46,12 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       eventId: eventId || "",
       seatsAvailable: 2,
       notes: "",
-      proposedDepartureTime: "17:00", 
-      plannedArrivalTime: "17:30", 
-      vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "", 
+      proposedDepartureTime: "17:00",
+      plannedArrivalTime: "17:30",
+      vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
       vehicleColor: "",
       licensePlate: "",
-      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "", 
+      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "",
     },
   });
 
@@ -58,7 +60,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       form.setValue("eventId", eventId);
     }
   }, [eventId, form]);
-  
+
   useEffect(() => {
     if (userProfile) {
       if (!form.getValues("vehicleMakeModel") && userProfile.driverDetails?.primaryVehicle) {
@@ -87,27 +89,22 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           const fetchedEvent = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
           setEventDetails(fetchedEvent);
           if (fetchedEvent.eventTimestamp) {
-            const eventDateObj = fetchedEvent.eventTimestamp.toDate(); // This is the actual event date and time
+            const eventDateObj = fetchedEvent.eventTimestamp.toDate();
             const currentPlannedArrivalTime = form.getValues("plannedArrivalTime");
             const currentProposedDepartureTime = form.getValues("proposedDepartureTime");
 
-            // Handle Planned Arrival Time
-            if (!currentPlannedArrivalTime || currentPlannedArrivalTime === "17:30") { // If it's the initial default
+            if (!currentPlannedArrivalTime || currentPlannedArrivalTime === "17:30") {
               const eventStartTimeStr = format(eventDateObj, "HH:mm");
               form.setValue("plannedArrivalTime", eventStartTimeStr);
-              // Now, also set proposed departure based on this new planned arrival time
               const departureDateObj = new Date(eventDateObj.getTime());
               departureDateObj.setHours(departureDateObj.getHours() - 1);
               form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
             } else {
-              // Planned arrival time was already set (e.g., by user or previous load).
-              // Let's still check if proposed departure is default and set it based on current planned arrival.
               if (!currentProposedDepartureTime || currentProposedDepartureTime === "17:00") {
                   const [arrHours, arrMinutes] = currentPlannedArrivalTime.split(':').map(Number);
                   if (!isNaN(arrHours) && !isNaN(arrMinutes)) {
-                      const arrivalDateTimeForCalc = new Date(eventDateObj); // Use event's date part for consistency
+                      const arrivalDateTimeForCalc = new Date(eventDateObj);
                       arrivalDateTimeForCalc.setHours(arrHours, arrMinutes, 0, 0);
-                      
                       const departureDateObj = new Date(arrivalDateTimeForCalc.getTime());
                       departureDateObj.setHours(departureDateObj.getHours() - 1);
                       form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
@@ -117,7 +114,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           }
         } else {
           setEventError('Event with ID "' + eventId + '" not found.');
-          setEventDetails(null); 
+          setEventDetails(null);
         }
       } catch (e) {
         console.error("Error fetching event details:", e);
@@ -135,17 +132,17 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   async function onSubmit(data: OfferDriveFormValues) {
     console.log("[OfferDrivePage] onSubmit triggered for API route. Client form data:", data);
 
-    if (!authUser || !userProfile) { 
+    if (!authUser || !userProfile) {
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
       return;
     }
-    if (!eventDetails) {
-      toast({ title: "Event Error", description: "Event details are not loaded.", variant: "destructive" });
+    if (!eventDetails || !eventId) { // Added check for eventId here for router.push
+      toast({ title: "Event Error", description: "Event details are not loaded or event ID is missing.", variant: "destructive" });
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     let idToken;
     try {
       idToken = await authUser.getIdToken();
@@ -156,8 +153,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       return;
     }
 
-    const payload = { ...data }; 
-    
+    const payload = { ...data };
+
     console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
 
     try {
@@ -165,7 +162,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`, 
+          'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify(payload),
       });
@@ -175,35 +172,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
       if (response.ok && result.success) {
         toast({
-          title: "Offer Submitted (API)",
+          title: "Offer Submitted!",
           description: result.message,
         });
-        
-        // Reset form with intelligent defaults for times
-        let resetPlannedArrivalTime = "17:30";
-        let resetProposedDepartureTime = "17:00";
-        
-        if (eventDetails?.eventTimestamp) {
-            const eventDateForReset = eventDetails.eventTimestamp.toDate();
-            resetPlannedArrivalTime = format(eventDateForReset, "HH:mm");
-            
-            const departureDateForReset = new Date(eventDateForReset.getTime());
-            departureDateForReset.setHours(departureDateForReset.getHours() - 1);
-            resetProposedDepartureTime = format(departureDateForReset, "HH:mm");
-        }
-
-        form.reset({ 
-            eventId: eventId || "", 
-            seatsAvailable: 2, 
-            notes: "",
-            proposedDepartureTime: resetProposedDepartureTime,
-            plannedArrivalTime: resetPlannedArrivalTime,
-            vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
-            vehicleColor: "",
-            licensePlate: "",
-            driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "",
-        });
-        // router.push(`/events/${eventId}/rydz`);
+        router.push(`/events/${eventId}/rydz`); // Redirect on success
       } else {
         toast({
           title: "Submission Failed (API)",
@@ -227,7 +199,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       setIsSubmitting(false);
     }
   }
-  
+
   const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent;
 
   if (isLoadingPage) {
@@ -238,8 +210,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       </div>
     );
   }
-  
-  if (!authUser || !userProfile) { 
+
+  if (!authUser || !userProfile) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -264,7 +236,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       </div>
     );
   }
-  
+
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
 
   return (
@@ -330,7 +302,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                   </FormItem>
                 )}
               />
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                     control={form.control}
@@ -390,7 +362,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     </FormItem>
                   )}
               />
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                     control={form.control}
@@ -439,7 +411,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                   </FormItem>
                 )}
               />
-              
+
               <div className="p-3 bg-muted/50 rounded-md text-sm space-y-1">
                 <p><span className="font-semibold">Event:</span> {eventDetails.name}</p>
                 <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
@@ -461,4 +433,3 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     </>
   );
 }
-
