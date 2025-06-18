@@ -6,16 +6,16 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus } from '@/types';
+import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
-import { managePassengerJoinRequestAction } from '@/actions/activeRydActions';
+import { managePassengerJoinRequestAction, cancelPassengerSpotAction } from '@/actions/activeRydActions';
 import { Separator } from '@/components/ui/separator';
 
 interface RydDetailsPageParams { rideId: string; }
@@ -36,6 +36,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isLoadingRyd, setIsLoadingRyd] = useState(true);
   const [rydError, setRydError] = useState<string | null>(null);
   const [isManagingRequest, setIsManagingRequest] = useState<Record<string, boolean>>({});
+  const [isCancellingSpot, setIsCancellingSpot] = useState<Record<string, boolean>>({});
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -142,6 +143,32 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
     } finally {
       setIsManagingRequest(prev => ({ ...prev, [passengerUserId]: false }));
+    }
+  };
+
+  const handleCancelSpot = async (passengerUserIdToCancel: string) => {
+    if (!authUser || !rideId) {
+      toast({ title: "Error", description: "Authentication or Ryd ID missing.", variant: "destructive" });
+      return;
+    }
+    setIsCancellingSpot(prev => ({ ...prev, [passengerUserIdToCancel]: true }));
+    try {
+      const result = await cancelPassengerSpotAction({
+        activeRydId: rideId,
+        passengerUserIdToCancel,
+        cancellingUserId: authUser.uid,
+      });
+
+      if (result.success) {
+        toast({ title: "Spot Cancelled", description: result.message });
+        fetchRydDetails(rideId); // Refresh details
+      } else {
+        toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsCancellingSpot(prev => ({ ...prev, [passengerUserIdToCancel]: false }));
     }
   };
 
@@ -288,17 +315,52 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               )}
               {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({activePassengerCount} / {vehiclePassengerCapacity})</h4>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({activePassengerCount} / {vehiclePassengerCapacity})</h4>
                   {displayedPassengers.length > 0 ? (
-                    <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
+                    <ul className="space-y-2">
                       {displayedPassengers.map((manifestItem) => {
                           const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
+                          const passengerName = passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`;
+                          const isCurrentUserThisPassenger = authUser?.uid === manifestItem.userId;
+                          const canCurrentUserManageThisPassenger = authUser && authUserProfile && authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds?.includes(manifestItem.userId);
+                          const canCancel = (isCurrentUserThisPassenger || canCurrentUserManageThisPassenger);
+                          
+                          const cancellablePassengerStatuses: PassengerManifestStatus[] = [
+                            PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+                            PassengerManifestStatus.CONFIRMED_BY_DRIVER,
+                            PassengerManifestStatus.AWAITING_PICKUP,
+                          ];
+                          const isPassengerStatusCancellable = cancellablePassengerStatuses.includes(manifestItem.status);
+
+                          const nonCancellableRydStatuses: ARStatus[] = [
+                            ARStatus.COMPLETED, ARStatus.CANCELLED_BY_DRIVER, ARStatus.CANCELLED_BY_SYSTEM,
+                            ARStatus.IN_PROGRESS_ROUTE, ARStatus.IN_PROGRESS_PICKUP 
+                          ];
+                          const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
+
                           return (
-                            <li key={manifestItem.userId}>
-                              <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline">
-                                  {passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`}
-                              </Link>
-                              <span className="text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                            <li key={manifestItem.userId} className="p-2 border rounded-md bg-muted/20">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
+                                      {passengerName}
+                                  </Link>
+                                  <span className="text-xs text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                                </div>
+                                {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="px-2 py-1 h-auto text-xs"
+                                    onClick={() => handleCancelSpot(manifestItem.userId)}
+                                    disabled={isCancellingSpot[manifestItem.userId]}
+                                  >
+                                    {isCancellingSpot[manifestItem.userId] ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
+                                    <span className="ml-1">Cancel Spot</span>
+                                  </Button>
+                                )}
+                              </div>
+                              {manifestItem.pickupAddress && <p className="text-xs text-muted-foreground mt-0.5">Pickup: {manifestItem.pickupAddress}</p>}
                             </li>
                           );
                       })}
