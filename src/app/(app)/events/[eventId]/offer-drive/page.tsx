@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft } from "lucide-react";
+import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield } from "lucide-react"; // Added Clock, Palette, Shield for new fields
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -20,13 +20,13 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 
-import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
+import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas'; // Updated import
 
 interface ResolvedPageParams {
   eventId: string;
 }
 
-export default function OfferDrivePageStep1({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
+export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) { // Renamed to OfferDrivePage
   const params = use(paramsPromise);
   const { eventId } = params || {};
 
@@ -38,12 +38,17 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
   const [eventError, setEventError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const form = useForm<OfferDriveFormStep1Values>({
-    resolver: zodResolver(offerDriveFormStep1Schema),
+  const form = useForm<OfferDriveFormValues>({ // Updated type
+    resolver: zodResolver(offerDriveFormSchema),
     defaultValues: {
       eventId: eventId || "",
       seatsAvailable: 2,
       notes: "",
+      proposedDepartureTime: "17:00", // Default departure time
+      vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "", // Pre-fill from profile if available
+      vehicleColor: "",
+      licensePlate: "",
+      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "", // Pre-fill from profile address
     },
   });
 
@@ -52,6 +57,19 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
       form.setValue("eventId", eventId);
     }
   }, [eventId, form]);
+  
+  useEffect(() => {
+    // Pre-fill vehicle and start location from userProfile once it's loaded
+    if (userProfile) {
+      if (!form.getValues("vehicleMakeModel") && userProfile.driverDetails?.primaryVehicle) {
+        form.setValue("vehicleMakeModel", userProfile.driverDetails.primaryVehicle);
+      }
+      if (!form.getValues("driverStartLocation") && userProfile.address?.street) {
+         form.setValue("driverStartLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
+      }
+    }
+  }, [userProfile, form, eventId]);
+
 
   useEffect(() => {
     const fetchEventDetails = async () => {
@@ -82,8 +100,8 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     fetchEventDetails();
   }, [eventId]);
 
-  async function onSubmit(data: OfferDriveFormStep1Values) {
-    console.log("[OfferDrivePage_Step1] onSubmit triggered for API route. Client form data:", data);
+  async function onSubmit(data: OfferDriveFormValues) { // Updated type
+    console.log("[OfferDrivePage] onSubmit triggered for API route. Client form data:", data);
 
     if (!authUser || !userProfile) { 
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
@@ -93,30 +111,23 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
       toast({ title: "Event Error", description: "Event details are not loaded.", variant: "destructive" });
       return;
     }
-    if (data.eventId !== eventId) {
-        console.warn(`[OfferDrivePage_Step1] Form eventId (${data.eventId}) differs from page eventId (${eventId}). Using form's.`);
-    }
-
+    
     setIsSubmitting(true);
     
     let idToken;
     try {
       idToken = await authUser.getIdToken();
     } catch (error) {
-      console.error("[OfferDrivePage_Step1] Error getting ID token:", error);
+      console.error("[OfferDrivePage] Error getting ID token:", error);
       toast({ title: "Authentication Error", description: "Could not get user ID token. Please try logging in again.", variant: "destructive" });
       setIsSubmitting(false);
       return;
     }
 
-    // Simplified payload: API route will fetch user profile and event details server-side.
-    const payload = {
-      eventId: data.eventId,
-      seatsAvailable: data.seatsAvailable,
-      notes: data.notes,
-    };
+    // Payload now includes all form fields
+    const payload = { ...data }; 
     
-    console.log("[OfferDrivePage_Step1] Payload for API route:", JSON.stringify(payload, null, 2));
+    console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch('/api/offer-drive', {
@@ -129,15 +140,23 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
       });
 
       const result = await response.json();
-      console.log("[OfferDrivePage_Step1] API route response:", result);
+      console.log("[OfferDrivePage] API route response:", result);
 
       if (response.ok && result.success) {
         toast({
           title: "Offer Submitted (API)",
           description: result.message,
         });
-        form.reset({ eventId: eventId || "", seatsAvailable: 2, notes: "" });
-        // Potentially redirect user to a confirmation page or the event rydz page
+        form.reset({ 
+            eventId: eventId || "", 
+            seatsAvailable: 2, 
+            notes: "",
+            proposedDepartureTime: "17:00",
+            vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
+            vehicleColor: "",
+            licensePlate: "",
+            driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "",
+        });
         // router.push(`/events/${eventId}/rydz`);
       } else {
         toast({
@@ -147,12 +166,12 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
         });
         if (result.issues) {
            result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => {
-              form.setError(issue.path[0] as keyof OfferDriveFormStep1Values, { message: issue.message });
+              form.setError(issue.path.join(".") as keyof OfferDriveFormValues, { message: issue.message });
            });
         }
       }
     } catch (error: any) {
-      console.error("[OfferDrivePage_Step1] Error calling API route:", error);
+      console.error("[OfferDrivePage] Error calling API route:", error);
       toast({
         title: "Client-Side Error",
         description: `Failed to call API: ${error.message || "Unknown error"}`,
@@ -206,7 +225,7 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
     <>
       <PageHeader
         title={`Offer to Drive: ${eventDetails.name}`}
-        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Basic Offer.`}
+        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Specify your ryd details.`}
         actions={
             <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/rydz`}>
@@ -221,9 +240,9 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
             <Car className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer (Basic - API)</CardTitle>
+          <CardTitle className="text-center font-headline text-xl">Your Ryd Offer Details</CardTitle>
           <CardDescription className="text-center">
-            Confirm seats and add optional notes. Submitted via API route.
+            Provide comprehensive details about your ryd.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -265,16 +284,91 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
                   </FormItem>
                 )}
               />
+              
+              <FormField
+                  control={form.control}
+                  name="proposedDepartureTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center"><Clock className="mr-2 h-4 w-4 text-muted-foreground"/>Proposed Departure Time (from your start location)</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormDescription>What time do you plan to leave for the event?</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+              />
+
+              <FormField
+                  control={form.control}
+                  name="driverStartLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Your Starting Location / General Pickup Area</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., My home (123 Main St), or 'Downtown Area'" {...field} />
+                      </FormControl>
+                      <FormDescription>Where will you be starting your ryd from?</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+              <FormField
+                  control={form.control}
+                  name="vehicleMakeModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Vehicle Make & Model</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Toyota Camry, Honda CR-V" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+              />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                    control={form.control}
+                    name="vehicleColor"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="flex items-center"><Palette className="mr-2 h-4 w-4 text-muted-foreground"/>Vehicle Color (Optional)</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., Blue, Silver" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="licensePlate"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel className="flex items-center"><Shield className="mr-2 h-4 w-4 text-muted-foreground"/>License Plate (Optional)</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., ABC-123" {...field} />
+                        </FormControl>
+                        <FormDescription className="text-xs">Helps passengers identify your car.</FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+              </div>
+
 
               <FormField
                 control={form.control}
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormLabel>Additional Notes (Optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="e.g., 'Flexible with pickup times.'"
+                        placeholder="e.g., 'Flexible with pickup times within 15 mins.', 'Have space for small luggage.'"
                         className="resize-none"
                         rows={3}
                         {...field}
@@ -290,18 +384,12 @@ export default function OfferDrivePageStep1({ params: paramsPromise }: { params:
                 <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
                 <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
               </div>
-              
-              <div className="p-3 bg-blue-500/10 rounded-md text-xs text-blue-700 border border-blue-500/30">
-                 <AlertTriangle className="inline h-4 w-4 mr-1.5" />
-                 <span className="font-semibold">Refactor Note:</span> This form submits a lean payload to an API route. The API route uses Firebase Admin SDK for Firestore operations and user/event verification.
-              </div>
-
 
               <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile}>
                 {isSubmitting ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting Offer (API)...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting Offer...</>
                 ) : (
-                  <><Car className="mr-2 h-4 w-4" /> Submit Offer (API)</>
+                  <><Car className="mr-2 h-4 w-4" /> Submit Ryd Offer</>
                 )}
               </Button>
             </form>

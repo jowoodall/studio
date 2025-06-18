@@ -2,7 +2,7 @@
 // src/app/api/offer-drive/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
 import * as z from 'zod';
-import { offerDriveFormStep1Schema } from '@/schemas/activeRydSchemas';
+import { offerDriveFormSchema } from '@/schemas/activeRydSchemas'; // Updated import
 import admin from '@/lib/firebaseAdmin'; 
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import type { UserProfileData, EventData, ActiveRyd, ActiveRydStatus } from '@/types';
@@ -32,16 +32,14 @@ export async function POST(request: NextRequest) {
     }
 
     const verifiedUserId = decodedToken.uid;
-
-    // Expecting a leaner payload now
     const body = await request.json();
     console.log('[API Route: /api/offer-drive] Received request body:', JSON.stringify(body, null, 2));
 
-    // Core form data is eventId, seatsAvailable, notes
-    const validationResult = offerDriveFormStep1Schema.safeParse(body);
+    // Use the updated schema for validation
+    const validationResult = offerDriveFormSchema.safeParse(body);
 
     if (!validationResult.success) {
-      console.error('[API Route: /api/offer-drive] Core form data validation failed:', validationResult.error.flatten());
+      console.error('[API Route: /api/offer-drive] Form data validation failed:', validationResult.error.flatten());
       return NextResponse.json({ success: false, message: "Invalid form data submitted to API.", issues: validationResult.error.issues }, { status: 400 });
     }
     const validatedData = validationResult.data;
@@ -72,6 +70,7 @@ export async function POST(request: NextRequest) {
 
     let eventDetails: EventData;
     let eventNameForMessage: string;
+    let eventDateForDeparture: Date;
     try {
       const eventDocRef = db.collection('events').doc(validatedData.eventId);
       const eventDocSnap = await eventDocRef.get();
@@ -81,6 +80,7 @@ export async function POST(request: NextRequest) {
       }
       eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
       eventNameForMessage = eventDetails.name;
+      eventDateForDeparture = eventDetails.eventTimestamp.toDate(); // For combining with proposedDepartureTime
       console.log(`[API Route: /api/offer-drive] Successfully fetched event details: "${eventNameForMessage}" (ID: ${validatedData.eventId})`);
     } catch (error: any) {
       console.error(`[API Route: /api/offer-drive] Error fetching event details for eventId ${validatedData.eventId}:`, error);
@@ -89,6 +89,17 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API Route: /api/offer-drive] Attempting to create activeRydz document for eventId: ${validatedData.eventId}, driverId: ${verifiedUserId}`);
     
+    // Combine event date with proposed departure time
+    const [hours, minutes] = validatedData.proposedDepartureTime.split(':').map(Number);
+    const proposedDepartureDateTime = new Date(eventDateForDeparture);
+    proposedDepartureDateTime.setHours(hours, minutes, 0, 0);
+    const proposedDepartureFirestoreTimestamp = Timestamp.fromDate(proposedDepartureDateTime);
+
+    // Split vehicleMakeModel
+    const vehicleParts = validatedData.vehicleMakeModel.split(' ');
+    const make = vehicleParts[0] || "";
+    const model = vehicleParts.slice(1).join(' ') || "";
+
     const activeRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
       driverId: verifiedUserId,
       status: 'planning' as ActiveRydStatus.PLANNING,
@@ -98,11 +109,14 @@ export async function POST(request: NextRequest) {
       notes: validatedData.notes || "",
       vehicleDetails: {
           passengerCapacity: String(validatedData.seatsAvailable) || "0",
-          make: userProfile.driverDetails?.primaryVehicle?.split(' ')[0] || "",
-          model: userProfile.driverDetails?.primaryVehicle?.split(' ').slice(1).join(' ') || "",
+          make: make,
+          model: model,
+          color: validatedData.vehicleColor || "",
+          licensePlate: validatedData.licensePlate || "",
       },
+      proposedDepartureTime: proposedDepartureFirestoreTimestamp,
+      startLocationAddress: validatedData.driverStartLocation || userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD",
       finalDestinationAddress: eventDetails.location, 
-      startLocationAddress: userProfile.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "Driver's location TBD",
     };
 
     try {
@@ -110,8 +124,7 @@ export async function POST(request: NextRequest) {
       const docRef = await activeRydzCollectionRef.add(activeRydObject);
       console.log(`[API Route: /api/offer-drive] Successfully created activeRydz document with ID: ${docRef.id}`);
       
-      // Using server-fetched userProfile.fullName and eventNameForMessage
-      const successMessage = `Successfully offered to drive for "${eventNameForMessage}" by ${userProfile.fullName}! Your Ryd offer ID is ${docRef.id}.`;
+      const successMessage = `Successfully offered to drive for "${eventNameForMessage}"! Your Ryd offer ID is ${docRef.id}.`;
       console.log(`[API Route: /api/offer-drive] ${successMessage}`);
 
       return NextResponse.json({

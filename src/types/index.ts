@@ -44,8 +44,10 @@ export interface UserProfileData {
   driverDetails?: {
     ageRange?: string;
     drivingExperience?: string;
-    primaryVehicle?: string;
+    primaryVehicle?: string; // This could store make & model together
     passengerCapacity?: string;
+    // Vehicle color & license plate could also go here if primarily tied to driver,
+    // but putting them on ActiveRyd makes sense if a driver uses different cars.
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
@@ -161,19 +163,19 @@ export interface PassengerManifestItem {
 export interface ActiveRyd {
   id: string; // Firestore document ID
   driverId: string; // UID of the assigned driver
-  vehicleDetails?: { // Snapshot of vehicle details at the time of ryd assignment/start
+  vehicleDetails?: { 
     make?: string;
     model?: string;
-    color?: string;
-    licensePlate?: string;
-    passengerCapacity?: string; // From UserProfileData.driverDetails
+    color?: string; // New
+    licensePlate?: string; // New
+    passengerCapacity?: string; 
   };
   status: ActiveRydStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  actualDepartureTime?: Timestamp;
+  proposedDepartureTime?: Timestamp; // Changed from actualDepartureTime to reflect it's a proposal from the driver
   estimatedCompletionTime?: Timestamp;
-  startLocationAddress?: string; // Driver's start or first pickup point
+  startLocationAddress?: string; // Driver's declared starting point/area for this specific ryd
   finalDestinationAddress?: string; // Main event location or final drop-off for the entire ryd
   routePolyline?: string; // Optional: Encoded polyline for map display
   passengerManifest: PassengerManifestItem[];
