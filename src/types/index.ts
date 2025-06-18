@@ -134,6 +134,9 @@ export enum ActiveRydStatus {
 }
 
 export enum PassengerManifestStatus {
+  PENDING_DRIVER_APPROVAL = 'pending_driver_approval',
+  CONFIRMED_BY_DRIVER = 'confirmed_by_driver',
+  REJECTED_BY_DRIVER = 'rejected_by_driver',
   AWAITING_PICKUP = 'awaiting_pickup',
   ON_BOARD = 'on_board',
   DROPPED_OFF = 'dropped_off',
@@ -143,9 +146,9 @@ export enum PassengerManifestStatus {
 
 export interface PassengerManifestItem {
   userId: string; 
-  originalRydRequestId: string; 
-  pickupAddress: string; 
-  destinationAddress: string; 
+  originalRydRequestId?: string; // Made optional
+  pickupAddress?: string; // Made optional, might be set on confirmation
+  destinationAddress: string; // Should be set from ActiveRyd.finalDestinationAddress
   status: PassengerManifestStatus; 
   pickupOrder?: number; 
   dropoffOrder?: number; 
@@ -154,6 +157,7 @@ export interface PassengerManifestItem {
   estimatedDropoffTime?: Timestamp; 
   actualDropoffTime?: Timestamp; 
   notes?: string; 
+  requestedAt: Timestamp; // Added to track when the request to join was made
 }
 
 export interface ActiveRyd {
@@ -170,7 +174,7 @@ export interface ActiveRyd {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   proposedDepartureTime?: Timestamp; 
-  plannedArrivalTime?: Timestamp; // New field
+  plannedArrivalTime?: Timestamp; 
   estimatedCompletionTime?: Timestamp;
   startLocationAddress?: string; 
   finalDestinationAddress?: string; 
