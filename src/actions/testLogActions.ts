@@ -3,6 +3,36 @@
 
 console.log("[File: testLogActions.ts] File loaded on server."); // Top-level file load log
 
+
+import * as z from 'zod';
+import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import type { ActiveRyd, ActiveRydStatus } from '@/types'; // Added ActiveRyd types
+
+
+export async function TestEventAction() {
+
+  console.log("start event action 2");
+  try {
+
+    const eventDocRef = doc(db, "events", "KCqRCu4uasMRkrhmijRZ");
+    console.log(eventDocRef);
+    const eventDocSnap = await getDoc(eventDocRef);
+    console.log(eventDocSnap);
+    console.log("event log created");
+
+  } catch(error: any){
+
+    console.log(error.message);
+
+  }
+  console.log("end event action")
+
+
+}
+
+
 export async function simpleLogTestAction(message: string): Promise<{ success: boolean; response: string }> {
   console.log("----------------------------------------------------");
   console.log("[Action: simpleLogTestAction] Action called on server.");

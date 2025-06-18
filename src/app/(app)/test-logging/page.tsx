@@ -10,6 +10,14 @@ import { useToast } from "@/hooks/use-toast";
 import { simpleLogTestAction } from "@/actions/testLogActions";
 import { Loader2, Terminal } from "lucide-react";
 
+// Test Imports
+import * as z from 'zod';
+import { offerDriveFormStep1Schema, type OfferDriveFormStep1Values } from '@/schemas/activeRydSchemas';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import type { ActiveRyd, ActiveRydStatus } from '@/types'; // Added ActiveRyd types
+import { TestEventAction } from "@/actions/testLogActions";
+
 export default function TestLoggingPage() {
   const { toast } = useToast();
   const [message, setMessage] = useState("Hello Server!");
@@ -48,6 +56,30 @@ export default function TestLoggingPage() {
     } finally {
       setIsLoading(false);
     }
+    console.log("run tryRecord()");
+    tryRecord();
+  };
+
+  const tryRecord = async () => {
+    console.log("tryRecord() started");
+    try {
+
+      const eventDocRef = doc(db, "events", "KCqRCu4uasMRkrhmijRZ");
+      console.log(eventDocRef);
+      const eventDocSnap = await getDoc(eventDocRef);
+      console.log(eventDocSnap);
+      console.log("event log created");
+
+      console.log("starting test event action");
+      await TestEventAction();
+      console.log("test event action complete")
+
+    } catch(error: any){
+
+      console.log(error.message);
+
+    }
+
   };
 
   return (

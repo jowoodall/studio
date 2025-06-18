@@ -32,7 +32,7 @@ export async function createActiveRydForEventAction_Step1(
   const validatedData = validationResult.data;
   console.log("[Action: createActiveRydForEventAction_Step1] Server-side input data validation successful.");
 
-  // Driver permission check (using client-provided data)
+  // Step 2: Driver permission check (using client-provided data)
   if (!clientProvidedCanDrive) {
     console.error(`[Action: createActiveRydForEventAction_Step1] User ${userId} (${clientProvidedFullName}) is not permitted to drive based on client-provided status.`);
     return {
@@ -43,7 +43,7 @@ export async function createActiveRydForEventAction_Step1(
   }
   console.log(`[Action: createActiveRydForEventAction_Step1] Driver ${userId} (${clientProvidedFullName}) is permitted to drive (based on client-provided status).`);
 
-  // Event details are now provided by the client (clientProvidedEventName)
+  // Step 3: Event details are now provided by the client (clientProvidedEventName)
   // The server-side fetch for event details is removed for this step.
   const eventNameForMessage = clientProvidedEventName || `event ID ${validatedData.eventId}`;
 
