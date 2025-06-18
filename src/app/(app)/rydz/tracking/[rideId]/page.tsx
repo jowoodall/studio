@@ -243,11 +243,31 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     item.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
     item.status !== PassengerManifestStatus.MISSED_PICKUP
   );
+  
+  let pageTitleElement: React.ReactNode;
+  if (rydDetails.eventName && rydDetails.associatedEventId) {
+    pageTitleElement = (
+      <>
+        Tracking Ryd to:{" "}
+        <Link href={`/events/${rydDetails.associatedEventId}/rydz`} className="hover:underline">
+          {rydDetails.eventName}
+        </Link>
+        {rydDetails.finalDestinationAddress && ` (at ${rydDetails.finalDestinationAddress})`}
+      </>
+    );
+  } else if (rydDetails.eventName) {
+    pageTitleElement = `Tracking Ryd to: ${rydDetails.eventName}${rydDetails.finalDestinationAddress ? ` (${rydDetails.finalDestinationAddress})` : ''}`;
+  } else if (rydDetails.finalDestinationAddress) {
+    pageTitleElement = `Tracking Ryd to: ${rydDetails.finalDestinationAddress}`;
+  } else {
+    pageTitleElement = `Tracking Ryd ID: ${rideId}`;
+  }
+
 
   return (
     <>
       <PageHeader
-        title={`Tracking Ryd to: ${rydDetails.eventName || rydDetails.finalDestinationAddress || `ID ${rideId}`}`}
+        title={pageTitleElement}
         description={`Follow the progress of this ryd in real-time.`}
       />
       <div className="grid lg:grid-cols-3 gap-6">
@@ -304,7 +324,18 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               {rydDetails.finalDestinationAddress && (
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To (Final Destination)</h4>
-                  <p>{rydDetails.eventName ? `${rydDetails.eventName} (${rydDetails.finalDestinationAddress})` : rydDetails.finalDestinationAddress}</p>
+                  <p>
+                    {rydDetails.eventName && rydDetails.associatedEventId ? (
+                      <>
+                        <Link href={`/events/${rydDetails.associatedEventId}/rydz`} className="text-primary hover:underline">
+                          {rydDetails.eventName}
+                        </Link>
+                        {rydDetails.finalDestinationAddress ? ` (at ${rydDetails.finalDestinationAddress})` : ''}
+                      </>
+                    ) : (
+                      rydDetails.eventName || rydDetails.finalDestinationAddress
+                    )}
+                  </p>
                 </div>
               )}
               {rydDetails.notes && (
