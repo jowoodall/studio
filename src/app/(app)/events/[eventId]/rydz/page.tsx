@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus // Added ThumbsUp, UserPlus
+  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types"; 
+import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus, PassengerManifestStatus } from "@/types"; 
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 
@@ -44,7 +44,7 @@ interface DisplayActiveRyd extends ActiveRyd {
 }
 
 interface DisplayRydRequestData extends RydData {
-  id: string; // Ensure RydData has id or add it here
+  id: string; 
   requesterProfile?: UserProfileData;
   passengerUserProfiles?: UserProfileData[];
   eventName?: string;
@@ -254,7 +254,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         const fetchedRydRequestsPromises: Promise<DisplayRydRequestData | null>[] = [];
 
         querySnapshot.forEach((docSnap) => {
-            const rydRequest = { id: docSnap.id, ...docSnap.data() } as RydData & {id: string}; // Ensure id is part of the type
+            const rydRequest = { id: docSnap.id, ...docSnap.data() } as RydData & {id: string};
 
             const promise = async (): Promise<DisplayRydRequestData | null> => {
                 let requesterProfile: UserProfileData | undefined = undefined;
@@ -294,12 +294,15 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setRydRequestsList(resolvedRydRequests);
 
     } catch (e: any) {
-        console.error("Error fetching ryd requests:", e);
+        console.error("[EventRydzPage] Error fetching ryd requests:", e);
+        console.error("[EventRydzPage] Full error object for ryd requests:", JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
         let detailedError = "Failed to load ryd requests for this event.";
         if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-            detailedError = "A Firestore index is required to load ryd requests. Please check the browser's console for a link to create it.";
+            detailedError = "A Firestore index is required to load ryd requests. Please check the browser's developer console for a link to create it in your Firebase project.";
         } else if (e.code === 'permission-denied') {
-            detailedError = "Permission denied when fetching ryd requests. Check Firestore security rules.";
+            detailedError = "Permission denied when fetching ryd requests. Please check your Firestore security rules to ensure reads are allowed for the 'rydz' collection based on your query criteria.";
+        } else {
+            detailedError = `An unexpected error occurred: ${e.message || "Unknown error"}. Code: ${e.code || "N/A"}`;
         }
         setRydRequestsError(detailedError);
         setRydRequestsList([]);
@@ -319,7 +322,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   useEffect(() => {
     if (eventId && eventDetails) { 
       fetchActiveRydzForEvent(eventId);
-      fetchRydRequestsForEvent(eventId); // Fetch ryd requests as well
+      fetchRydRequestsForEvent(eventId); 
     } else if (eventId && !eventDetails && !isLoadingEvent && eventError) {
       setIsLoadingActiveRydz(false);
       setActiveRydzList([]);
@@ -550,7 +553,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                     </button>
                   </Badge>
-                ) : <Badge key={groupId} variant="outline">Loading Group... ({groupId.substring(0,6)}...)</Badge>;
+                ) : <Badge key={groupId} variant="outline">Loading Group... (${groupId.substring(0,6)}...)</Badge>;
               })}
             </div>
           ) : (
@@ -744,7 +747,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         </CardContent>
       </Card>
 
-      {/* ActiveRydz List Section */}
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz for this Event</h3>
       {isLoadingActiveRydz && (
         <div className="flex items-center justify-center py-10">
@@ -829,23 +831,23 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </div>
                 </div>
 
-                {activeRyd.passengerProfiles && activeRyd.passengerProfiles.length > 0 && (
+                {activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0 && (
                     <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({activeRyd.passengerManifest.filter(p => p.status !== 'cancelled_by_passenger').length} / {vehiclePassengerCapacity}):</h4>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({activeRyd.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER).length} / {vehiclePassengerCapacity}):</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
                             {activeRyd.passengerManifest.map(pItem => {
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
                                 return (
                                 <li key={pItem.userId}>
                                     {passengerProfile?.fullName || `User ${pItem.userId.substring(0,6)}...`}
-                                    <span className="text-muted-foreground/80 ml-1">({pItem.status.replace(/_/g, ' ')})</span>
+                                    <span className="text-muted-foreground/80 ml-1 capitalize">({pItem.status.replace(/_/g, ' ')})</span>
                                 </li>
                                 );
                             })}
                         </ul>
                     </div>
                 )}
-                 {(!activeRyd.passengerProfiles || activeRyd.passengerProfiles.length === 0) && (
+                 {(!activeRyd.passengerManifest || activeRyd.passengerManifest.length === 0) && (
                      <p className="text-xs text-muted-foreground mt-2">No passengers currently listed for this ryd.</p>
                  )}
 
@@ -896,7 +898,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         </Card>
       )}
 
-      {/* Ryd Requests List Section */}
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Requested Rydz for this Event</h3>
       {isLoadingRydRequests && (
         <div className="flex items-center justify-center py-10">
@@ -1029,3 +1030,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
 
 
+
+
+    
+
+    
