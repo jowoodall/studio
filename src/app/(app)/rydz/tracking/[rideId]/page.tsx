@@ -204,6 +204,18 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const pendingJoinRequests = rydDetails.passengerManifest.filter(
     p => p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
   );
+  
+  const activePassengerCount = rydDetails.passengerManifest.filter(p => 
+    p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && 
+    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+    p.status !== PassengerManifestStatus.MISSED_PICKUP
+  ).length;
+
+  const displayedPassengers = rydDetails.passengerManifest.filter(item =>
+    item.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+    item.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+    item.status !== PassengerManifestStatus.MISSED_PICKUP
+  );
 
   return (
     <>
@@ -276,20 +288,24 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               )}
               {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({rydDetails.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER).length} / {vehiclePassengerCapacity})</h4>
-                  <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
-                    {rydDetails.passengerManifest.map((manifestItem) => {
-                        const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
-                        return (
-                          <li key={manifestItem.userId}>
-                            <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline">
-                                {passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`}
-                            </Link>
-                            <span className="text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
-                          </li>
-                        );
-                    })}
-                  </ul>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({activePassengerCount} / {vehiclePassengerCapacity})</h4>
+                  {displayedPassengers.length > 0 ? (
+                    <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
+                      {displayedPassengers.map((manifestItem) => {
+                          const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
+                          return (
+                            <li key={manifestItem.userId}>
+                              <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline">
+                                  {passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`}
+                              </Link>
+                              <span className="text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                            </li>
+                          );
+                      })}
+                    </ul>
+                  ) : (
+                     <p className="text-xs text-muted-foreground">No active passengers currently listed.</p>
+                  )}
                 </div>
               )}
               {(!rydDetails.passengerManifest || rydDetails.passengerManifest.length === 0) && (
