@@ -6,12 +6,12 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { type RydData, type UserProfileData, type ActiveRyd, type EventData } from '@/types';
+import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
@@ -145,19 +145,26 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   }
 
   const mapMarkers = [];
-  if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` });
-  if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`});
+  if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` }); // Using placeholder lat/lng
+  if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`}); // Using placeholder lat/lng
 
-  const departureTime = rydDetails.actualDepartureTime instanceof Timestamp ? rydDetails.actualDepartureTime.toDate() : null;
+  const proposedDepartureTime = rydDetails.proposedDepartureTime instanceof Timestamp ? rydDetails.proposedDepartureTime.toDate() : null;
+  const plannedArrivalTime = rydDetails.plannedArrivalTime instanceof Timestamp ? rydDetails.plannedArrivalTime.toDate() : null;
   
   const driverName = rydDetails.driverProfile?.fullName || "Driver details pending";
   const driverAvatar = rydDetails.driverProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${driverName.split(" ").map(n=>n[0]).join("")}`;
   const driverDataAiHint = rydDetails.driverProfile?.dataAiHint || "driver photo";
+  
   const vehicleMake = rydDetails.vehicleDetails?.make || "";
   const vehicleModel = rydDetails.vehicleDetails?.model || "";
+  const vehicleColor = rydDetails.vehicleDetails?.color || "";
+  const vehicleLicense = rydDetails.vehicleDetails?.licensePlate || "";
   const vehiclePassengerCapacity = rydDetails.vehicleDetails?.passengerCapacity || "N/A";
-  const vehicleInfo = `${vehicleMake} ${vehicleModel}`.trim() || "Vehicle not specified";
-
+  
+  let vehicleDisplay = `${vehicleMake} ${vehicleModel}`.trim();
+  if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
+  if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
+  if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
 
   return (
     <>
@@ -192,15 +199,22 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                     </Avatar>
                     <div>
                       <Link href={`/profile/view/${rydDetails.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
-                      <p className="text-xs text-muted-foreground">{vehicleInfo} (Capacity: {vehiclePassengerCapacity})</p>
+                      <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
+                      <p className="text-xs text-muted-foreground">Capacity: {vehiclePassengerCapacity} seats</p>
                     </div>
                   </div>
                 </div>
               )}
-              {departureTime && (
+              {proposedDepartureTime && (
                  <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Proposed Departure Time</h4>
-                  <p className="font-semibold">{format(departureTime, "PPP 'at' p")}</p>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Proposed Departure</h4>
+                  <p className="font-semibold">{format(proposedDepartureTime, "PPP 'at' p")}</p>
+                </div>
+              )}
+              {plannedArrivalTime && (
+                 <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><CalendarDays className="h-4 w-4 mr-1.5" /> Planned Arrival</h4>
+                  <p className="font-semibold">{format(plannedArrivalTime, "PPP 'at' p")}</p>
                 </div>
               )}
               {rydDetails.startLocationAddress && (
@@ -212,7 +226,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               {rydDetails.finalDestinationAddress && (
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To (Final Destination)</h4>
-                  <p>{rydDetails.finalDestinationAddress}</p>
+                  <p>{rydDetails.eventName ? `${rydDetails.eventName} (${rydDetails.finalDestinationAddress})` : rydDetails.finalDestinationAddress}</p>
                 </div>
               )}
               {rydDetails.notes && (
@@ -221,25 +235,28 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                     <p className="text-sm bg-muted/50 p-2 rounded-md whitespace-pre-wrap">{rydDetails.notes}</p>
                 </div>
               )}
-              {rydDetails.passengerProfiles && rydDetails.passengerProfiles.length > 0 && (
+              {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd</h4>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({rydDetails.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER).length} / {vehiclePassengerCapacity})</h4>
                   <ul className="list-disc list-inside pl-1 text-sm space-y-0.5">
-                    {rydDetails.passengerProfiles.map((passenger, index) => (
-                      <li key={passenger.uid}>
-                        <Link href={`/profile/view/${passenger.uid}`} className="hover:underline">
-                            {passenger.fullName || "Unnamed Passenger"}
-                        </Link>
-                         ({rydDetails.passengerManifest.find(item => item.userId === passenger.uid)?.status.replace(/_/g, ' ') || 'Status unknown'})
-                      </li>
-                    ))}
+                    {rydDetails.passengerManifest.map((manifestItem) => {
+                        const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
+                        return (
+                          <li key={manifestItem.userId}>
+                            <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline">
+                                {passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`}
+                            </Link>
+                            <span className="text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                          </li>
+                        );
+                    })}
                   </ul>
                 </div>
               )}
-              {(!rydDetails.passengerProfiles || rydDetails.passengerProfiles.length === 0) && (
+              {(!rydDetails.passengerManifest || rydDetails.passengerManifest.length === 0) && (
                   <div>
                     <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers</h4>
-                    <p className="text-sm text-muted-foreground">No passengers currently assigned or confirmed for this ryd.</p>
+                    <p className="text-sm text-muted-foreground">No passengers currently listed for this ryd.</p>
                   </div>
               )}
 
@@ -258,5 +275,3 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     </>
   );
 }
-
-    
