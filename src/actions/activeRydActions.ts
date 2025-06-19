@@ -394,7 +394,7 @@ export async function fulfillRequestWithExistingRydAction(
     if (activeRydData.associatedEventId) {
         const eventDocRef = db.collection('events').doc(activeRydData.associatedEventId);
         const eventDocSnap = await eventDocRef.get();
-        if (eventDocSnap.exists()) {
+        if (eventDocSnap.exists) { // Corrected: using .exists property
             eventNameForManifest = (eventDocSnap.data() as EventData).name;
         }
     } else if (activeRydData.finalDestinationAddress) {
@@ -403,13 +403,13 @@ export async function fulfillRequestWithExistingRydAction(
 
 
     for (const passengerId of rydRequestData.passengerIds) {
-      const passengerProfile = await getUserProfile(passengerId);
+      const passengerProfileData = await getUserProfile(passengerId); // Renamed to avoid conflict
       let passengerPickupAddress = rydRequestData.pickupLocation || "Pickup to be coordinated"; // Default to request's pickup
-      if (passengerProfile?.address?.street) { // Override with passenger's profile address if available
-        const pStreet = passengerProfile.address.street || "";
-        const pCity = passengerProfile.address.city || "";
-        const pState = passengerProfile.address.state || "";
-        const pZip = passengerProfile.address.zip || "";
+      if (passengerProfileData?.address?.street) { // Override with passenger's profile address if available
+        const pStreet = passengerProfileData.address.street || "";
+        const pCity = passengerProfileData.address.city || "";
+        const pState = passengerProfileData.address.state || "";
+        const pZip = passengerProfileData.address.zip || "";
         const fullAddr = [pStreet, pCity, pState, pZip].filter(Boolean).join(", ");
         if (fullAddr.trim() !== "") passengerPickupAddress = fullAddr;
       }
