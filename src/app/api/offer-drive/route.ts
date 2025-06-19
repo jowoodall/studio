@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       for (const passengerId of body.passengersToFulfill) {
         const passengerProfileSnap = await db.collection('users').doc(passengerId).get();
         let passengerPickupAddress = "Pickup to be coordinated";
-        if (passengerProfileSnap.exists()) {
+        if (passengerProfileSnap.exists) { // CORRECTED LINE
           const pProfile = passengerProfileSnap.data() as UserProfileData;
           const pStreet = pProfile.address?.street || "";
           const pCity = pProfile.address?.city || "";
