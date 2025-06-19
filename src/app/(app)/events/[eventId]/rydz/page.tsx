@@ -1011,9 +1011,36 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       {!isLoadingRydRequests && !rydRequestsError && rydRequestsList.length > 0 && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {rydRequestsList.map((request) => {
-            const requesterName = request.requesterProfile?.fullName || "Unknown User";
-            const requesterAvatar = request.requesterProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${requesterName.split(" ").map(n=>n[0]).join("")}`;
-            const requesterDataAiHint = request.requesterProfile?.dataAiHint || "user photo";
+            const primaryPassenger = request.passengerUserProfiles && request.passengerUserProfiles.length > 0 
+                                     ? request.passengerUserProfiles[0] 
+                                     : null;
+            const displayNamer = primaryPassenger 
+                                 ? primaryPassenger.fullName 
+                                 : request.requesterProfile?.fullName || "A User";
+            const displayAvatar = primaryPassenger 
+                                  ? primaryPassenger.avatarUrl 
+                                  : request.requesterProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${displayNamer.split(" ").map(n=>n[0]).join("")}`;
+            const displayAvatarHint = primaryPassenger 
+                                      ? primaryPassenger.dataAiHint 
+                                      : request.requesterProfile?.dataAiHint || "user photo";
+            const profileLinkUid = primaryPassenger ? primaryPassenger.uid : request.requestedBy;
+
+            let cardSubtitle = "Requested a Ryd";
+            if (primaryPassenger && request.passengerUserProfiles!.length > 1) {
+                cardSubtitle = `Ryd for ${primaryPassenger.fullName} & ${request.passengerUserProfiles!.length - 1} other(s)`;
+                 if (request.requesterProfile && request.requesterProfile.uid !== primaryPassenger.uid) {
+                    cardSubtitle += ` (Requested by ${request.requesterProfile.fullName})`;
+                }
+            } else if (primaryPassenger) {
+                cardSubtitle = `Ryd for ${primaryPassenger.fullName}`;
+                if (request.requesterProfile && request.requesterProfile.uid !== primaryPassenger.uid) {
+                    cardSubtitle += ` (Requested by ${request.requesterProfile.fullName})`;
+                }
+            } else if (request.requesterProfile) {
+                cardSubtitle = `Requested by ${request.requesterProfile.fullName}`;
+            }
+
+
             const rydDateTime = request.rydTimestamp instanceof Timestamp ? request.rydTimestamp.toDate() : null;
             const earliestPickup = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
             const canCurrentUserOfferToFulfill = authUserProfile?.canDrive;
@@ -1023,12 +1050,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               <CardHeader>
                  <div className="flex items-center gap-3 mb-2">
                     <Avatar className="h-12 w-12">
-                        <AvatarImage src={requesterAvatar} alt={requesterName} data-ai-hint={requesterDataAiHint}/>
-                        <AvatarFallback>{requesterName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                        <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
+                        <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <Link href={`/profile/view/${request.requestedBy}`} className="font-semibold hover:underline">{requesterName}</Link>
-                        <p className="text-xs text-muted-foreground">Requested a Ryd</p>
+                        <Link href={`/profile/view/${profileLinkUid}`} className="font-semibold hover:underline">{displayNamer}</Link>
+                        <p className="text-xs text-muted-foreground">{cardSubtitle}</p>
                     </div>
                 </div>
                 <Badge variant="outline" className="w-fit capitalize">{request.status.replace(/_/g, ' ')}</Badge>
@@ -1057,7 +1084,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
                 {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
                     <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers:</h4>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({request.passengerUserProfiles.length}):</h4>
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
                             {request.passengerUserProfiles.map(p => (
                                 <li key={p.uid}>
@@ -1076,7 +1103,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
               </CardContent>
               <CardFooter className="border-t pt-4">
-                {canCurrentUserOfferToFulfill && (
+                {canCurrentUserOfferToFulfill ? (
                   <Button
                     variant="outline"
                     className="w-full"
@@ -1086,8 +1113,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill
                     </Link>
                   </Button>
-                )}
-                {!canCurrentUserOfferToFulfill && (
+                ) : (
                      <Button variant="outline" className="w-full" disabled>
                         <Car className="mr-2 h-4 w-4 text-muted-foreground"/> (Drivers can offer to fulfill)
                     </Button>
