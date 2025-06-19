@@ -20,7 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd } from "@/types";
+import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem } from "@/types"; // Added PassengerManifestItem
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
@@ -349,7 +349,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       const result = await requestToJoinActiveRydAction({
         activeRydId,
         passengerUserId: authUser.uid,
-        requestedByUserId: authUser.uid,
+        requestedByUserId: authUser.uid, // For students requesting for themselves
       });
 
       if (result.success) {
@@ -380,8 +380,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       if (result.success && result.activeRydId) {
         toast({ title: "Request Fulfilled!", description: result.message });
         if (eventId) {
-            fetchRydRequestsForEvent(eventId);
-            fetchActiveRydzForEvent(eventId);
+            fetchRydRequestsForEvent(eventId); // Refresh requests
+            fetchActiveRydzForEvent(eventId);  // Refresh offers
         }
         router.push('/rydz/tracking/' + result.activeRydId);
       } else {

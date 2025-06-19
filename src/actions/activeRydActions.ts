@@ -49,7 +49,7 @@ export async function requestToJoinActiveRydAction(
     }
 
     if (requesterProfile.uid !== passengerUserId) { // Requester is different from passenger (i.e., parent)
-      if (requesterProfile.role !== UserRole.PARENT) {
+      if (requesterProfile.role !== 'parent') { // Assuming UserRole.PARENT is 'parent'
         return { success: false, message: "Only parents can request for other users." };
       }
       if (!requesterProfile.managedStudentIds?.includes(passengerUserId)) {
@@ -251,7 +251,7 @@ export async function cancelPassengerSpotAction(
     }
 
     if (cancellingUserId !== passengerUserIdToCancel) {
-      if (cancellingUserProfile.role !== UserRole.PARENT) {
+      if (cancellingUserProfile.role !== 'parent') { // Assuming UserRole.PARENT
         return { success: false, message: "Unauthorized: Only parents can cancel for other users." };
       }
       if (!cancellingUserProfile.managedStudentIds?.includes(passengerUserIdToCancel)) {
@@ -456,3 +456,4 @@ export async function fulfillRequestWithExistingRydAction(
     };
   }
 }
+
