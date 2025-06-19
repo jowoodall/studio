@@ -209,7 +209,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       toast({ title: "Event Error", description: "Event details are not loaded or event ID is missing.", variant: "destructive" });
       return;
     }
-    if (originalRydRequest && data.seatsAvailable < originalRydRequest.passengerIds.length) {
+    if (originalRydRequest && originalRydRequest.passengerIds && data.seatsAvailable < originalRydRequest.passengerIds.length) {
         toast({ title: "Capacity Error", description: `You must offer at least ${originalRydRequest.passengerIds.length} seat(s) to fulfill this request.`, variant: "destructive" });
         return;
     }
@@ -230,7 +230,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     const payload: any = { ...data };
     if (originalRydRequest) {
       payload.fulfillingRequestId = originalRydRequest.id;
-      payload.passengersToFulfill = originalRydRequest.passengerIds; // Send passenger IDs to API
+      payload.passengersToFulfill = originalRydRequest.passengerIds;
     }
 
     console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
@@ -245,32 +245,62 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
-      console.log("[OfferDrivePage] API route response:", result);
+      if (response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const result = await response.json();
+          console.log("[OfferDrivePage] API route response:", result);
 
-      if (response.ok && result.success) {
-        toast({
-          title: originalRydRequest ? "Ryd Fulfillment Offer Submitted!" : "Offer Submitted!",
-          description: result.message,
-        });
-        router.push(`/events/${eventId}/rydz`); 
-      } else {
-        toast({
-          title: "Submission Failed (API)",
-          description: result.message || result.errorDetails || "An unknown error occurred from API.",
-          variant: "destructive",
-        });
-        if (result.issues) {
-           result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => {
-              form.setError(issue.path.join(".") as keyof OfferDriveFormValues, { message: issue.message });
-           });
+          if (result.success) {
+            toast({
+              title: originalRydRequest ? "Ryd Fulfillment Offer Submitted!" : "Offer Submitted!",
+              description: result.message,
+            });
+            router.push(`/events/${eventId}/rydz`);
+          } else {
+            toast({
+              title: "Submission Failed (API)",
+              description: result.message || result.errorDetails || "An unknown error occurred from API.",
+              variant: "destructive",
+            });
+            if (result.issues) {
+              result.issues.forEach((issue: { path: (string | number)[]; message: string; }) => {
+                form.setError(issue.path.join(".") as keyof OfferDriveFormValues, { message: issue.message });
+              });
+            }
+          }
+        } else {
+          const errorText = await response.text();
+          console.error("[OfferDrivePage] API route did not return JSON. Response text:", errorText);
+          toast({
+            title: "Submission Error",
+            description: "The server returned an unexpected response. This might be due to a timeout or server-side issue. Please try again later.",
+            variant: "destructive",
+            duration: 9000,
+          });
         }
+      } else {
+        const errorText = await response.text();
+        let errorMessage = `Server error: ${response.status} ${response.statusText}.`;
+        try {
+            const errorJson = JSON.parse(errorText); // Try to parse as JSON first
+            errorMessage = errorJson.message || errorJson.errorDetails || errorMessage;
+        } catch (e) {
+            // If not JSON, it could be HTML or plain text error
+            console.error("[OfferDrivePage] Non-OK response was not JSON:", errorText.substring(0, 500)); // Log first 500 chars
+        }
+        toast({
+            title: "Submission Failed (Server)",
+            description: errorMessage + " (Check console for more details if response was not JSON)",
+            variant: "destructive",
+            duration: 9000,
+        });
       }
     } catch (error: any) {
-      console.error("[OfferDrivePage] Error calling API route:", error);
+      console.error("[OfferDrivePage] Error calling API route (fetch error):", error);
       toast({
         title: "Client-Side Error",
-        description: `Failed to call API: ${error.message || "Unknown error"}`,
+        description: `Failed to communicate with the server: ${error.message || "Unknown error"}`,
         variant: "destructive",
       });
     } finally {
@@ -280,7 +310,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
   const isLoadingPage = authLoading || isLoadingProfile || isLoadingEvent || isLoadingRydRequest;
 
-  if (isLoadingPage && !eventDetails && !originalRydRequest) { // Show main loader if nothing is ready
+  if (isLoadingPage && !eventDetails && !originalRydRequest) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -425,7 +455,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                       </SelectContent>
                     </Select>
                     <FormDescription>How many passengers can you take?</FormDescription>
-                    {originalRydRequest && field.value < originalRydRequest.passengerIds.length && (
+                    {originalRydRequest && originalRydRequest.passengerIds && field.value < originalRydRequest.passengerIds.length && (
                         <FormMessage className="text-destructive">
                             You need at least {originalRydRequest.passengerIds.length} seat(s) for this request.
                         </FormMessage>
