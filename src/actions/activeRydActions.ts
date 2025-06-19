@@ -106,11 +106,12 @@ export async function requestToJoinActiveRydAction(
 
     const newManifestItem: PassengerManifestItem = {
       userId: passengerUserId,
-      // originalRydRequestId: can be added if linking to a RydData request
-      pickupAddress: fullPickupAddress,
+      // originalRydRequestId: will be null for direct join, filled if driver fulfills a RydData
+      pickupAddress: fullPickupAddress, // Default pickup, user will confirm/update in next step
       destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
       status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
       requestedAt: Timestamp.now(),
+      // earliestPickupTimestamp will be set by the passenger in the next step
     };
     
     // Using FieldValue.arrayUnion to add the new item
@@ -124,7 +125,7 @@ export async function requestToJoinActiveRydAction(
         success: true, 
         message: `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`,
         rydId: activeRydId,
-        // passengerManifestItemId: We don't have an ID for the sub-item in arrayUnion directly
+        // passengerManifestItemId: passengerUserId can be used to identify the item for subsequent updates if needed.
     };
 
   } catch (error: any) {
@@ -394,7 +395,7 @@ export async function fulfillRequestWithExistingRydAction(
     if (activeRydData.associatedEventId) {
         const eventDocRef = db.collection('events').doc(activeRydData.associatedEventId);
         const eventDocSnap = await eventDocRef.get();
-        if (eventDocSnap.exists) { // Corrected: using .exists property
+        if (eventDocSnap.exists) { 
             eventNameForManifest = (eventDocSnap.data() as EventData).name;
         }
     } else if (activeRydData.finalDestinationAddress) {
@@ -457,3 +458,73 @@ export async function fulfillRequestWithExistingRydAction(
   }
 }
 
+interface SubmitPassengerDetailsForActiveRydInput {
+  activeRydId: string;
+  passengerUserId: string;
+  pickupLocation: string;
+  earliestPickupTimeStr: string; // e.g., "08:30"
+  eventDate: Date; // The actual Date object for the event date (to combine with time)
+  notes?: string;
+}
+
+export async function submitPassengerDetailsForActiveRydAction(
+  input: SubmitPassengerDetailsForActiveRydInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: submitPassengerDetailsForActiveRydAction] Called with input:", input);
+  const { activeRydId, passengerUserId, pickupLocation, earliestPickupTimeStr, eventDate, notes } = input;
+
+  if (!activeRydId || !passengerUserId || !pickupLocation || !earliestPickupTimeStr || !eventDate) {
+    return { success: false, message: "Missing required parameters for submitting passenger details." };
+  }
+
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    const activeRydDocSnap = await activeRydDocRef.get();
+    if (!activeRydDocSnap.exists) {
+      return { success: false, message: "ActiveRyd not found." };
+    }
+    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+    const passengerIndex = activeRydData.passengerManifest.findIndex(
+      (p) => p.userId === passengerUserId
+    );
+
+    if (passengerIndex === -1) {
+      return { success: false, message: "You are not listed as a passenger on this ryd, or your request was removed." };
+    }
+
+    const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
+
+    // Update details
+    passengerToUpdate.pickupAddress = pickupLocation;
+    passengerToUpdate.notes = notes || "";
+
+    // Construct earliestPickupTimestamp
+    const [hours, minutes] = earliestPickupTimeStr.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) {
+      return { success: false, message: "Invalid earliest pickup time format."};
+    }
+    const pickupDateTime = new Date(eventDate); // Start with the event date
+    pickupDateTime.setHours(hours, minutes, 0, 0); // Set the time
+    passengerToUpdate.earliestPickupTimestamp = Timestamp.fromDate(pickupDateTime);
+
+    const updatedManifest = [...activeRydData.passengerManifest];
+    updatedManifest[passengerIndex] = passengerToUpdate;
+
+    await activeRydDocRef.update({
+      passengerManifest: updatedManifest,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[Action: submitPassengerDetailsForActiveRydAction] Successfully updated details for passenger ${passengerUserId} on ryd ${activeRydId}.`);
+    return { success: true, message: "Your pickup details have been successfully submitted." };
+
+  } catch (error: any) {
+    console.error("[Action: submitPassengerDetailsForActiveRydAction] Error processing request:", error);
+    return { 
+        success: false, 
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    };
+  }
+}

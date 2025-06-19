@@ -339,14 +339,18 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
       return;
     }
-    if (authUserProfile.role !== UserRole.STUDENT) {
-      toast({ title: "Action Not Available", description: "Only students can directly request to join from here. Parents should use the 'Request Ryd' page.", variant: "destructive" });
+    // Allow parents to request for their managed students, or students for themselves
+    // This action will require passengerUserId. For now, assuming student self-request.
+    // A more advanced UI would let parents select which student.
+    if (authUserProfile.role !== UserRole.STUDENT) { // Simplified check for now
+      toast({ title: "Action Not Available", description: "Only students can directly request to join from here. Parents should use the 'Request Ryd' page for specific students.", variant: "destructive" });
       return;
     }
 
     setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: true }));
     let success = false;
     let message = '';
+    let serverRydId: string | undefined = undefined;
 
     try {
       const result = await requestToJoinActiveRydAction({
@@ -356,6 +360,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       });
       success = result.success;
       message = result.message;
+      serverRydId = result.rydId;
 
     } catch (error: any) {
       success = false;
@@ -363,17 +368,19 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       console.error("[EventRydzPage] Client-side error calling requestToJoinActiveRydAction:", error);
     } finally {
       setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: false }));
-      if (success) {
+      if (success && serverRydId && eventId && authUser) {
+        toast({ title: "Request Sent!", description: "Request sent to driver. Please provide your pickup details now." });
+        router.push(`/rydz/request?eventId=${eventId}&activeRydId=${serverRydId}&passengerId=${authUser.uid}&context=joinOffer`);
+        // No re-fetch here as user is redirected
+      } else if (success) {
+        // Fallback if redirect info is missing, but still show success to user and refresh.
         toast({ title: "Request Sent!", description: message });
-        if(eventId) {
-            console.log(`[EventRydzPage] Request successful for ${activeRydId}, re-fetching active rydz for event ${eventId}`);
-            fetchActiveRydzForEvent(eventId); // Re-fetch on success
-        }
+        if(eventId) fetchActiveRydzForEvent(eventId);
       } else {
         toast({ title: "Request Failed", description: message, variant: "destructive" });
       }
     }
-  }, [authUser, authUserProfile, eventId, fetchActiveRydzForEvent, toast]);
+  }, [authUser, authUserProfile, eventId, fetchActiveRydzForEvent, toast, router]);
 
   const handleFulfillWithExistingRyd = async (rydRequestId: string, existingActiveRydId: string) => {
     if (!authUser) {
@@ -726,13 +733,11 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             <CardDescription className="mb-6">
               There are currently no specific rydz offered by drivers for {eventDetails.name}.
             </CardDescription>
-            <div className="flex justify-center gap-4">
-                <Button variant="outline" asChild>
-                    <Link href={'/events/' + eventId + '/offer-drive'}>
-                        <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
-                    </Link>
-                </Button>
-            </div>
+            <Button variant="outline" asChild>
+                <Link href={'/events/' + eventId + '/offer-drive'}>
+                    <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
+                </Link>
+            </Button>
           </CardContent>
         </Card>
       )}
