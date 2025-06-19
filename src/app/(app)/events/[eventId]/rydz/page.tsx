@@ -334,7 +334,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
 
-  const handleRequestToJoin = async (activeRydId: string) => {
+  const handleRequestToJoin = useCallback(async (activeRydId: string) => {
     if (!authUser || !authUserProfile) {
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
       return;
@@ -373,7 +373,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         toast({ title: "Request Failed", description: message, variant: "destructive" });
       }
     }
-  };
+  }, [authUser, authUserProfile, eventId, fetchActiveRydzForEvent, toast]);
 
   const handleFulfillWithExistingRyd = async (rydRequestId: string, existingActiveRydId: string) => {
     if (!authUser) {
@@ -727,13 +727,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               There are currently no specific rydz offered by drivers for {eventDetails.name}.
             </CardDescription>
             <div className="flex justify-center gap-4">
-                <Button asChild>
-                <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
-                    <span className="flex items-center">
-                      <PlusCircle className="mr-2 h-4 w-4" /> Request a Ryd
-                    </span>
-                </Link>
-                </Button>
                 <Button variant="outline" asChild>
                     <Link href={'/events/' + eventId + '/offer-drive'}>
                         <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
