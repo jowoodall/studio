@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRouter, useSearchParams } from "next/navigation"; // Import useRouter and useSearchParams
+import { useRouter, useSearchParams } from "next/navigation"; 
 
 
 interface ManagedStudentSelectItem {
@@ -39,7 +39,7 @@ const createRydRequestFormSchema = (userRole?: UserRole) => z.object({
   eventName: z.string().optional(),
   destination: z.string().min(5, "Destination address is required."),
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
-  date: z.date({ required_error: "Date of ryd is required." }), 
+  date: z.date({ required_error: "Date of ryd is required." }).optional().nullable(), // Made optional for default value handling
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   passengerUids: z.array(z.string()).optional(), 
@@ -59,6 +59,13 @@ const createRydRequestFormSchema = (userRole?: UserRole) => z.object({
         path: ["passengerUids"],
       });
     }
+    if (!data.date) { // Add specific check for date if it's required by logic but optional in form start
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Date of ryd is required.",
+            path: ["date"],
+        });
+    }
 });
 
 type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema>>;
@@ -67,8 +74,8 @@ type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema
 export default function RydRequestPage() { 
   const { toast } = useToast();
   const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
-  const router = useRouter(); // Initialize useRouter
-  const searchParams = useSearchParams(); // Initialize useSearchParams
+  const router = useRouter(); 
+  const searchParams = useSearchParams(); 
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [availableEvents, setAvailableEvents] = useState<EventData[]>([]);
@@ -82,12 +89,15 @@ export default function RydRequestPage() {
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(createRydRequestFormSchema(userProfile?.role)), 
     defaultValues: {
+      eventId: undefined,
+      eventName: "",
+      destination: "",
+      pickupLocation: "",
+      date: undefined, // Initialize date as undefined
       time: "09:00", 
       earliestPickupTime: "08:00",
-      destination: "",
-      eventName: "",
-      pickupLocation: "",
       passengerUids: [],
+      notes: "", // Initialize notes as empty string
     }
   });
 
@@ -182,6 +192,12 @@ export default function RydRequestPage() {
       toast({ title: "Authentication Error", description: "You must be logged in to request a ryd.", variant: "destructive" });
       return;
     }
+    if (!data.date) {
+        toast({ title: "Validation Error", description: "Date of ryd is required.", variant: "destructive" });
+        form.setError("date", { type: "manual", message: "Date of ryd is required." });
+        setIsSubmitting(false);
+        return;
+    }
 
     let finalPassengerUids: string[] = [];
     if (userProfile.role === UserRole.PARENT) {
@@ -245,9 +261,8 @@ export default function RydRequestPage() {
         title: "Ryd Requested!", 
         description: `Your request (ID: ${docRef.id}) for a ryd to ${rydRequestPayload.eventName || rydRequestPayload.destination} has been submitted.`, 
       });
-      // Redirect after successful submission
       const redirectUrl = searchParams.get('redirectUrl');
-      router.push(redirectUrl || '/rydz/upcoming'); // Fallback to upcoming rydz if no redirectUrl
+      router.push(redirectUrl || '/rydz/upcoming'); 
     } catch (error) {
         let errorMessage = "Could not submit your ryd request. Please try again.";
         const firebaseError = error as any;
@@ -288,6 +303,25 @@ export default function RydRequestPage() {
       form.setValue("destination", form.getValues("destination") || ""); 
     }
   }, [selectedEventId, form, availableEvents]);
+  
+  useEffect(() => {
+    const eventIdFromQuery = searchParams.get('eventId');
+    if (eventIdFromQuery && availableEvents.length > 0) {
+      const eventExists = availableEvents.some(event => event.id === eventIdFromQuery);
+      if (eventExists) {
+        form.setValue('eventId', eventIdFromQuery);
+      } else if (eventIdFromQuery === "custom") {
+        form.setValue('eventId', "custom");
+      }
+    }
+    if (userProfile?.address?.street && !form.getValues("pickupLocation")) {
+        const userAddr = `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '');
+        if (userAddr) {
+            form.setValue("pickupLocation", userAddr);
+        }
+    }
+
+  }, [searchParams, form, availableEvents, userProfile]);
 
   const handleStudentSelection = (studentId: string) => {
     const currentSelectedStudents = form.getValues("passengerUids") || [];
@@ -327,6 +361,7 @@ export default function RydRequestPage() {
                             field.onChange(value);
                         }} 
                         defaultValue={field.value}
+                        value={field.value || undefined} // Ensure value is controlled
                         disabled={isLoadingEvents}
                     >
                       <FormControl>
@@ -526,7 +561,7 @@ export default function RydRequestPage() {
                         <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
-                            selected={field.value}
+                            selected={field.value || undefined}
                             onSelect={field.onChange}
                             disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) || (!!selectedEventId && selectedEventId !== "custom") }
                             initialFocus
