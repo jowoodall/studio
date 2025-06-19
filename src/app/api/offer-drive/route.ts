@@ -5,8 +5,8 @@ import * as z from 'zod';
 import { offerDriveFormSchema } from '@/schemas/activeRydSchemas';
 import admin from '@/lib/firebaseAdmin';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
-import type { UserProfileData, EventData, ActiveRyd } from '@/types';
-import { ActiveRydStatus } from '@/types'; // Import ActiveRydStatus
+import type { UserProfileData, EventData, ActiveRyd, RydData, RydStatus, PassengerManifestItem } from '@/types';
+import { ActiveRydStatus, PassengerManifestStatus } from '@/types';
 
 export async function POST(request: NextRequest) {
   console.log('[API Route: /api/offer-drive] POST request received.');
@@ -86,37 +86,39 @@ export async function POST(request: NextRequest) {
       console.error(`[API Route: /api/offer-drive] Error fetching event details for eventId ${validatedData.eventId}:`, error);
       return NextResponse.json({ success: false, message: `Error fetching event details: ${error.message}`, errorDetails: error.code }, { status: 500 });
     }
-
+    
     // Check for existing active ryd offers by this driver for this event
-    try {
-      console.log(`[API Route: /api/offer-drive] Checking for existing ryd offers by driver ${verifiedUserId} for event ${validatedData.eventId}`);
-      const activeRydzCollectionRef = db.collection("activeRydz");
-      const existingRydQuery = activeRydzCollectionRef
-        .where("driverId", "==", verifiedUserId)
-        .where("associatedEventId", "==", validatedData.eventId);
+    // This check is only relevant if NOT fulfilling a specific request, as a new ActiveRyd is made for each fulfillment.
+    if (!body.fulfillingRequestId) {
+        try {
+        console.log(`[API Route: /api/offer-drive] Checking for existing ryd offers by driver ${verifiedUserId} for event ${validatedData.eventId}`);
+        const activeRydzCollectionRef = db.collection("activeRydz");
+        const existingRydQuery = activeRydzCollectionRef
+            .where("driverId", "==", verifiedUserId)
+            .where("associatedEventId", "==", validatedData.eventId);
 
-      const querySnapshot = await existingRydQuery.get();
-      let hasActiveOffer = false;
-      if (!querySnapshot.empty) {
-        querySnapshot.forEach(doc => {
-          const existingRyd = doc.data() as ActiveRyd;
-          // Consider an offer active if it's not cancelled
-          if (existingRyd.status !== ActiveRydStatus.CANCELLED_BY_DRIVER && existingRyd.status !== ActiveRydStatus.CANCELLED_BY_SYSTEM) {
-            hasActiveOffer = true;
-          }
-        });
-      }
+        const querySnapshot = await existingRydQuery.get();
+        let hasActiveOffer = false;
+        if (!querySnapshot.empty) {
+            querySnapshot.forEach(doc => {
+            const existingRyd = doc.data() as ActiveRyd;
+            if (existingRyd.status !== ActiveRydStatus.CANCELLED_BY_DRIVER && existingRyd.status !== ActiveRydStatus.CANCELLED_BY_SYSTEM) {
+                hasActiveOffer = true;
+            }
+            });
+        }
 
-      if (hasActiveOffer) {
-        const message = `You already have an active ryd offer for the event: "${eventNameForMessage}". You can manage or cancel it from your rydz list.`;
-        console.warn(`[API Route: /api/offer-drive] Driver ${verifiedUserId} already has an active offer for event ${validatedData.eventId}. Blocking new offer.`);
-        return NextResponse.json({ success: false, message: message }, { status: 409 }); // 409 Conflict
-      }
-      console.log(`[API Route: /api/offer-drive] No existing active ryd offers found for driver ${verifiedUserId} for event ${validatedData.eventId}. Proceeding to create new offer.`);
+        if (hasActiveOffer) {
+            const message = `You already have an active ryd offer for the event: "${eventNameForMessage}". You can manage or cancel it from your rydz list.`;
+            console.warn(`[API Route: /api/offer-drive] Driver ${verifiedUserId} already has an active offer for event ${validatedData.eventId}. Blocking new general offer.`);
+            return NextResponse.json({ success: false, message: message }, { status: 409 }); 
+        }
+        console.log(`[API Route: /api/offer-drive] No existing active general ryd offers found for driver ${verifiedUserId} for event ${validatedData.eventId}. Proceeding.`);
 
-    } catch (error: any) {
-        console.error(`[API Route: /api/offer-drive] Error checking for existing ryd offers:`, error);
-        return NextResponse.json({ success: false, message: `Error verifying existing offers: ${error.message}` }, { status: 500 });
+        } catch (error: any) {
+            console.error(`[API Route: /api/offer-drive] Error checking for existing ryd offers:`, error);
+            return NextResponse.json({ success: false, message: `Error verifying existing offers: ${error.message}` }, { status: 500 });
+        }
     }
 
 
@@ -136,11 +138,58 @@ export async function POST(request: NextRequest) {
     const make = vehicleParts[0] || "";
     const model = vehicleParts.slice(1).join(' ') || "";
 
+    let passengerManifestItems: PassengerManifestItem[] = [];
+    let originalRequestDataForMessage: RydData | null = null;
+
+    if (body.fulfillingRequestId && body.passengersToFulfill && Array.isArray(body.passengersToFulfill) && body.passengersToFulfill.length > 0) {
+        console.log(`[API Route: /api/offer-drive] Fulfilling request ID: ${body.fulfillingRequestId} for ${body.passengersToFulfill.length} passengers.`);
+        
+        if (body.passengersToFulfill.length > validatedData.seatsAvailable) {
+            console.error(`[API Route: /api/offer-drive] Capacity error: ${body.passengersToFulfill.length} passengers requested, but only ${validatedData.seatsAvailable} seats available.`);
+            return NextResponse.json({ success: false, message: `Not enough seats available (${validatedData.seatsAvailable}) to fulfill the request for ${body.passengersToFulfill.length} passengers.` }, { status: 400 });
+        }
+
+        const originalRequestDocRef = db.collection('rydz').doc(body.fulfillingRequestId);
+        const originalRequestSnap = await originalRequestDocRef.get();
+        if (!originalRequestSnap.exists) {
+            console.error(`[API Route: /api/offer-drive] Original ryd request with ID ${body.fulfillingRequestId} not found.`);
+            return NextResponse.json({ success: false, message: `Original ryd request with ID ${body.fulfillingRequestId} not found.` }, { status: 404 });
+        }
+        originalRequestDataForMessage = originalRequestSnap.data() as RydData;
+
+        for (const passengerId of body.passengersToFulfill) {
+            const passengerProfileSnap = await db.collection('users').doc(passengerId).get();
+            let passengerPickupAddress = "Pickup to be coordinated"; // Default
+            if (passengerProfileSnap.exists()) {
+                const passengerProfile = passengerProfileSnap.data() as UserProfileData;
+                const pStreet = passengerProfile.address?.street || "";
+                const pCity = passengerProfile.address?.city || "";
+                const pState = passengerProfile.address?.state || "";
+                const pZip = passengerProfile.address?.zip || "";
+                const fullAddr = [pStreet, pCity, pState, pZip].filter(Boolean).join(", ");
+                if (fullAddr.trim() !== "") passengerPickupAddress = fullAddr;
+            } else if (originalRequestDataForMessage.pickupLocation) {
+                passengerPickupAddress = originalRequestDataForMessage.pickupLocation;
+            }
+
+            passengerManifestItems.push({
+                userId: passengerId,
+                originalRydRequestId: body.fulfillingRequestId,
+                pickupAddress: passengerPickupAddress,
+                destinationAddress: eventDetails.location, 
+                status: PassengerManifestStatus.CONFIRMED_BY_DRIVER,
+                requestedAt: originalRequestDataForMessage.createdAt || Timestamp.now(),
+            });
+        }
+        console.log(`[API Route: /api/offer-drive] Prepared ${passengerManifestItems.length} passenger manifest items for fulfillment.`);
+    }
+
+
     const activeRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
       driverId: verifiedUserId,
-      status: ActiveRydStatus.PLANNING,
+      status: passengerManifestItems.length > 0 ? ActiveRydStatus.AWAITING_PASSENGERS : ActiveRydStatus.PLANNING, // If fulfilling, start as AWAITING_PASSENGERS
       createdAt: FieldValue.serverTimestamp() as Timestamp,
-      passengerManifest: [],
+      passengerManifest: passengerManifestItems,
       associatedEventId: validatedData.eventId,
       notes: validatedData.notes || "",
       vehicleDetails: {
@@ -160,10 +209,25 @@ export async function POST(request: NextRequest) {
       const activeRydzCollectionRef = db.collection("activeRydz");
       const docRef = await activeRydzCollectionRef.add(activeRydObject);
       console.log(`[API Route: /api/offer-drive] Successfully created activeRydz document with ID: ${docRef.id}`);
+      
+      let successMessage = `Successfully offered to drive for "${eventNameForMessage}"! Your Ryd offer ID is ${docRef.id}.`;
 
-      const successMessage = `Successfully offered to drive for "${eventNameForMessage}"! Your Ryd offer ID is ${docRef.id}.`;
+      // If fulfilling a request, update the original RydData
+      if (body.fulfillingRequestId && originalRequestDataForMessage) {
+        const originalRequestDocRef = db.collection('rydz').doc(body.fulfillingRequestId);
+        await originalRequestDocRef.update({
+            status: 'driver_assigned' as RydStatus,
+            driverId: verifiedUserId,
+            assignedActiveRydId: docRef.id,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+        console.log(`[API Route: /api/offer-drive] Successfully updated original RydData ${body.fulfillingRequestId} to status 'driver_assigned' and linked ActiveRyd ${docRef.id}.`);
+        const numPassengers = body.passengersToFulfill?.length || 0;
+        const passengerText = numPassengers === 1 ? "1 passenger" : `${numPassengers} passengers`;
+        successMessage = `Successfully fulfilled ryd request for ${passengerText} to "${eventNameForMessage}"! Your Ryd ID is ${docRef.id}.`;
+      }
+      
       console.log(`[API Route: /api/offer-drive] ${successMessage}`);
-
       return NextResponse.json({
         success: true,
         message: successMessage,
@@ -171,13 +235,13 @@ export async function POST(request: NextRequest) {
       }, { status: 201 });
 
     } catch (error: any) {
-      console.error(`[API Route: /api/offer-drive] CRITICAL ERROR creating activeRydz document for eventId ${validatedData.eventId}, driverId ${verifiedUserId}:`, error);
-      let errorMessage = "Failed to create the ryd offer in Firestore (Admin SDK).";
-      errorMessage = `An unexpected error occurred while creating the ryd offer with Admin SDK: ${error.message || 'Unknown Firestore error'}. (Code: ${error.code || 'N/A'})`;
+      console.error(`[API Route: /api/offer-drive] CRITICAL ERROR creating activeRydz document or updating original request for eventId ${validatedData.eventId}, driverId ${verifiedUserId}:`, error);
+      let errorMessage = "Failed to process the ryd offer in Firestore (Admin SDK).";
+      errorMessage = `An unexpected error occurred: ${error.message || 'Unknown Firestore error'}. (Code: ${error.code || 'N/A'})`;
       console.error("[API Route: /api/offer-drive] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
       return NextResponse.json({
         success: false,
-        message: "An error occurred while creating your ryd offer using Admin SDK.",
+        message: "An error occurred while processing your ryd offer using Admin SDK.",
         errorDetails: errorMessage,
       }, { status: 500 });
     }
