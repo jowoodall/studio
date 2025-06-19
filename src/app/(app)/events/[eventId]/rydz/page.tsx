@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag, UserCheck
+  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,26 +17,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, EventDriverStateData, EventDriverStatus, ActiveRyd, PassengerManifestItem, RydData, RydStatus } from "@/types";
+import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
 import { useRouter } from "next/navigation";
-
-interface GroupMember {
-  id: string;
-  name: string;
-  avatarUrl: string;
-  dataAiHint: string;
-  canDrive: boolean;
-  rating?: number;
-  rydzCompleted?: number;
-}
 
 interface ResolvedPageParams { eventId: string; }
 
@@ -52,7 +41,6 @@ interface DisplayRydRequestData extends RydData {
   passengerUserProfiles?: UserProfileData[];
   eventName?: string;
 }
-
 
 export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const resolvedParams = use(paramsPromise);
@@ -76,22 +64,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
   const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
-  const [potentialDrivers, setPotentialDrivers] = useState<GroupMember[]>([]);
-  const [isLoadingPotentialDrivers, setIsLoadingPotentialDrivers] = useState(false);
   const [isUpdatingGroups, setIsUpdatingGroups] = useState(false);
 
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
   const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
 
-  const [eventDriverStates, setEventDriverStates] = useState<EventDriverStateData[]>([]);
-  const [isLoadingDriverStates, setIsLoadingDriverStates] = useState(true);
-  const [isUpdatingDriverState, setIsUpdatingDriverState] = useState(false);
-  const [editingSeatsForDriver, setEditingSeatsForDriver] = useState<string | null>(null);
-  const [selectedSeats, setSelectedSeats] = useState<number | undefined>(undefined);
-
   const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({});
   const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
-
 
   const fetchEventDetails = useCallback(async () => {
     if (!eventId) {
@@ -109,7 +88,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setEventDetails(data);
         setCurrentAssociatedGroups(data.associatedGroupIds || []);
       } else {
-        setEventError(`Event with ID "${eventId}" not found.`);
+        setEventError('Event with ID "' + eventId + '" not found.');
         setEventDetails(null);
       }
     } catch (e) {
@@ -143,25 +122,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
   }, [toast]);
 
-  const fetchEventDriverStates = useCallback(async () => {
-    if (!eventId) return;
-    setIsLoadingDriverStates(true);
-    try {
-      const statesQuery = query(collection(db, "eventDriverStates"), where("eventId", "==", eventId));
-      const querySnapshot = await getDocs(statesQuery);
-      const fetchedStates: EventDriverStateData[] = [];
-      querySnapshot.forEach((docSnap) => {
-        fetchedStates.push({ id: docSnap.id, ...docSnap.data() } as EventDriverStateData);
-      });
-      setEventDriverStates(fetchedStates);
-    } catch (error) {
-      console.error("Error fetching event driver states:", error);
-      toast({ title: "Error", description: "Could not load driver statuses.", variant: "destructive" });
-    } finally {
-      setIsLoadingDriverStates(false);
-    }
-  }, [eventId, toast]);
-
   const fetchActiveRydzForEvent = useCallback(async (currentEventId: string) => {
     if (!currentEventId) {
       setActiveRydzError("Event ID is missing for ActiveRydz fetch.");
@@ -194,7 +154,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 driverProfile = driverDocSnap.data() as UserProfileData;
               }
             } catch (e) {
-              console.warn(`Failed to fetch driver profile for ${activeRyd.driverId}`, e);
+              console.warn('Failed to fetch driver profile for ' + activeRyd.driverId, e);
             }
           }
 
@@ -209,7 +169,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 }
                 return null;
               } catch (e) {
-                console.warn(`Failed to fetch passenger profile for ${item.userId}`, e);
+                console.warn('Failed to fetch passenger profile for ' + item.userId, e);
                 return null;
               }
             });
@@ -273,7 +233,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                             requesterProfile = userDocSnap.data() as UserProfileData;
                         }
                     } catch (e) {
-                        console.warn(`Failed to fetch requester profile for ${rydRequest.requestedBy}`, e);
+                        console.warn('Failed to fetch requester profile for ' + rydRequest.requestedBy, e);
                     }
                 }
 
@@ -285,7 +245,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                             const userDocSnap = await getDoc(userDocRef);
                             return userDocSnap.exists() ? userDocSnap.data() as UserProfileData : null;
                         } catch (e) {
-                            console.warn(`Failed to fetch passenger profile for ${userId}`, e);
+                            console.warn('Failed to fetch passenger profile for ' + userId, e);
                             return null;
                         }
                     });
@@ -309,7 +269,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         } else if (e.code === 'permission-denied') {
             detailedError = "Permission denied when fetching ryd requests. Please check your Firestore security rules to ensure reads are allowed for the 'rydz' collection based on your query criteria.";
         } else {
-            detailedError = `An unexpected error occurred: ${e.message || "Unknown error"}. Code: ${e.code || "N/A"}`;
+            detailedError = 'An unexpected error occurred: ' + (e.message || "Unknown error") + '. Code: ' + (e.code || "N/A");
         }
         setRydRequestsError(detailedError);
         setRydRequestsList([]);
@@ -323,8 +283,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   useEffect(() => {
     fetchEventDetails();
     fetchAllGroups();
-    fetchEventDriverStates();
-  }, [fetchEventDetails, fetchAllGroups, fetchEventDriverStates]);
+  }, [fetchEventDetails, fetchAllGroups]);
 
   useEffect(() => {
     if (eventId && eventDetails) {
@@ -338,64 +297,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
   }, [eventId, eventDetails, isLoadingEvent, eventError, fetchActiveRydzForEvent, fetchRydRequestsForEvent]);
 
-
-  useEffect(() => {
-    const fetchPotentialDriversFromGroups = async () => {
-        if (currentAssociatedGroups.length > 0 && eventId) {
-            setIsLoadingPotentialDrivers(true);
-            const drivers: GroupMember[] = [];
-            const driverIdsProcessed = new Set<string>();
-
-            for (const groupId of currentAssociatedGroups) {
-                try {
-                    const groupDocRef = doc(db, "groups", groupId);
-                    const groupDocSnap = await getDoc(groupDocRef);
-
-                    if (groupDocSnap.exists()) {
-                        const groupData = groupDocSnap.data() as GroupData;
-                        if (groupData.memberIds && groupData.memberIds.length > 0) {
-                            for (const memberId of groupData.memberIds) {
-                                if (driverIdsProcessed.has(memberId)) continue;
-
-                                const userDocRef = doc(db, "users", memberId);
-                                const userDocSnap = await getDoc(userDocRef);
-
-                                if (userDocSnap.exists()) {
-                                    const userData = userDocSnap.data() as UserProfileData;
-                                    if (userData.canDrive) {
-                                        drivers.push({
-                                            id: memberId,
-                                            name: userData.fullName || "Unnamed User",
-                                            avatarUrl: userData.avatarUrl || `https://placehold.co/100x100.png?text=${(userData.fullName || "U").split(" ").map(n=>n[0]).join("")}`,
-                                            dataAiHint: userData.dataAiHint || "driver photo",
-                                            canDrive: true,
-                                            rating: undefined,
-                                            rydzCompleted: undefined,
-                                        });
-                                        driverIdsProcessed.add(memberId);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Error fetching members for group ${groupId}:`, error);
-                    toast({
-                        title: "Driver Fetch Error",
-                        description: `Could not load potential drivers from group ${groupId}.`,
-                        variant: "destructive",
-                    });
-                }
-            }
-            setPotentialDrivers(drivers);
-            setIsLoadingPotentialDrivers(false);
-        } else {
-            setPotentialDrivers([]);
-        }
-    };
-
-    fetchPotentialDriversFromGroups();
-  }, [currentAssociatedGroups, eventId, toast]);
 
   const handleGroupSelection = async (groupIdToToggle: string) => {
     if (!eventDetails || !authUser) {
@@ -419,7 +320,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       setEventDetails(prev => prev ? { ...prev, associatedGroupIds: newSelectedGroups } : null);
       toast({
         title: "Groups Updated",
-        description: `Event groups have been updated.`,
+        description: 'Event groups have been updated.',
       });
     } catch (error) {
       console.error("Error updating associated groups:", error);
@@ -432,65 +333,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const filteredGroupsForPopover = allFetchedGroups.filter(group =>
     group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
-
-  const getDriverEventStateInfo = (driverId: string): { status: EventDriverStatus, seatsAvailable?: number } => {
-    const driverState = eventDriverStates.find(s => s.driverId === driverId);
-    if (driverState) {
-      return { status: driverState.status, seatsAvailable: driverState.seatsAvailable };
-    }
-    return { status: "pending_response" };
-  };
-
-  const handleDriverStatusUpdate = async (newStatus: EventDriverStatus, seats?: number) => {
-    if (!authUser || !eventId) {
-      toast({ title: "Error", description: "User not authenticated or event ID missing.", variant: "destructive" });
-      return;
-    }
-    setIsUpdatingDriverState(true);
-    const driverId = authUser.uid;
-    const stateDocId = `${eventId}_${driverId}`;
-    const stateDocRef = doc(db, "eventDriverStates", stateDocId);
-
-    const actualStatus = seats === 0 && newStatus === "driving" ? "full_car" : newStatus;
-    const actualSeats = newStatus === "not_driving" || newStatus === "pending_response" ? undefined : seats;
-
-    const newStateData: Omit<EventDriverStateData, 'id' | 'updatedAt'> & {updatedAt: any} = {
-      eventId,
-      driverId,
-      status: actualStatus,
-      seatsAvailable: actualSeats,
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      await setDoc(stateDocRef, newStateData, { merge: true });
-      setEventDriverStates(prevStates => {
-        const existingStateIndex = prevStates.findIndex(s => s.id === stateDocId);
-        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now(), status: actualStatus, seatsAvailable: actualSeats };
-        if (existingStateIndex > -1) {
-          const newStates = [...prevStates];
-          newStates[existingStateIndex] = updatedStateEntry;
-          return newStates;
-        }
-        return [...prevStates, updatedStateEntry];
-      });
-      toast({ title: "Status Updated", description: "Your driving status for this event has been updated." });
-      setEditingSeatsForDriver(null); // Reset editing mode after successful save
-    } catch (error) {
-      console.error("Error updating driver status:", error);
-      toast({ title: "Update Failed", description: "Could not update your driving status.", variant: "destructive" });
-    } finally {
-      setIsUpdatingDriverState(false);
-    }
-  };
-
-
-  const statusConfig: Record<EventDriverStatus, { icon: React.ElementType, color: string, text: string }> = {
-    "driving": { icon: CheckCircle2, color: "text-green-600 bg-green-100 border-green-200", text: "Driving" },
-    "full_car": { icon: UserMinus, color: "text-orange-600 bg-orange-100 border-orange-200", text: "Car Full" },
-    "not_driving": { icon: XCircle, color: "text-red-600 bg-red-100 border-red-200", text: "Not Driving" },
-    "pending_response": { icon: HelpCircle, color: "text-gray-600 bg-gray-100 border-gray-200", text: "No Response" },
-  };
 
   const handleRequestToJoin = async (activeRydId: string) => {
     if (!authUser || !authUserProfile) {
@@ -517,7 +359,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         toast({ title: "Request Failed", description: result.message, variant: "destructive" });
       }
     } catch (error: any) {
-      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+      toast({ title: "Error", description: 'An unexpected error occurred: ' + error.message, variant: "destructive" });
     } finally {
       setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: false }));
     }
@@ -541,19 +383,19 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             fetchRydRequestsForEvent(eventId);
             fetchActiveRydzForEvent(eventId);
         }
-        router.push(`/rydz/tracking/${result.activeRydId}`);
+        router.push('/rydz/tracking/' + result.activeRydId);
       } else {
         toast({ title: "Fulfillment Failed", description: result.message, variant: "destructive" });
       }
     } catch (error: any) {
-      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+      toast({ title: "Error", description: 'An unexpected error occurred: ' + error.message, variant: "destructive" });
     } finally {
       setIsFulfillingWithExisting(prev => ({ ...prev, [rydRequestId]: false }));
     }
   };
 
 
-  if (authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingDriverStates) {
+  if (authLoading || isLoadingEvent || isLoadingAllGroups) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -567,7 +409,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">{eventError ? "Error Loading Event" : "Event Not Found"}</h2>
-        <p className="text-muted-foreground px-4">{eventError || `The event with ID "${resolvedParams?.eventId || 'unknown'}" could not be found.`}</p>
+        <p className="text-muted-foreground px-4">{eventError || 'The event with ID "' + (resolvedParams?.eventId || 'unknown') + '" could not be found.'}</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
@@ -576,24 +418,24 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }
 
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
-  const redirectBackUrl = `/events/${eventId}/rydz`;
+  const redirectBackUrl = '/events/' + eventId + '/rydz';
 
   return (
     <>
       <PageHeader
-        title={`Rydz for: ${eventDetails.name}`}
-        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP 'at' p")}. View rydz or manage associated groups.`}
+        title={'Rydz for: ' + eventDetails.name}
+        description={'Event at ' + eventDetails.location + ' on ' + format(eventDate, "PPP 'at' p") + ". View rydz or manage associated groups."}
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button asChild>
-              <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
+              <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
                 <span className="flex items-center">
                   <PlusCircle className="mr-2 h-4 w-4" /> Request Ryd
                 </span>
               </Link>
             </Button>
             <Button variant="outline" asChild>
-                <Link href={`/events/${eventId}/offer-drive`}>
+                <Link href={'/events/' + eventId + '/offer-drive'}>
                     <Car className="mr-2 h-4 w-4" /> Offer a Ryd
                 </Link>
             </Button>
@@ -618,13 +460,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         type="button"
                         className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                         onClick={() => handleGroupSelection(groupId)}
-                        aria-label={`Remove ${group.name}`}
+                        aria-label={'Remove ' + group.name}
                         disabled={isUpdatingGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
                     >
                         <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                     </button>
                   </Badge>
-                ) : <Badge key={groupId} variant="outline">Loading Group... (${groupId.substring(0,6)}...)</Badge>;
+                ) : <Badge key={groupId} variant="outline">Loading Group... ({groupId.substring(0,6)}...)</Badge>;
               })}
             </div>
           ) : (
@@ -687,146 +529,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         </CardContent>
       </Card>
 
-      <Card className="mb-6 shadow-lg">
-        <CardHeader>
-            <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5 text-green-500" /> Potential Drivers from Associated Groups</CardTitle>
-            <CardDescription>Drivers from the groups above and their status for this event.</CardDescription>
-        </CardHeader>
-        <CardContent>
-            {isLoadingPotentialDrivers || isLoadingDriverStates ? (
-                <div className="flex items-center justify-center py-6">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <p className="ml-2 text-muted-foreground">Loading potential drivers & statuses...</p>
-                </div>
-            ) : potentialDrivers.length > 0 ? (
-                <ul className="space-y-4">
-                    {potentialDrivers.map(driver => {
-                        const driverStateInfo = getDriverEventStateInfo(driver.id);
-                        const currentStatusConfig = statusConfig[driverStateInfo.status];
-                        const StatusIcon = currentStatusConfig.icon;
-                        const isCurrentUserDriver = authUser?.uid === driver.id;
-
-                        return (
-                            <li key={driver.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow gap-3">
-                                <div className="flex items-center gap-3 flex-grow">
-                                    <Avatar className="h-10 w-10">
-                                        <AvatarImage src={driver.avatarUrl} alt={driver.name} data-ai-hint={driver.dataAiHint} />
-                                        <AvatarFallback>{driver.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                                    </Avatar>
-                                    <div className="flex-1">
-                                      <span className="font-medium">{driver.name} {isCurrentUserDriver && "(You)"}</span>
-                                      {driver.rating !== undefined && (
-                                        <div className="flex items-center text-xs text-muted-foreground mt-0.5">
-                                          <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400 mr-1" />
-                                          {driver.rating.toFixed(1)}
-                                          {driver.rydzCompleted !== undefined &&
-                                            <span className="ml-1">({driver.rydzCompleted} rydz)</span>
-                                          }
-                                        </div>
-                                      )}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
-                                    {isCurrentUserDriver && (
-                                      <div className="flex flex-col sm:flex-row gap-2 items-stretch w-full sm:w-auto">
-                                        <Button
-                                          variant={(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? "default" : "outline"}
-                                          size="sm"
-                                          onClick={() => {
-                                            if (driverStateInfo.status === 'not_driving' || driverStateInfo.status === 'pending_response') {
-                                                handleDriverStatusUpdate("driving", 1);
-                                                setEditingSeatsForDriver(driver.id);
-                                                setSelectedSeats(1);
-                                            } else if (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') {
-                                                 setEditingSeatsForDriver(driver.id); // Just open editor if already driving/full
-                                                 setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 0);
-                                            }
-                                          }}
-                                          disabled={isUpdatingDriverState}
-                                          className="flex-grow sm:flex-grow-0"
-                                        >
-                                          {(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? <CheckCircle2 className="mr-1.5 h-4 w-4" /> : <Car className="mr-1.5 h-4 w-4" />}
-                                          {(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? "Driving" : "I Can Drive"}
-                                        </Button>
-                                        <Button
-                                          variant={driverStateInfo.status === 'not_driving' ? "destructive" : "outline"}
-                                          size="sm"
-                                          onClick={() => handleDriverStatusUpdate("not_driving")}
-                                          disabled={isUpdatingDriverState}
-                                          className="flex-grow sm:flex-grow-0"
-                                        >
-                                          {driverStateInfo.status === 'not_driving' ? <XCircle className="mr-1.5 h-4 w-4" /> : null}
-                                          Cannot Drive
-                                        </Button>
-                                      </div>
-                                    )}
-
-                                    {(isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver === driver.id) ? (
-                                      <div className="flex items-center gap-2 mt-2 sm:mt-0">
-                                        <Select
-                                          value={String(selectedSeats)}
-                                          onValueChange={(value) => setSelectedSeats(Number(value))}
-                                          disabled={isUpdatingDriverState}
-                                        >
-                                          <SelectTrigger className="w-[120px] h-9 text-xs"> {/* Made select wider */}
-                                            <SelectValue placeholder="Seats" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(s => ( // Extended to 8 seats
-                                              <SelectItem key={s} value={String(s)}>{s} seat{s !== 1 ? 's' : ''} avail.</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                        <Button 
-                                            size="sm" // Changed to sm for consistency
-                                            onClick={() => handleDriverStatusUpdate(selectedSeats === 0 ? 'full_car' : 'driving', selectedSeats)} 
-                                            disabled={isUpdatingDriverState} 
-                                            className="h-9" // Ensure consistent height
-                                        >
-                                          {isUpdatingDriverState ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4"/>}
-                                          Save Seats
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <Badge variant="outline" className={cn("text-xs py-1 px-2.5 border capitalize whitespace-nowrap", currentStatusConfig.color)}>
-                                          <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
-                                          {currentStatusConfig.text}
-                                          {(driverStateInfo.status === "driving") && driverStateInfo.seatsAvailable !== undefined && driverStateInfo.seatsAvailable > 0 && (
-                                              <span className="ml-1.5">({driverStateInfo.seatsAvailable} open)</span>
-                                          )}
-                                           {isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id && (
-                                            <Button variant="ghost" size="icon_sm" className="ml-1 h-5 w-5 p-0 hover:bg-transparent" onClick={() => { setEditingSeatsForDriver(driver.id); setSelectedSeats(driverStateInfo.seatsAvailable); }}>
-                                                <Edit3 className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                                            </Button>
-                                          )}
-                                      </Badge>
-                                    )}
-
-                                    {!isCurrentUserDriver && (
-                                        <Button variant="outline" size="sm" asChild className="w-full sm:w-auto mt-2 sm:mt-0">
-                                            <Link href={`/profile/view/${driver.id}`}>
-                                                <span className="flex items-center">
-                                                    <UserCircle2 className="mr-1.5 h-4 w-4" /> View Profile
-                                                </span>
-                                            </Link>
-                                        </Button>
-                                    )}
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ul>
-            ) : (
-                <div className="text-center py-4 text-muted-foreground">
-                    <Info className="mx-auto h-8 w-8 mb-2" />
-                    <p>No potential drivers found in the currently associated groups, or no groups associated.</p>
-                    <p className="text-xs mt-1">Try associating groups with known drivers or ensure members have "Can Drive" enabled in their profiles.</p>
-                </div>
-            )}
-        </CardContent>
-      </Card>
-
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz for this Event</h3>
       {isLoadingActiveRydz && (
         <div className="flex items-center justify-center py-10">
@@ -854,7 +556,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {activeRydzList.map((activeRyd) => {
             const driverName = activeRyd.driverProfile?.fullName || "Unknown Driver";
-            const driverAvatar = activeRyd.driverProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${driverName.split(" ").map(n=>n[0]).join("")}`;
+            const driverAvatar = activeRyd.driverProfile?.avatarUrl || 'https://placehold.co/100x100.png?text=' + driverName.split(" ").map(n=>n[0]).join("");
             const driverDataAiHint = activeRyd.driverProfile?.dataAiHint || "driver photo";
 
             const vehicleMake = activeRyd.vehicleDetails?.make || "";
@@ -862,9 +564,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const vehicleColor = activeRyd.vehicleDetails?.color || "";
             const vehicleLicense = activeRyd.vehicleDetails?.licensePlate || "";
             const vehiclePassengerCapacity = parseInt(activeRyd.vehicleDetails?.passengerCapacity || "0", 10);
-            let vehicleDisplay = `${vehicleMake} ${vehicleModel}`.trim();
-            if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
-            if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
+            let vehicleDisplay = (vehicleMake + ' ' + vehicleModel).trim();
+            if (vehicleColor) vehicleDisplay += ', ' + vehicleColor;
+            if (vehicleLicense) vehicleDisplay += ' (Plate: ' + vehicleLicense + ')';
             if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
 
             const proposedDeparture = activeRyd.proposedDepartureTime instanceof Timestamp ? activeRyd.proposedDepartureTime.toDate() : null;
@@ -908,7 +610,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <Link href={`/profile/view/${activeRyd.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
+                        <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline">{driverName}</Link>
                         <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
                     </div>
                 </div>
@@ -945,7 +647,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
                                 return (
                                 <li key={pItem.userId}>
-                                    {passengerProfile?.fullName || `User ${pItem.userId.substring(0,6)}...`}
+                                    {passengerProfile?.fullName || 'User ' + pItem.userId.substring(0,6) + '...'}
                                     <span className="text-muted-foreground/80 ml-1 capitalize">({pItem.status.replace(/_/g, ' ')})</span>
                                 </li>
                                 );
@@ -966,7 +668,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               </CardContent>
               <CardFooter className="border-t pt-4 flex flex-col gap-2">
                 <Button variant="default" className="w-full" asChild>
-                  <Link href={`/rydz/tracking/${activeRyd.id}`}>
+                  <Link href={'/rydz/tracking/' + activeRyd.id}>
                     View Details / Manage
                   </Link>
                 </Button>
@@ -1014,14 +716,14 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             </CardDescription>
             <div className="flex justify-center gap-4">
                 <Button asChild>
-                <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
+                <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
                     <span className="flex items-center">
                       <PlusCircle className="mr-2 h-4 w-4" /> Request a Ryd
                     </span>
                 </Link>
                 </Button>
                 <Button variant="outline" asChild>
-                    <Link href={`/events/${eventId}/offer-drive`}>
+                    <Link href={'/events/' + eventId + '/offer-drive'}>
                         <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
                     </Link>
                 </Button>
@@ -1064,7 +766,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                  : request.requesterProfile?.fullName || "A User";
             const displayAvatar = primaryPassenger 
                                   ? primaryPassenger.avatarUrl 
-                                  : request.requesterProfile?.avatarUrl || `https://placehold.co/100x100.png?text=${displayNamer.split(" ").map(n=>n[0]).join("")}`;
+                                  : request.requesterProfile?.avatarUrl || 'https://placehold.co/100x100.png?text=' + displayNamer.split(" ").map(n=>n[0]).join("");
             const displayAvatarHint = primaryPassenger 
                                       ? primaryPassenger.dataAiHint 
                                       : request.requesterProfile?.dataAiHint || "user photo";
@@ -1073,17 +775,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             let cardSubtitle = "Requested a Ryd";
             if (primaryPassenger && request.passengerUserProfiles!.length > 1) {
                 const otherPassengersCount = request.passengerUserProfiles!.length - 1;
-                cardSubtitle = `Ryd for ${primaryPassenger.fullName} & ${otherPassengersCount} other${otherPassengersCount > 1 ? 's' : ''}`;
+                cardSubtitle = 'Ryd for ' + primaryPassenger.fullName + ' & ' + otherPassengersCount + ' other' + (otherPassengersCount > 1 ? 's' : '');
                  if (request.requesterProfile && request.requesterProfile.uid !== primaryPassenger.uid) {
-                    cardSubtitle += ` (Requested by ${request.requesterProfile.fullName})`;
+                    cardSubtitle += ' (Requested by ' + request.requesterProfile.fullName + ')';
                 }
             } else if (primaryPassenger) {
-                cardSubtitle = `Ryd for ${primaryPassenger.fullName}`;
+                cardSubtitle = 'Ryd for ' + primaryPassenger.fullName;
                 if (request.requesterProfile && request.requesterProfile.uid !== primaryPassenger.uid) {
-                    cardSubtitle += ` (Requested by ${request.requesterProfile.fullName})`;
+                    cardSubtitle += ' (Requested by ' + request.requesterProfile.fullName + ')';
                 }
             } else if (request.requesterProfile) {
-                cardSubtitle = `Requested by ${request.requesterProfile.fullName}`;
+                cardSubtitle = 'Requested by ' + request.requesterProfile.fullName;
             }
 
 
@@ -1119,7 +821,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <Link href={`/profile/view/${profileLinkUid}`} className="font-semibold hover:underline">{displayNamer}</Link>
+                        <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline">{displayNamer}</Link>
                         <p className="text-xs text-muted-foreground">{cardSubtitle}</p>
                     </div>
                 </div>
@@ -1153,7 +855,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
                             {request.passengerUserProfiles.map(p => (
                                 <li key={p.uid}>
-                                    {p.fullName || `User ${p.uid.substring(0,6)}...`}
+                                    {p.fullName || 'User ' + p.uid.substring(0,6) + '...'}
                                 </li>
                             ))}
                         </ul>
@@ -1185,7 +887,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                             className="w-full"
                             asChild
                         >
-                            <Link href={`/events/${eventId}/offer-drive?requestId=${request.id}`}>
+                            <Link href={'/events/' + eventId + '/offer-drive?requestId=' + request.id}>
                                 <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill (New Ryd)
                             </Link>
                         </Button>
@@ -1211,7 +913,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               There are currently no ryd requests for {eventDetails.name}.
             </CardDescription>
             <Button asChild>
-               <Link href={`/rydz/request?eventId=${eventId}&redirectUrl=${encodeURIComponent(redirectBackUrl)}`}>
+               <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
                 <PlusCircle className="mr-2 h-4 w-4" /> Be the First to Request
               </Link>
             </Button>
