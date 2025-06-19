@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
   CheckCircle2, XCircle, UserMinus, HelpCircle, Loader2, Edit3, MapPin as MapPinIcon, User, Clock, MapPinned, Palmtree, ThumbsUp, UserPlus, Flag, UserCheck
-} from "lucide-react"; // Added UserCheck, ThumbsUp, Flag
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,8 @@ import type { EventData, GroupData, UserProfileData, EventDriverStateData, Event
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
-import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions"; // Added fulfillRequestWithExistingRydAction
-import { useRouter } from "next/navigation"; // Added useRouter
+import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
+import { useRouter } from "next/navigation";
 
 interface GroupMember {
   id: string;
@@ -59,7 +59,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const { eventId } = resolvedParams || {};
   const { toast } = useToast();
   const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth();
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
 
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
@@ -451,11 +451,14 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     const stateDocId = `${eventId}_${driverId}`;
     const stateDocRef = doc(db, "eventDriverStates", stateDocId);
 
+    const actualStatus = seats === 0 && newStatus === "driving" ? "full_car" : newStatus;
+    const actualSeats = newStatus === "not_driving" || newStatus === "pending_response" ? undefined : seats;
+
     const newStateData: Omit<EventDriverStateData, 'id' | 'updatedAt'> & {updatedAt: any} = {
       eventId,
       driverId,
-      status: newStatus,
-      seatsAvailable: newStatus === "driving" || newStatus === "full_car" ? seats : undefined,
+      status: actualStatus,
+      seatsAvailable: actualSeats,
       updatedAt: serverTimestamp(),
     };
 
@@ -463,7 +466,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       await setDoc(stateDocRef, newStateData, { merge: true });
       setEventDriverStates(prevStates => {
         const existingStateIndex = prevStates.findIndex(s => s.id === stateDocId);
-        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now() };
+        const updatedStateEntry = { ...newStateData, id: stateDocId, updatedAt: Timestamp.now(), status: actualStatus, seatsAvailable: actualSeats };
         if (existingStateIndex > -1) {
           const newStates = [...prevStates];
           newStates[existingStateIndex] = updatedStateEntry;
@@ -472,7 +475,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         return [...prevStates, updatedStateEntry];
       });
       toast({ title: "Status Updated", description: "Your driving status for this event has been updated." });
-      setEditingSeatsForDriver(null);
+      setEditingSeatsForDriver(null); // Reset editing mode after successful save
     } catch (error) {
       console.error("Error updating driver status:", error);
       toast({ title: "Update Failed", description: "Could not update your driving status.", variant: "destructive" });
@@ -534,7 +537,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       });
       if (result.success && result.activeRydId) {
         toast({ title: "Request Fulfilled!", description: result.message });
-        // Refresh both lists as request is removed and active ryd is updated
         if (eventId) {
             fetchRydRequestsForEvent(eventId);
             fetchActiveRydzForEvent(eventId);
@@ -729,20 +731,23 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                     {isCurrentUserDriver && (
                                       <div className="flex flex-col sm:flex-row gap-2 items-stretch w-full sm:w-auto">
                                         <Button
-                                          variant={driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "default" : "outline"}
+                                          variant={(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? "default" : "outline"}
                                           size="sm"
                                           onClick={() => {
-                                            setEditingSeatsForDriver(driver.id);
-                                            setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 1);
                                             if (driverStateInfo.status === 'not_driving' || driverStateInfo.status === 'pending_response') {
                                                 handleDriverStatusUpdate("driving", 1);
+                                                setEditingSeatsForDriver(driver.id);
+                                                setSelectedSeats(1);
+                                            } else if (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') {
+                                                 setEditingSeatsForDriver(driver.id); // Just open editor if already driving/full
+                                                 setSelectedSeats(driverStateInfo.seatsAvailable !== undefined ? driverStateInfo.seatsAvailable : 0);
                                             }
                                           }}
                                           disabled={isUpdatingDriverState}
                                           className="flex-grow sm:flex-grow-0"
                                         >
-                                          {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? <CheckCircle2 className="mr-1.5 h-4 w-4" /> : <Car className="mr-1.5 h-4 w-4" />}
-                                          {driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car' ? "Driving" : "I Can Drive"}
+                                          {(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? <CheckCircle2 className="mr-1.5 h-4 w-4" /> : <Car className="mr-1.5 h-4 w-4" />}
+                                          {(driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id ? "Driving" : "I Can Drive"}
                                         </Button>
                                         <Button
                                           variant={driverStateInfo.status === 'not_driving' ? "destructive" : "outline"}
@@ -764,29 +769,35 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                                           onValueChange={(value) => setSelectedSeats(Number(value))}
                                           disabled={isUpdatingDriverState}
                                         >
-                                          <SelectTrigger className="w-[80px] h-9 text-xs">
+                                          <SelectTrigger className="w-[120px] h-9 text-xs"> {/* Made select wider */}
                                             <SelectValue placeholder="Seats" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            {[0, 1, 2, 3, 4, 5].map(s => (
-                                              <SelectItem key={s} value={String(s)}>{s} seat{s !== 1 ? 's' : ''}</SelectItem>
+                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(s => ( // Extended to 8 seats
+                                              <SelectItem key={s} value={String(s)}>{s} seat{s !== 1 ? 's' : ''} avail.</SelectItem>
                                             ))}
                                           </SelectContent>
                                         </Select>
-                                        <Button size="icon_sm" onClick={() => handleDriverStatusUpdate(selectedSeats === 0 ? 'full_car' : 'driving', selectedSeats)} disabled={isUpdatingDriverState} className="h-9 w-9">
+                                        <Button 
+                                            size="sm" // Changed to sm for consistency
+                                            onClick={() => handleDriverStatusUpdate(selectedSeats === 0 ? 'full_car' : 'driving', selectedSeats)} 
+                                            disabled={isUpdatingDriverState} 
+                                            className="h-9" // Ensure consistent height
+                                        >
                                           {isUpdatingDriverState ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4"/>}
+                                          Save Seats
                                         </Button>
                                       </div>
                                     ) : (
                                       <Badge variant="outline" className={cn("text-xs py-1 px-2.5 border capitalize whitespace-nowrap", currentStatusConfig.color)}>
                                           <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
                                           {currentStatusConfig.text}
-                                          {(driverStateInfo.status === "driving" || driverStateInfo.status === "full_car") && driverStateInfo.seatsAvailable !== undefined && (
+                                          {(driverStateInfo.status === "driving") && driverStateInfo.seatsAvailable !== undefined && driverStateInfo.seatsAvailable > 0 && (
                                               <span className="ml-1.5">({driverStateInfo.seatsAvailable} open)</span>
                                           )}
-                                           {isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && (
-                                            <Button variant="ghost" size="icon_sm" className="ml-1 h-5 w-5 p-0" onClick={() => { setEditingSeatsForDriver(driver.id); setSelectedSeats(driverStateInfo.seatsAvailable); }}>
-                                                <Edit3 className="h-3 w-3" />
+                                           {isCurrentUserDriver && (driverStateInfo.status === 'driving' || driverStateInfo.status === 'full_car') && editingSeatsForDriver !== driver.id && (
+                                            <Button variant="ghost" size="icon_sm" className="ml-1 h-5 w-5 p-0 hover:bg-transparent" onClick={() => { setEditingSeatsForDriver(driver.id); setSelectedSeats(driverStateInfo.seatsAvailable); }}>
+                                                <Edit3 className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                                             </Button>
                                           )}
                                       </Badge>
