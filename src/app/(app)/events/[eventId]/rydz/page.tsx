@@ -25,7 +25,8 @@ import type { EventData, GroupData, UserProfileData, EventDriverStateData, Event
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
-import { requestToJoinActiveRydAction } from "@/actions/activeRydActions";
+import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions"; // Added fulfillRequestWithExistingRydAction
+import { useRouter } from "next/navigation"; // Added useRouter
 
 interface GroupMember {
   id: string;
@@ -58,6 +59,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const { eventId } = resolvedParams || {};
   const { toast } = useToast();
   const { user: authUser, userProfile: authUserProfile, loading: authLoading } = useAuth();
+  const router = useRouter(); // Initialize router
 
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
@@ -88,6 +90,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [selectedSeats, setSelectedSeats] = useState<number | undefined>(undefined);
 
   const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({});
+  const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
 
 
   const fetchEventDetails = useCallback(async () => {
@@ -516,6 +519,37 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: false }));
     }
   };
+
+  const handleFulfillWithExistingRyd = async (rydRequestId: string, existingActiveRydId: string) => {
+    if (!authUser) {
+      toast({ title: "Error", description: "Authentication missing.", variant: "destructive" });
+      return;
+    }
+    setIsFulfillingWithExisting(prev => ({ ...prev, [rydRequestId]: true }));
+    try {
+      const result = await fulfillRequestWithExistingRydAction({
+        rydRequestId,
+        existingActiveRydId,
+        driverUserId: authUser.uid,
+      });
+      if (result.success && result.activeRydId) {
+        toast({ title: "Request Fulfilled!", description: result.message });
+        // Refresh both lists as request is removed and active ryd is updated
+        if (eventId) {
+            fetchRydRequestsForEvent(eventId);
+            fetchActiveRydzForEvent(eventId);
+        }
+        router.push(`/rydz/tracking/${result.activeRydId}`);
+      } else {
+        toast({ title: "Fulfillment Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsFulfillingWithExisting(prev => ({ ...prev, [rydRequestId]: false }));
+    }
+  };
+
 
   if (authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingDriverStates) {
     return (
@@ -1027,7 +1061,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             let cardSubtitle = "Requested a Ryd";
             if (primaryPassenger && request.passengerUserProfiles!.length > 1) {
-                cardSubtitle = `Ryd for ${primaryPassenger.fullName} & ${request.passengerUserProfiles!.length - 1} other(s)`;
+                const otherPassengersCount = request.passengerUserProfiles!.length - 1;
+                cardSubtitle = `Ryd for ${primaryPassenger.fullName} & ${otherPassengersCount} other${otherPassengersCount > 1 ? 's' : ''}`;
                  if (request.requesterProfile && request.requesterProfile.uid !== primaryPassenger.uid) {
                     cardSubtitle += ` (Requested by ${request.requesterProfile.fullName})`;
                 }
@@ -1044,6 +1079,25 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const rydDateTime = request.rydTimestamp instanceof Timestamp ? request.rydTimestamp.toDate() : null;
             const earliestPickup = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
             const canCurrentUserOfferToFulfill = authUserProfile?.canDrive;
+
+            let suitableExistingActiveRydId: string | null = null;
+            if (authUserProfile?.canDrive && authUser?.uid && request.passengerUserProfiles) {
+                const foundRyd = activeRydzList.find(ar => 
+                    ar.driverId === authUser.uid &&
+                    ar.associatedEventId === eventId &&
+                    (ar.status === ActiveRydStatus.PLANNING || ar.status === ActiveRydStatus.AWAITING_PASSENGERS) &&
+                    (parseInt(ar.vehicleDetails?.passengerCapacity || "0", 10) - 
+                     ar.passengerManifest.filter(p => 
+                        p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && 
+                        p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+                        p.status !== PassengerManifestStatus.MISSED_PICKUP
+                     ).length) >= request.passengerUserProfiles.length
+                );
+                if (foundRyd) {
+                    suitableExistingActiveRydId = foundRyd.id;
+                }
+            }
+            const fulfillmentLoading = isFulfillingWithExisting[request.id];
 
             return (
             <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -1104,15 +1158,27 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               </CardContent>
               <CardFooter className="border-t pt-4">
                 {canCurrentUserOfferToFulfill ? (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    asChild
-                  >
-                    <Link href={`/events/${eventId}/offer-drive?requestId=${request.id}`}>
-                        <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill
-                    </Link>
-                  </Button>
+                    suitableExistingActiveRydId ? (
+                        <Button
+                            variant="default"
+                            className="w-full"
+                            onClick={() => handleFulfillWithExistingRyd(request.id, suitableExistingActiveRydId!)}
+                            disabled={fulfillmentLoading}
+                        >
+                            {fulfillmentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />}
+                            Add to My Existing Ryd
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            className="w-full"
+                            asChild
+                        >
+                            <Link href={`/events/${eventId}/offer-drive?requestId=${request.id}`}>
+                                <ThumbsUp className="mr-2 h-4 w-4" /> Offer to Fulfill (New Ryd)
+                            </Link>
+                        </Button>
+                    )
                 ) : (
                      <Button variant="outline" className="w-full" disabled>
                         <Car className="mr-2 h-4 w-4 text-muted-foreground"/> (Drivers can offer to fulfill)
