@@ -20,7 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem } from "@/types"; // Added PassengerManifestItem
+import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
@@ -345,23 +345,33 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
 
     setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: true }));
+    let success = false;
+    let message = '';
+
     try {
       const result = await requestToJoinActiveRydAction({
         activeRydId,
         passengerUserId: authUser.uid,
-        requestedByUserId: authUser.uid, // For students requesting for themselves
+        requestedByUserId: authUser.uid, 
       });
+      success = result.success;
+      message = result.message;
 
-      if (result.success) {
-        toast({ title: "Request Sent!", description: result.message });
-        if(eventId) fetchActiveRydzForEvent(eventId); 
-      } else {
-        toast({ title: "Request Failed", description: result.message, variant: "destructive" });
-      }
     } catch (error: any) {
-      toast({ title: "Error", description: 'An unexpected error occurred: ' + error.message, variant: "destructive" });
+      success = false;
+      message = `An unexpected error occurred: ${error.message || "Unknown client error"}`;
+      console.error("[EventRydzPage] Client-side error calling requestToJoinActiveRydAction:", error);
     } finally {
       setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: false }));
+      if (success) {
+        toast({ title: "Request Sent!", description: message });
+        if(eventId) {
+            console.log(`[EventRydzPage] Request successful for ${activeRydId}, re-fetching active rydz for event ${eventId}`);
+            fetchActiveRydzForEvent(eventId); // Re-fetch on success
+        }
+      } else {
+        toast({ title: "Request Failed", description: message, variant: "destructive" });
+      }
     }
   };
 
@@ -380,8 +390,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       if (result.success && result.activeRydId) {
         toast({ title: "Request Fulfilled!", description: result.message });
         if (eventId) {
-            fetchRydRequestsForEvent(eventId); // Refresh requests
-            fetchActiveRydzForEvent(eventId);  // Refresh offers
+            fetchRydRequestsForEvent(eventId); 
+            fetchActiveRydzForEvent(eventId);  
         }
         router.push('/rydz/tracking/' + result.activeRydId);
       } else {
@@ -476,6 +486,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
+                type="button"
                 variant="outline"
                 role="combobox"
                 aria-expanded={groupPopoverOpen}
@@ -547,7 +558,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
               {activeRydzError}
             </CardDescription>
-            <Button onClick={() => eventId && fetchActiveRydzForEvent(eventId)} variant="secondary">Try Again</Button>
+            <Button onClick={() => eventId && fetchActiveRydzForEvent(eventId)} variant="secondary" type="button">Try Again</Button>
           </CardContent>
         </Card>
       )}
@@ -667,13 +678,14 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
               </CardContent>
               <CardFooter className="border-t pt-4 flex flex-col gap-2">
-                <Button variant="default" className="w-full" asChild>
+                <Button type="button" variant="default" className="w-full" asChild>
                   <Link href={'/rydz/tracking/' + activeRyd.id}>
                     View Details / Manage
                   </Link>
                 </Button>
                 {canRequestToJoin && (
                   <Button
+                    type="button"
                     variant="outline"
                     className="w-full text-green-600 border-green-500 hover:bg-green-500/10 hover:text-green-700"
                     onClick={() => handleRequestToJoin(activeRyd.id)}
@@ -684,17 +696,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </Button>
                 )}
                 {isStudent && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && (
-                  <Button variant="outline" className="w-full" disabled>
+                  <Button type="button" variant="outline" className="w-full" disabled>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
                   </Button>
                 )}
                 {isStudent && !canRequestToJoin && isRydJoinableStatus && isRydFull && (
-                    <Button variant="outline" className="w-full" disabled>
+                    <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-orange-500"/> Ryd is Full
                     </Button>
                 )}
                  {isStudent && !canRequestToJoin && !isRydJoinableStatus && (
-                    <Button variant="outline" className="w-full" disabled>
+                    <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-muted-foreground"/> Not Accepting Passengers
                     </Button>
                 )}
@@ -750,7 +762,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
               {rydRequestsError}
             </CardDescription>
-            <Button onClick={() => eventId && fetchRydRequestsForEvent(eventId)} variant="secondary">Try Again</Button>
+            <Button onClick={() => eventId && fetchRydRequestsForEvent(eventId)} variant="secondary" type="button">Try Again</Button>
           </CardContent>
         </Card>
       )}
@@ -873,6 +885,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 {canCurrentUserOfferToFulfill ? (
                     suitableExistingActiveRydId ? (
                         <Button
+                            type="button"
                             variant="default"
                             className="w-full"
                             onClick={() => handleFulfillWithExistingRyd(request.id, suitableExistingActiveRydId!)}
@@ -883,6 +896,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         </Button>
                     ) : (
                         <Button
+                            type="button"
                             variant="outline"
                             className="w-full"
                             asChild
@@ -893,7 +907,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         </Button>
                     )
                 ) : (
-                     <Button variant="outline" className="w-full" disabled>
+                     <Button type="button" variant="outline" className="w-full" disabled>
                         <Car className="mr-2 h-4 w-4 text-muted-foreground"/> (Drivers can offer to fulfill)
                     </Button>
                 )}
