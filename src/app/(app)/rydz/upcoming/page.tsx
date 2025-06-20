@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User } from "lucide-react";
+import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle } from "lucide-react"; // Added XCircle
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
@@ -14,6 +14,7 @@ import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } fr
 import type { RydData, RydStatus, UserProfileData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { cancelRydRequestByUserAction } from '@/actions/activeRydActions'; // Import the new action
 
 interface DisplayRydData extends RydData {
   driverProfile?: UserProfileData;
@@ -35,10 +36,11 @@ export default function UpcomingRydzPage() {
   const [upcomingRydz, setUpcomingRydz] = useState<DisplayRydData[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({}); // For loading state
 
   const fetchUpcomingRydz = useCallback(async () => {
     if (!authUser) {
-      if (!authLoading && !isLoadingProfile) { // Only set loading to false if auth is resolved
+      if (!authLoading && !isLoadingProfile) { 
         setIsLoadingRydz(false);
         setUpcomingRydz([]);
       }
@@ -97,10 +99,34 @@ export default function UpcomingRydzPage() {
   }, [authUser, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
-    if (!authLoading && !isLoadingProfile) { // Fetch only when auth state is resolved
+    if (!authLoading && !isLoadingProfile) { 
         fetchUpcomingRydz();
     }
   }, [authLoading, isLoadingProfile, fetchUpcomingRydz]);
+
+  const handleCancelRydRequest = async (rydRequestId: string) => {
+    if (!authUser) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    setIsCancellingRyd(prev => ({ ...prev, [rydRequestId]: true }));
+    try {
+      const result = await cancelRydRequestByUserAction({
+        rydRequestId,
+        cancellingUserId: authUser.uid,
+      });
+      if (result.success) {
+        toast({ title: "Ryd Request Cancelled", description: result.message });
+        fetchUpcomingRydz(); // Re-fetch the list
+      } else {
+        toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsCancellingRyd(prev => ({ ...prev, [rydRequestId]: false }));
+    }
+  };
 
   const isLoadingInitial = authLoading || isLoadingProfile;
 
@@ -125,7 +151,7 @@ export default function UpcomingRydzPage() {
     );
   }
 
-  if (isLoadingRydz && !isLoadingInitial) { // Show loader specific to rydz data fetching if auth is done
+  if (isLoadingRydz && !isLoadingInitial) { 
      return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -159,6 +185,8 @@ export default function UpcomingRydzPage() {
             const rydDate = ryd.rydTimestamp instanceof Timestamp ? ryd.rydTimestamp.toDate() : new Date();
             const driverName = ryd.driverProfile?.fullName || "Pending";
             const trackable = !!ryd.assignedActiveRydId;
+            const canCancel = (ryd.status === 'requested' || ryd.status === 'searching_driver') && ryd.requestedBy === authUser?.uid;
+            const isCancellingThisRyd = isCancellingRyd[ryd.id];
 
             return (
             <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -191,7 +219,7 @@ export default function UpcomingRydzPage() {
                   </div>
                 </div>
               </CardContent>
-              <CardFooter className="border-t pt-4">
+              <CardFooter className="border-t pt-4 flex flex-col gap-2">
                 <Button variant="default" className="w-full" asChild={trackable} disabled={!trackable}>
                   {trackable ? (
                     <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
@@ -203,6 +231,17 @@ export default function UpcomingRydzPage() {
                     </span>
                   )}
                 </Button>
+                {canCancel && (
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => handleCancelRydRequest(ryd.id)}
+                    disabled={isCancellingThisRyd}
+                  >
+                    {isCancellingThisRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                    Cancel My Request
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           )})}

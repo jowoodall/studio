@@ -142,10 +142,16 @@ export async function requestToJoinActiveRydAction(
       requestedAt: Timestamp.now(),
     };
 
-    const newManifestItem: PassengerManifestItem = {
-        ...newManifestItemBase,
-        ...(originalRydRequestIdForManifest && { originalRydRequestId: originalRydRequestIdForManifest }),
-    };
+    let newManifestItem: PassengerManifestItem;
+    if (originalRydRequestIdForManifest) {
+        newManifestItem = {
+            ...newManifestItemBase,
+            originalRydRequestId: originalRydRequestIdForManifest,
+        };
+    } else {
+        newManifestItem = newManifestItemBase as PassengerManifestItem; // Type assertion
+    }
+
 
     // 6. Add update for ActiveRyd manifest to the batch
     batch.update(activeRydDocRef, {
@@ -554,4 +560,58 @@ export async function submitPassengerDetailsForActiveRydAction(
   }
 }
 
+interface CancelRydRequestByUserActionInput {
+  rydRequestId: string;
+  cancellingUserId: string;
+}
+
+export async function cancelRydRequestByUserAction(
+  input: CancelRydRequestByUserActionInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: cancelRydRequestByUserAction] Called with input:", input);
+  const { rydRequestId, cancellingUserId } = input;
+
+  if (!rydRequestId || !cancellingUserId) {
+    return { success: false, message: "Missing required parameters for cancelling ryd request." };
+  }
+
+  const rydRequestDocRef = db.collection('rydz').doc(rydRequestId);
+
+  try {
+    const rydRequestSnap = await rydRequestDocRef.get();
+    if (!rydRequestSnap.exists) {
+      return { success: false, message: "Ryd request not found." };
+    }
+    const rydRequestData = rydRequestSnap.data() as RydData;
+
+    // Verify the user is the original requester
+    if (rydRequestData.requestedBy !== cancellingUserId) {
+      // Additional check: If parent, are they managing one of the passengerIds?
+      // For now, keeping it simple: only original requester can cancel.
+      return { success: false, message: "Unauthorized: Only the original requester can cancel this ryd request." };
+    }
+
+    // Check if the ryd request is in a cancellable state
+    const cancellableStatuses: RydStatus[] = ['requested', 'searching_driver'];
+    if (!cancellableStatuses.includes(rydRequestData.status)) {
+      return { success: false, message: `This ryd request cannot be cancelled at this stage (Status: ${rydRequestData.status.replace(/_/g, ' ')}).` };
+    }
+
+    // Update the status to 'cancelled_by_user'
+    await rydRequestDocRef.update({
+      status: 'cancelled_by_user' as RydStatus,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[Action: cancelRydRequestByUserAction] Successfully cancelled ryd request ${rydRequestId} by user ${cancellingUserId}.`);
+    return { success: true, message: "Your ryd request has been successfully cancelled." };
+
+  } catch (error: any) {
+    console.error("[Action: cancelRydRequestByUserAction] Error processing request:", error);
+    return {
+      success: false,
+      message: `An unexpected error occurred while cancelling: ${error.message || "Unknown server error"}`
+    };
+  }
+}
     
