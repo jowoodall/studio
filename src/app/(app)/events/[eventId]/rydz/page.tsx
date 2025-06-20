@@ -339,13 +339,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
       return;
     }
-    // Allow parents to request for their managed students, or students for themselves
-    // This action will require passengerUserId. For now, assuming student self-request.
-    // A more advanced UI would let parents select which student.
-    if (authUserProfile.role !== UserRole.STUDENT) { // Simplified check for now
-      toast({ title: "Action Not Available", description: "Only students can directly request to join from here. Parents should use the 'Request Ryd' page for specific students.", variant: "destructive" });
+    // Parents can request for themselves. The action validates further.
+    if (authUserProfile.role !== UserRole.STUDENT && authUserProfile.role !== UserRole.PARENT) {
+      toast({ title: "Action Not Available", description: "Only students or parents can request to join rydz.", variant: "destructive" });
       return;
     }
+
 
     setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: true }));
     let success = false;
@@ -353,9 +352,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     let serverRydId: string | undefined = undefined;
 
     try {
+      // For parents joining for themselves, passengerUserId and requestedByUserId are the same.
+      // If a parent were to join FOR a student via this button (not current design),
+      // passengerUserId would be student's UID, requestedByUserId parent's UID.
       const result = await requestToJoinActiveRydAction({
         activeRydId,
-        passengerUserId: authUser.uid,
+        passengerUserId: authUser.uid, 
         requestedByUserId: authUser.uid, 
       });
       success = result.success;
@@ -371,11 +373,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       if (success && serverRydId && eventId && authUser) {
         toast({ title: "Request Sent!", description: "Request sent to driver. Please provide your pickup details now." });
         router.push(`/rydz/request?eventId=${eventId}&activeRydId=${serverRydId}&passengerId=${authUser.uid}&context=joinOffer`);
-        // No re-fetch here as user is redirected
       } else if (success) {
-        // Fallback if redirect info is missing, but still show success to user and refresh.
         toast({ title: "Request Sent!", description: message });
-        if(eventId) fetchActiveRydzForEvent(eventId);
+        if(eventId) fetchActiveRydzForEvent(eventId); // Refresh to show updated manifest or request status
       } else {
         toast({ title: "Request Failed", description: message, variant: "destructive" });
       }
@@ -605,7 +605,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               item.status !== PassengerManifestStatus.MISSED_PICKUP
             );
 
-            const isStudent = authUserProfile?.role === UserRole.STUDENT;
+            const canBePassenger = authUserProfile?.role === UserRole.STUDENT || authUserProfile?.role === UserRole.PARENT;
             const isRydFull = currentActivePassengers >= vehiclePassengerCapacity;
             const joinableStatuses = [ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS];
             const isRydJoinableStatus = joinableStatuses.includes(activeRyd.status);
@@ -616,7 +616,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
             ) : false;
 
-            const canRequestToJoin = isStudent && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested;
+            const canRequestToJoin = canBePassenger && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested;
             const joinButtonLoading = isJoiningRyd[activeRyd.id];
 
             return (
@@ -702,17 +702,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     Request to Join Ryd
                   </Button>
                 )}
-                {isStudent && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && (
+                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && (
                   <Button type="button" variant="outline" className="w-full" disabled>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
                   </Button>
                 )}
-                {isStudent && !canRequestToJoin && isRydJoinableStatus && isRydFull && (
+                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && isRydFull && (
                     <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-orange-500"/> Ryd is Full
                     </Button>
                 )}
-                 {isStudent && !canRequestToJoin && !isRydJoinableStatus && (
+                 {canBePassenger && !canRequestToJoin && !isRydJoinableStatus && (
                     <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-muted-foreground"/> Not Accepting Passengers
                     </Button>
