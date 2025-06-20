@@ -339,11 +339,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
       return;
     }
-    if (authUserProfile.role !== UserRole.STUDENT && authUserProfile.role !== UserRole.PARENT) {
-      toast({ title: "Action Not Available", description: "Only students or parents can request to join rydz.", variant: "destructive" });
-      return;
-    }
-
+    // Removed student-only role check, server action will handle permissions
 
     setIsJoiningRyd(prev => ({ ...prev, [activeRydId]: true }));
     let success = false;
@@ -605,6 +601,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const isRydFull = currentActivePassengers >= vehiclePassengerCapacity;
             const joinableStatuses = [ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS];
             const isRydJoinableStatus = joinableStatuses.includes(activeRyd.status);
+            const isCurrentUserTheDriverOfThisRyd = authUser?.uid === activeRyd.driverId;
+
 
             const hasAlreadyRequested = authUser ? activeRyd.passengerManifest.some(
               p => p.userId === authUser.uid &&
@@ -612,7 +610,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
             ) : false;
 
-            const canRequestToJoin = canBePassenger && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested;
+            const canRequestToJoin = canBePassenger && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested && !isCurrentUserTheDriverOfThisRyd;
             const joinButtonLoading = isJoiningRyd[activeRyd.id];
 
             return (
@@ -698,17 +696,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     Request to Join Ryd
                   </Button>
                 )}
-                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && (
+                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && !isCurrentUserTheDriverOfThisRyd && (
                   <Button type="button" variant="outline" className="w-full" disabled>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
                   </Button>
                 )}
-                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && isRydFull && (
+                {canBePassenger && !canRequestToJoin && isRydJoinableStatus && isRydFull && !isCurrentUserTheDriverOfThisRyd && (
                     <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-orange-500"/> Ryd is Full
                     </Button>
                 )}
-                 {canBePassenger && !canRequestToJoin && !isRydJoinableStatus && (
+                 {canBePassenger && !canRequestToJoin && !isRydJoinableStatus && !isCurrentUserTheDriverOfThisRyd && (
                     <Button type="button" variant="outline" className="w-full" disabled>
                         <Info className="mr-2 h-4 w-4 text-muted-foreground"/> Not Accepting Passengers
                     </Button>
