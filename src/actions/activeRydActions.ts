@@ -37,6 +37,8 @@ export async function requestToJoinActiveRydAction(
   }
 
   try {
+    const batch = db.batch();
+
     // 1. Verify requester's identity and passenger relationship (if parent)
     const requesterProfile = await getUserProfile(requestedByUserId);
     if (!requesterProfile) {
@@ -49,7 +51,7 @@ export async function requestToJoinActiveRydAction(
     }
 
     if (requesterProfile.uid !== passengerUserId) { // Requester is different from passenger (i.e., parent)
-      if (requesterProfile.role !== 'parent') { // Assuming UserRole.PARENT is 'parent'
+      if (requesterProfile.role !== 'parent') {
         return { success: false, message: "Only parents can request for other users." };
       }
       if (!requesterProfile.managedStudentIds?.includes(passengerUserId)) {
@@ -66,17 +68,17 @@ export async function requestToJoinActiveRydAction(
     }
     const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-    // 3. Validations
+    // 3. Validations for ActiveRyd
     const joinableRydStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
     if (!joinableRydStatuses.includes(activeRydData.status)) {
       return { success: false, message: `This ryd is no longer accepting new passengers (Status: ${activeRydData.status}).` };
     }
 
     const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
-    const activePassengersCount = activeRydData.passengerManifest.filter(p => 
-        p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && 
+    const activePassengersCount = activeRydData.passengerManifest.filter(p =>
+        p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
         p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
-        p.status !== PassengerManifestStatus.MISSED_PICKUP 
+        p.status !== PassengerManifestStatus.MISSED_PICKUP
     ).length;
 
     if (activePassengersCount >= passengerCapacity) {
@@ -84,7 +86,7 @@ export async function requestToJoinActiveRydAction(
     }
 
     const existingPassengerEntry = activeRydData.passengerManifest.find(
-      p => p.userId === passengerUserId && 
+      p => p.userId === passengerUserId &&
            p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
            p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
     );
@@ -92,47 +94,84 @@ export async function requestToJoinActiveRydAction(
       return { success: false, message: `${passengerProfile.fullName} is already on this ryd or has a pending request.` };
     }
 
-    // 4. Prepare new passenger manifest item
+    // 4. Check for an existing open RydData request for the same event by the passenger
+    let originalRydRequestIdForManifest: string | undefined = undefined;
+    let foundAndUpdatedExistingRydRequest = false;
+
+    if (activeRydData.associatedEventId) {
+      const existingRydRequestsQuery = db.collection('rydz')
+        .where('passengerIds', 'array-contains', passengerUserId)
+        .where('eventId', '==', activeRydData.associatedEventId)
+        .where('status', 'in', ['requested', 'searching_driver']); // Open statuses
+
+      const existingRydRequestsSnap = await existingRydRequestsQuery.get();
+
+      if (!existingRydRequestsSnap.empty) {
+        // Assuming one open request per passenger per event for simplicity.
+        // If multiple, could pick the most recent or require user selection.
+        const existingRydRequestDoc = existingRydRequestsSnap.docs[0];
+        originalRydRequestIdForManifest = existingRydRequestDoc.id;
+
+        console.log(`[Action: requestToJoinActiveRydAction] Found existing RydData request ${originalRydRequestIdForManifest} for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}. Linking and updating.`);
+
+        batch.update(existingRydRequestDoc.ref, {
+          status: 'driver_assigned' as RydStatus, // Or a more specific status like 'pending_direct_join_approval'
+          driverId: activeRydData.driverId,
+          assignedActiveRydId: activeRydId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        foundAndUpdatedExistingRydRequest = true;
+      }
+    }
+
+    // 5. Prepare new passenger manifest item
     const passengerPickupStreet = passengerProfile.address?.street || "";
     const passengerPickupCity = passengerProfile.address?.city || "";
     const passengerPickupState = passengerProfile.address?.state || "";
     const passengerPickupZip = passengerProfile.address?.zip || "";
-    
+
     let fullPickupAddress = [passengerPickupStreet, passengerPickupCity, passengerPickupState, passengerPickupZip].filter(Boolean).join(", ");
     if (fullPickupAddress.trim() === "") {
-        fullPickupAddress = "Pickup to be coordinated"; 
+        fullPickupAddress = "Pickup to be coordinated";
     }
-
 
     const newManifestItem: PassengerManifestItem = {
       userId: passengerUserId,
-      // originalRydRequestId: will be null for direct join, filled if driver fulfills a RydData
+      originalRydRequestId: originalRydRequestIdForManifest, // Link if found
       pickupAddress: fullPickupAddress, // Default pickup, user will confirm/update in next step
       destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
       status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
       requestedAt: Timestamp.now(),
       // earliestPickupTimestamp will be set by the passenger in the next step
     };
-    
-    // Using FieldValue.arrayUnion to add the new item
-    await activeRydDocRef.update({
+
+    // 6. Add to ActiveRyd manifest using batch
+    batch.update(activeRydDocRef, {
       passengerManifest: FieldValue.arrayUnion(newManifestItem),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    console.log("[Action: requestToJoinActiveRydAction] Successfully added passenger to manifest for rydId:", activeRydId);
-    return { 
-        success: true, 
-        message: `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`,
+    // 7. Commit batch
+    await batch.commit();
+
+    let successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
+    if (foundAndUpdatedExistingRydRequest) {
+        successMessage = `${passengerProfile.fullName}'s existing request for this event has been linked, and a join request sent to the new driver for approval.`;
+    }
+
+    console.log("[Action: requestToJoinActiveRydAction] Successfully processed join request for rydId:", activeRydId);
+    return {
+        success: true,
+        message: successMessage,
         rydId: activeRydId,
         // passengerManifestItemId: passengerUserId can be used to identify the item for subsequent updates if needed.
     };
 
   } catch (error: any) {
     console.error("[Action: requestToJoinActiveRydAction] Error processing request:", error);
-    return { 
-        success: false, 
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    return {
+        success: false,
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
     };
   }
 }
@@ -205,16 +244,16 @@ export async function managePassengerJoinRequestAction(
       passengerManifest: updatedManifest,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    
+
     const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
     console.log(`[Action: managePassengerJoinRequestAction] Successfully ${actionVerb} passenger ${passengerName} for rydId: ${activeRydId}`);
     return { success: true, message: `Passenger ${passengerName}'s request has been ${actionVerb}.` };
 
   } catch (error: any) {
     console.error("[Action: managePassengerJoinRequestAction] Error processing request:", error);
-    return { 
-        success: false, 
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    return {
+        success: false,
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
     };
   }
 }
@@ -259,7 +298,7 @@ export async function cancelPassengerSpotAction(
         return { success: false, message: "Unauthorized: You are not managing this student." };
       }
     }
-    
+
     // 3. Find passenger in manifest and validate status
     const passengerIndex = activeRydData.passengerManifest.findIndex(
       (p) => p.userId === passengerUserIdToCancel
@@ -268,7 +307,7 @@ export async function cancelPassengerSpotAction(
     if (passengerIndex === -1) {
       return { success: false, message: "Passenger not found on this ryd." };
     }
-    
+
     const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
     const passengerProfile = await getUserProfile(passengerUserIdToCancel); // For display name in message
     const passengerName = passengerProfile?.fullName || `User ${passengerUserIdToCancel.substring(0,6)}`;
@@ -308,9 +347,9 @@ export async function cancelPassengerSpotAction(
 
   } catch (error: any) {
     console.error("[Action: cancelPassengerSpotAction] Error processing request:", error);
-    return { 
-        success: false, 
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    return {
+        success: false,
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
     };
   }
 }
@@ -395,7 +434,7 @@ export async function fulfillRequestWithExistingRydAction(
     if (activeRydData.associatedEventId) {
         const eventDocRef = db.collection('events').doc(activeRydData.associatedEventId);
         const eventDocSnap = await eventDocRef.get();
-        if (eventDocSnap.exists) { 
+        if (eventDocSnap.exists()) {
             eventNameForManifest = (eventDocSnap.data() as EventData).name;
         }
     } else if (activeRydData.finalDestinationAddress) {
@@ -522,9 +561,10 @@ export async function submitPassengerDetailsForActiveRydAction(
 
   } catch (error: any) {
     console.error("[Action: submitPassengerDetailsForActiveRydAction] Error processing request:", error);
-    return { 
-        success: false, 
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}` 
+    return {
+        success: false,
+        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
     };
   }
 }
+
