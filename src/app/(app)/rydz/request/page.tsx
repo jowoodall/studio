@@ -39,7 +39,7 @@ interface ManagedStudentSelectItem {
 const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: boolean) => z.object({ 
   eventId: z.string().optional(), 
   eventName: z.string().optional(),
-  destination: z.string().min(1, "Destination address is required."), // Min 1 for joinOffer context where it's prefilled
+  destination: z.string().min(1, "Destination address is required."), 
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
   date: z.date({ required_error: "Date of ryd is required." }).optional().nullable(),
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
@@ -47,7 +47,7 @@ const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: bo
   passengerUids: z.array(z.string()).optional(), 
   notes: z.string().optional(),
 }).superRefine((data, ctx) => {
-    if (!isJoinOfferContext) { // Original validations for new requests
+    if (!isJoinOfferContext) { 
       if (data.eventId === "custom" && (!data.eventName || data.eventName.trim().length < 3)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -58,7 +58,7 @@ const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: bo
       if (userRole === UserRole.PARENT && (!data.passengerUids || data.passengerUids.length === 0)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Please select at least one student for this ryd.",
+          message: "Please select at least one passenger (student or yourself).",
           path: ["passengerUids"],
         });
       }
@@ -77,8 +77,6 @@ const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: bo
         });
       }
     }
-    // For joinOfferContext, some fields are pre-filled and disabled, so their direct validation might be skipped here
-    // as they are derived from existing ActiveRyd/Event data.
 });
 
 type RydRequestFormValues = z.infer<ReturnType<typeof createRydRequestFormSchema>>;
@@ -99,7 +97,6 @@ export default function RydRequestPage() {
   const [studentPopoverOpen, setStudentPopoverOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
 
-  // State for joinOffer context
   const [isJoinOfferContext, setIsJoinOfferContext] = useState(false);
   const [activeRydIdForUpdate, setActiveRydIdForUpdate] = useState<string | null>(null);
   const [passengerIdForUpdate, setPassengerIdForUpdate] = useState<string | null>(null);
@@ -124,7 +121,6 @@ export default function RydRequestPage() {
     }
   });
   
-  // Effect to handle query parameters for joinOffer context
   useEffect(() => {
     const eventIdQuery = searchParams.get('eventId');
     const activeRydIdQuery = searchParams.get('activeRydId');
@@ -150,7 +146,6 @@ export default function RydRequestPage() {
         }
         setEventForActiveRyd(fetchedEvent);
 
-        // Pre-fill form
         form.setValue("destination", fetchedActiveRyd.finalDestinationAddress || fetchedEvent?.location || "Event Location");
         form.setValue("eventName", fetchedEvent?.name || fetchedActiveRyd.eventName || "Event");
         
@@ -158,9 +153,9 @@ export default function RydRequestPage() {
         if (fetchedEvent?.eventTimestamp) {
             rydEventDate = fetchedEvent.eventTimestamp.toDate();
         } else if (fetchedActiveRyd.plannedArrivalTime) {
-            rydEventDate = fetchedActiveRyd.plannedArrivalTime.toDate(); // Fallback to ActiveRyd's arrival time
+            rydEventDate = fetchedActiveRyd.plannedArrivalTime.toDate(); 
         } else {
-            rydEventDate = new Date(); // Should not happen if data is good
+            rydEventDate = new Date(); 
             console.warn("Could not determine event date for prefill from ActiveRyd or Event.");
         }
         form.setValue("date", rydEventDate);
@@ -190,7 +185,6 @@ export default function RydRequestPage() {
       fetchJoinOfferDetails(activeRydIdQuery, passengerIdQuery);
     } else {
       setIsJoinOfferContext(false);
-      // Pre-fill eventId if provided and not in joinOffer context
       if (eventIdQuery && availableEvents.length > 0) {
         const eventExists = availableEvents.some(event => event.id === eventIdQuery);
         if (eventExists) form.setValue('eventId', eventIdQuery);
@@ -200,12 +194,11 @@ export default function RydRequestPage() {
         form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
       }
     }
-  }, [searchParams, form, userProfile, availableEvents]); // Add availableEvents dependency
+  }, [searchParams, form, userProfile, availableEvents]); 
 
-  // Fetch available events (for new requests)
   useEffect(() => {
     const fetchEvents = async () => {
-      if (isJoinOfferContext) { // Don't fetch all events if we're just updating details
+      if (isJoinOfferContext) { 
         setIsLoadingEvents(false);
         return;
       }
@@ -230,9 +223,8 @@ export default function RydRequestPage() {
       }
     };
     fetchEvents();
-  }, [toast, isJoinOfferContext]); // Re-fetch if context changes from joinOffer to normal
+  }, [toast, isJoinOfferContext]); 
 
-  // Fetch managed students (for parents)
   useEffect(() => {
     const fetchManagedStudents = async () => {
       if (authLoading || isLoadingProfile) {
@@ -248,10 +240,7 @@ export default function RydRequestPage() {
       setIsLoadingManagedStudents(true);
       try {
         const validStudentIds = (userProfile.managedStudentIds || []).filter(id => typeof id === 'string' && id.trim() !== '');
-        if (validStudentIds.length === (userProfile.managedStudentIds || []).length) {
-          // console.warn("RydRequestPage: Some managedStudentIds were invalid and filtered out:", userProfile.managedStudentIds);
-        }
-
+        
         if (validStudentIds.length === 0) {
           setManagedStudentsList([]);
           setIsLoadingManagedStudents(false);
@@ -266,11 +255,9 @@ export default function RydRequestPage() {
               const studentData = studentDocSnap.data() as UserProfileData;
               return { id: studentDocSnap.id, fullName: studentData.fullName };
             } else {
-              // console.warn(`RydRequestPage: Managed student document with ID ${studentId} not found or not readable.`);
               return null;
             }
           } catch (studentError) {
-            // console.error(`RydRequestPage: Error fetching individual managed student with ID ${studentId}:`, studentError);
             return null; 
           }
         });
@@ -279,7 +266,6 @@ export default function RydRequestPage() {
         setManagedStudentsList(validStudents);
 
       } catch (error: any) {
-        // console.error("RydRequestPage: Full error object in fetchManagedStudents catch block:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
         toast({ title: "Error", description: "Could not load your managed students. Check console for details.", variant: "destructive" });
         setManagedStudentsList([]);
       } finally {
@@ -298,7 +284,7 @@ export default function RydRequestPage() {
       toast({ title: "Authentication Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
-    if (!data.date && !isJoinOfferContext) { // Date is critical for new requests
+    if (!data.date && !isJoinOfferContext) { 
         toast({ title: "Validation Error", description: "Date of ryd is required.", variant: "destructive" });
         form.setError("date", { type: "manual", message: "Date of ryd is required." });
         return;
@@ -306,7 +292,6 @@ export default function RydRequestPage() {
     setIsSubmitting(true);
 
     if (isJoinOfferContext && activeRydIdForUpdate && passengerIdForUpdate) {
-        // Submit details for an existing ActiveRyd join request
         if (!activeRydBeingUpdated) {
             toast({title: "Error", description: "Active Ryd details not loaded for update.", variant: "destructive"});
             setIsSubmitting(false);
@@ -343,8 +328,7 @@ export default function RydRequestPage() {
         }
 
     } else {
-        // Create a new RydData request
-        if (!data.date) { // Redundant check, but good for safety before timestamp creation
+        if (!data.date) { 
             toast({ title: "Validation Error", description: "Date of ryd is required for new request.", variant: "destructive" });
             setIsSubmitting(false);
             return;
@@ -411,7 +395,7 @@ export default function RydRequestPage() {
   const selectedEventId = form.watch("eventId");
 
   useEffect(() => {
-    if (isJoinOfferContext) return; // Don't auto-fill if updating details
+    if (isJoinOfferContext) return; 
 
     if (selectedEventId && selectedEventId !== "custom") {
       const event = availableEvents.find(e => e.id === selectedEventId);
@@ -438,9 +422,23 @@ export default function RydRequestPage() {
     form.setValue("passengerUids", newSelectedStudents, { shouldValidate: true });
   };
 
-  const filteredStudentsForPopover = managedStudentsList.filter(student =>
-    student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase())
-  );
+  const getFilteredStudentsForPopover = () => {
+    let baseList = [...managedStudentsList];
+    if (userProfile?.role === UserRole.PARENT && authUser) {
+        const parentSelfEntry = { id: authUser.uid, fullName: `${userProfile.fullName} (Me)` };
+        // Add parent self to list if not already there (e.g. if managedStudentsList is empty)
+        if (!baseList.some(s => s.id === authUser.uid)) {
+             baseList.unshift(parentSelfEntry);
+        } else { // Ensure parent's name is updated with "(Me)"
+            baseList = baseList.map(s => s.id === authUser.uid ? parentSelfEntry : s);
+        }
+    }
+    return baseList.filter(student =>
+        student.fullName.toLowerCase().includes(studentSearchTerm.toLowerCase())
+    );
+  };
+  const filteredStudentsForPopover = getFilteredStudentsForPopover();
+
   const currentSelectedStudentUids = form.watch("passengerUids") || [];
 
   const pageTitle = isJoinOfferContext ? "Provide Pickup Details" : "Request a Ryd";
@@ -578,13 +576,13 @@ export default function RydRequestPage() {
                           <Popover open={studentPopoverOpen} onOpenChange={setStudentPopoverOpen}>
                             <PopoverTrigger asChild>
                               <Button variant="outline" role="combobox" aria-expanded={studentPopoverOpen} className="w-full justify-between" disabled={isLoadingManagedStudents} >
-                                {isLoadingManagedStudents ? "Loading students..." : (currentSelectedStudentUids.length > 0 ? `${currentSelectedStudentUids.length} student(s) selected` : "Select student(s)...")}
+                                {isLoadingManagedStudents ? "Loading students..." : (currentSelectedStudentUids.length > 0 ? `${currentSelectedStudentUids.length} passenger(s) selected` : "Select passenger(s)...")}
                                 <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                               <Command>
-                                <CommandInput placeholder="Search students..." value={studentSearchTerm} onValueChange={setStudentSearchTerm} disabled={isLoadingManagedStudents}/>
+                                <CommandInput placeholder="Search students or 'Me'..." value={studentSearchTerm} onValueChange={setStudentSearchTerm} disabled={isLoadingManagedStudents}/>
                                 <CommandList>
                                   <ScrollArea className="h-48">
                                     {isLoadingManagedStudents && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
@@ -604,13 +602,19 @@ export default function RydRequestPage() {
                           </Popover>
                           {currentSelectedStudentUids.length > 0 && (
                             <div className="pt-2 space-x-1 space-y-1">
-                              {currentSelectedStudentUids.map(studentId => {
-                                const student = managedStudentsList.find(s => s.id === studentId);
-                                return student ? (
-                                  <Badge key={studentId} variant="secondary" className="mr-1"> {student.fullName}
-                                    <button type="button" className="ml-1.5 ro..." onClick={() => handleStudentSelection(studentId)}> <X className="h-3 w-3 tt..." /> </button>
+                              {currentSelectedStudentUids.map(passengerId => {
+                                let passengerName = "";
+                                if (passengerId === authUser?.uid && userProfile?.role === UserRole.PARENT) {
+                                    passengerName = `${userProfile.fullName} (Me)`;
+                                } else {
+                                    const student = managedStudentsList.find(s => s.id === passengerId);
+                                    passengerName = student ? student.fullName : `User ${passengerId.substring(0,5)}`;
+                                }
+                                return (
+                                  <Badge key={passengerId} variant="secondary" className="mr-1"> {passengerName}
+                                    <button type="button" className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2" onClick={() => handleStudentSelection(passengerId)}> <X className="h-3 w-3 text-muted-foreground hover:text-foreground" /> </button>
                                   </Badge>
-                                ) : null;
+                                );
                               })}
                             </div>
                           )}
