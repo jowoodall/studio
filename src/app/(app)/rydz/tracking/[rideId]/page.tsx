@@ -380,9 +380,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                                 </div>
                                 {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
                                   <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    className="px-2 py-1 h-auto text-xs"
+                                    variant="outline"
+                                    className="px-2 py-1 h-auto text-xs text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => handleCancelSpot(manifestItem.userId)}
                                     disabled={isCancellingSpot[manifestItem.userId]}
                                   >
