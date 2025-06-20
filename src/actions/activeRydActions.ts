@@ -36,6 +36,8 @@ export async function requestToJoinActiveRydAction(
     return { success: false, message: "Missing required IDs." };
   }
 
+  const batch = db.batch(); // Initialize batch write
+
   try {
     // 1. Verify requester's identity and passenger relationship (if parent)
     const requesterProfile = await getUserProfile(requestedByUserId);
@@ -99,18 +101,26 @@ export async function requestToJoinActiveRydAction(
       const existingRydRequestsQuery = db.collection('rydz')
         .where('passengerIds', 'array-contains', passengerUserId)
         .where('eventId', '==', activeRydData.associatedEventId)
-        .where('status', 'in', ['requested', 'searching_driver']); // Open statuses
+        .where('status', 'in', ['requested', 'searching_driver'] as RydStatus[]); // Open statuses
 
       const existingRydRequestsSnap = await existingRydRequestsQuery.get();
 
       if (!existingRydRequestsSnap.empty) {
-        // Assuming one open request per passenger per event for simplicity.
-        // If multiple, could pick the most recent or require user selection.
-        const existingRydRequestDoc = existingRydRequestsSnap.docs[0];
+        const existingRydRequestDoc = existingRydRequestsSnap.docs[0]; // Take the first one found
         originalRydRequestIdForManifest = existingRydRequestDoc.id;
         console.log(`[Action: requestToJoinActiveRydAction] Found existing RydData request ${originalRydRequestIdForManifest} for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}.`);
+        
+        // Add update for this existing RydData to the batch
+        const existingRydRequestDocRef = db.collection('rydz').doc(originalRydRequestIdForManifest);
+        batch.update(existingRydRequestDocRef, {
+          status: 'driver_assigned' as RydStatus,
+          driverId: activeRydData.driverId,
+          assignedActiveRydId: activeRydId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        console.log(`[Action: requestToJoinActiveRydAction] Added update for RydData ${originalRydRequestIdForManifest} to batch.`);
       } else {
-        console.log(`[Action: requestToJoinActiveRydAction] No existing RydData request found for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}.`);
+        console.log(`[Action: requestToJoinActiveRydAction] No existing open RydData request found for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}.`);
       }
     }
 
@@ -122,7 +132,7 @@ export async function requestToJoinActiveRydAction(
 
     let fullPickupAddress = [passengerPickupStreet, passengerPickupCity, passengerPickupState, passengerPickupZip].filter(Boolean).join(", ");
     if (fullPickupAddress.trim() === "") {
-        fullPickupAddress = "Pickup to be coordinated";
+        fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
     }
 
     const newManifestItem: PassengerManifestItem = {
@@ -134,15 +144,22 @@ export async function requestToJoinActiveRydAction(
       requestedAt: Timestamp.now(),
     };
 
-    // 6. Add to ActiveRyd manifest (will be batched later)
-    await activeRydDocRef.update({
+    // 6. Add update for ActiveRyd manifest to the batch
+    batch.update(activeRydDocRef, {
       passengerManifest: FieldValue.arrayUnion(newManifestItem),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    console.log(`[Action: requestToJoinActiveRydAction] Added update for ActiveRyd ${activeRydId} passengerManifest to batch.`);
     
-    let successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
-    // Success message will be adjusted in the next step if an existing request is linked and updated.
+    // 7. Commit the batch
+    await batch.commit();
+    console.log(`[Action: requestToJoinActiveRydAction] Batch commit successful.`);
 
+    let successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
+    if (originalRydRequestIdForManifest) {
+        successMessage = `${passengerProfile.fullName}'s request to join has been sent. Your existing ryd request for this event has also been updated to link with this driver's offer.`;
+    }
+    
     console.log("[Action: requestToJoinActiveRydAction] Successfully processed join request for rydId:", activeRydId);
     return {
         success: true,
