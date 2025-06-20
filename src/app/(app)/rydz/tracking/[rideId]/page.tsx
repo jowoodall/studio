@@ -22,7 +22,7 @@ interface RydDetailsPageParams { rideId: string; }
 
 interface DisplayActiveRydData extends ActiveRyd {
   driverProfile?: UserProfileData;
-  passengerProfiles?: UserProfileData[];
+  passengerProfiles?: UserProfileData[]; // Ensure this holds profiles for manifest items
   eventName?: string; // From associated event
 }
 
@@ -293,7 +293,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                   <div className="flex items-center gap-3">
                     <Avatar>
                       <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint} />
-                      <AvatarFallback>{driverName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                      <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                     </Avatar>
                     <div>
                       <Link href={`/profile/view/${rydDetails.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
@@ -432,6 +432,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                   const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
                   const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
                   const isLoadingAction = isManagingRequest[request.userId];
+                  const earliestPickupTimestamp = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+
 
                   return (
                     <div key={request.userId} className="p-3 border rounded-md">
@@ -446,6 +448,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                          <p className="text-xs text-muted-foreground">Requested: {request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
                       </div>
                       {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
+                      {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}
+                      {request.notes && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Notes: "{request.notes}"</p>}
                       <div className="flex gap-2 mt-2 justify-end">
                         <Button 
                           size="sm" 
