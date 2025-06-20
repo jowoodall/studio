@@ -37,8 +37,6 @@ export async function requestToJoinActiveRydAction(
   }
 
   try {
-    const batch = db.batch();
-
     // 1. Verify requester's identity and passenger relationship (if parent)
     const requesterProfile = await getUserProfile(requestedByUserId);
     if (!requesterProfile) {
@@ -96,8 +94,7 @@ export async function requestToJoinActiveRydAction(
 
     // 4. Check for an existing open RydData request for the same event by the passenger
     let originalRydRequestIdForManifest: string | undefined = undefined;
-    let foundAndUpdatedExistingRydRequest = false;
-
+    
     if (activeRydData.associatedEventId) {
       const existingRydRequestsQuery = db.collection('rydz')
         .where('passengerIds', 'array-contains', passengerUserId)
@@ -111,16 +108,9 @@ export async function requestToJoinActiveRydAction(
         // If multiple, could pick the most recent or require user selection.
         const existingRydRequestDoc = existingRydRequestsSnap.docs[0];
         originalRydRequestIdForManifest = existingRydRequestDoc.id;
-
-        console.log(`[Action: requestToJoinActiveRydAction] Found existing RydData request ${originalRydRequestIdForManifest} for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}. Linking and updating.`);
-
-        batch.update(existingRydRequestDoc.ref, {
-          status: 'driver_assigned' as RydStatus, // Or a more specific status like 'pending_direct_join_approval'
-          driverId: activeRydData.driverId,
-          assignedActiveRydId: activeRydId,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-        foundAndUpdatedExistingRydRequest = true;
+        console.log(`[Action: requestToJoinActiveRydAction] Found existing RydData request ${originalRydRequestIdForManifest} for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}.`);
+      } else {
+        console.log(`[Action: requestToJoinActiveRydAction] No existing RydData request found for passenger ${passengerUserId} and event ${activeRydData.associatedEventId}.`);
       }
     }
 
@@ -138,33 +128,26 @@ export async function requestToJoinActiveRydAction(
     const newManifestItem: PassengerManifestItem = {
       userId: passengerUserId,
       originalRydRequestId: originalRydRequestIdForManifest, // Link if found
-      pickupAddress: fullPickupAddress, // Default pickup, user will confirm/update in next step
+      pickupAddress: fullPickupAddress, 
       destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
       status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
       requestedAt: Timestamp.now(),
-      // earliestPickupTimestamp will be set by the passenger in the next step
     };
 
-    // 6. Add to ActiveRyd manifest using batch
-    batch.update(activeRydDocRef, {
+    // 6. Add to ActiveRyd manifest (will be batched later)
+    await activeRydDocRef.update({
       passengerManifest: FieldValue.arrayUnion(newManifestItem),
       updatedAt: FieldValue.serverTimestamp(),
     });
-
-    // 7. Commit batch
-    await batch.commit();
-
+    
     let successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
-    if (foundAndUpdatedExistingRydRequest) {
-        successMessage = `${passengerProfile.fullName}'s existing request for this event has been linked, and a join request sent to the new driver for approval.`;
-    }
+    // Success message will be adjusted in the next step if an existing request is linked and updated.
 
     console.log("[Action: requestToJoinActiveRydAction] Successfully processed join request for rydId:", activeRydId);
     return {
         success: true,
         message: successMessage,
         rydId: activeRydId,
-        // passengerManifestItemId: passengerUserId can be used to identify the item for subsequent updates if needed.
     };
 
   } catch (error: any) {
@@ -230,11 +213,10 @@ export async function managePassengerJoinRequestAction(
         return { success: false, message: `Cannot approve ${passengerName}: Ryd is already full.` };
       }
       passengerToUpdate.status = PassengerManifestStatus.CONFIRMED_BY_DRIVER;
-      // Optionally, set pickupOrder or other details here
     } else if (newStatus === PassengerManifestStatus.REJECTED_BY_DRIVER) {
       passengerToUpdate.status = PassengerManifestStatus.REJECTED_BY_DRIVER;
     } else {
-      return { success: false, message: "Invalid status update." }; // Should not happen with current input type
+      return { success: false, message: "Invalid status update." }; 
     }
 
     const updatedManifest = [...activeRydData.passengerManifest];
@@ -277,21 +259,19 @@ export async function cancelPassengerSpotAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    // 1. Fetch ActiveRyd
     const activeRydDocSnap = await activeRydDocRef.get();
     if (!activeRydDocSnap.exists) {
       return { success: false, message: "ActiveRyd not found." };
     }
     const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-    // 2. Authorization
     const cancellingUserProfile = await getUserProfile(cancellingUserId);
     if (!cancellingUserProfile) {
       return { success: false, message: "Cancelling user profile not found." };
     }
 
     if (cancellingUserId !== passengerUserIdToCancel) {
-      if (cancellingUserProfile.role !== 'parent') { // Assuming UserRole.PARENT
+      if (cancellingUserProfile.role !== 'parent') { 
         return { success: false, message: "Unauthorized: Only parents can cancel for other users." };
       }
       if (!cancellingUserProfile.managedStudentIds?.includes(passengerUserIdToCancel)) {
@@ -299,7 +279,6 @@ export async function cancelPassengerSpotAction(
       }
     }
 
-    // 3. Find passenger in manifest and validate status
     const passengerIndex = activeRydData.passengerManifest.findIndex(
       (p) => p.userId === passengerUserIdToCancel
     );
@@ -309,7 +288,7 @@ export async function cancelPassengerSpotAction(
     }
 
     const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
-    const passengerProfile = await getUserProfile(passengerUserIdToCancel); // For display name in message
+    const passengerProfile = await getUserProfile(passengerUserIdToCancel); 
     const passengerName = passengerProfile?.fullName || `User ${passengerUserIdToCancel.substring(0,6)}`;
 
     const cancellablePassengerStatuses: PassengerManifestStatus[] = [
@@ -321,8 +300,8 @@ export async function cancelPassengerSpotAction(
       ARStatus.COMPLETED,
       ARStatus.CANCELLED_BY_DRIVER,
       ARStatus.CANCELLED_BY_SYSTEM,
-      ARStatus.IN_PROGRESS_ROUTE, // Might be too late to cancel once en route
-      ARStatus.IN_PROGRESS_PICKUP // Might be too late to cancel once pickup sequence started
+      ARStatus.IN_PROGRESS_ROUTE, 
+      ARStatus.IN_PROGRESS_PICKUP 
     ];
 
     if (!cancellablePassengerStatuses.includes(passengerToUpdate.status)) {
@@ -332,7 +311,6 @@ export async function cancelPassengerSpotAction(
          return { success: false, message: `This ryd cannot be cancelled by passenger at this stage (Ryd Status: ${activeRydData.status.replace(/_/g, ' ')}).` };
     }
 
-    // 4. Update passenger status
     passengerToUpdate.status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
     const updatedManifest = [...activeRydData.passengerManifest];
     updatedManifest[passengerIndex] = passengerToUpdate;
@@ -374,7 +352,6 @@ export async function fulfillRequestWithExistingRydAction(
   const batch = db.batch();
 
   try {
-    // 1. Fetch RydRequestData
     const rydRequestRef = db.collection('rydz').doc(rydRequestId);
     const rydRequestSnap = await rydRequestRef.get();
     if (!rydRequestSnap.exists) {
@@ -382,7 +359,6 @@ export async function fulfillRequestWithExistingRydAction(
     }
     const rydRequestData = rydRequestSnap.data() as RydData;
 
-    // 2. Fetch ActiveRyd
     const activeRydRef = db.collection('activeRydz').doc(existingActiveRydId);
     const activeRydSnap = await activeRydRef.get();
     if (!activeRydSnap.exists) {
@@ -390,10 +366,8 @@ export async function fulfillRequestWithExistingRydAction(
     }
     const activeRydData = activeRydSnap.data() as ActiveRyd;
 
-    // 3. Fetch Driver Profile (for verification)
     const driverProfile = await getUserProfile(driverUserId);
     if (!driverProfile) {
-      // This should ideally not happen if driverUserId comes from an authenticated session
       return { success: false, message: "Driver profile not found." };
     }
     if (activeRydData.driverId !== driverUserId) {
@@ -403,8 +377,6 @@ export async function fulfillRequestWithExistingRydAction(
       return { success: false, message: "You are not registered or permitted to drive." };
     }
 
-
-    // 4. Validations
     if (rydRequestData.status !== 'requested' && rydRequestData.status !== 'searching_driver') {
       return { success: false, message: `This ryd request is no longer active (Status: ${rydRequestData.status}).` };
     }
@@ -428,9 +400,8 @@ export async function fulfillRequestWithExistingRydAction(
       return { success: false, message: `Your existing ryd does not have enough capacity (${passengerCapacity - currentPassengersInActiveRyd} seats available) to fulfill this request for ${passengersToFulfillCount} passenger(s).` };
     }
 
-    // 5. Prepare new passenger manifest items for the ActiveRyd
     const newManifestItems: PassengerManifestItem[] = [];
-    let eventNameForManifest = "Event Destination"; // Default
+    let eventNameForManifest = "Event Destination"; 
     if (activeRydData.associatedEventId) {
         const eventDocRef = db.collection('events').doc(activeRydData.associatedEventId);
         const eventDocSnap = await eventDocRef.get();
@@ -443,9 +414,9 @@ export async function fulfillRequestWithExistingRydAction(
 
 
     for (const passengerId of rydRequestData.passengerIds) {
-      const passengerProfileData = await getUserProfile(passengerId); // Renamed to avoid conflict
-      let passengerPickupAddress = rydRequestData.pickupLocation || "Pickup to be coordinated"; // Default to request's pickup
-      if (passengerProfileData?.address?.street) { // Override with passenger's profile address if available
+      const passengerProfileData = await getUserProfile(passengerId); 
+      let passengerPickupAddress = rydRequestData.pickupLocation || "Pickup to be coordinated"; 
+      if (passengerProfileData?.address?.street) { 
         const pStreet = passengerProfileData.address.street || "";
         const pCity = passengerProfileData.address.city || "";
         const pState = passengerProfileData.address.state || "";
@@ -460,17 +431,15 @@ export async function fulfillRequestWithExistingRydAction(
         pickupAddress: passengerPickupAddress,
         destinationAddress: activeRydData.finalDestinationAddress || eventNameForManifest,
         status: PassengerManifestStatus.CONFIRMED_BY_DRIVER,
-        requestedAt: rydRequestData.createdAt || Timestamp.now(), // Use original request time or now
+        requestedAt: rydRequestData.createdAt || Timestamp.now(), 
       });
     }
 
-    // 6. Update ActiveRyd
     batch.update(activeRydRef, {
       passengerManifest: FieldValue.arrayUnion(...newManifestItems),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // 7. Update RydRequestData
     batch.update(rydRequestRef, {
       status: 'driver_assigned' as RydStatus,
       driverId: driverUserId,
@@ -478,7 +447,6 @@ export async function fulfillRequestWithExistingRydAction(
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // 8. Commit batch
     await batch.commit();
 
     console.log(`[Action: fulfillRequestWithExistingRydAction] Successfully fulfilled request ${rydRequestId} with existing ActiveRyd ${existingActiveRydId}.`);
@@ -501,8 +469,8 @@ interface SubmitPassengerDetailsForActiveRydInput {
   activeRydId: string;
   passengerUserId: string;
   pickupLocation: string;
-  earliestPickupTimeStr: string; // e.g., "08:30"
-  eventDate: Date; // The actual Date object for the event date (to combine with time)
+  earliestPickupTimeStr: string; 
+  eventDate: Date; 
   notes?: string;
 }
 
@@ -535,17 +503,15 @@ export async function submitPassengerDetailsForActiveRydAction(
 
     const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
 
-    // Update details
     passengerToUpdate.pickupAddress = pickupLocation;
     passengerToUpdate.notes = notes || "";
 
-    // Construct earliestPickupTimestamp
     const [hours, minutes] = earliestPickupTimeStr.split(':').map(Number);
     if (isNaN(hours) || isNaN(minutes)) {
       return { success: false, message: "Invalid earliest pickup time format."};
     }
-    const pickupDateTime = new Date(eventDate); // Start with the event date
-    pickupDateTime.setHours(hours, minutes, 0, 0); // Set the time
+    const pickupDateTime = new Date(eventDate); 
+    pickupDateTime.setHours(hours, minutes, 0, 0); 
     passengerToUpdate.earliestPickupTimestamp = Timestamp.fromDate(pickupDateTime);
 
     const updatedManifest = [...activeRydData.passengerManifest];
@@ -568,3 +534,4 @@ export async function submitPassengerDetailsForActiveRydAction(
   }
 }
 
+    
