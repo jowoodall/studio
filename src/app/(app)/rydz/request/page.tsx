@@ -161,9 +161,47 @@ export default function RydRequestPage() {
         form.setValue("date", rydEventDate);
         form.setValue("time", format(rydEventDate, "HH:mm"));
         
-        if (userProfile?.address?.street && !form.getValues("pickupLocation")) {
-             form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
+        // Try to pre-fill from original RydData request if available
+        const passengerManifestItem = fetchedActiveRyd.passengerManifest.find(item => item.userId === pId);
+        let originalRydNotes = "";
+
+        if (passengerManifestItem?.originalRydRequestId) {
+            console.log(`[RydRequestPage] Found originalRydRequestId: ${passengerManifestItem.originalRydRequestId} for passenger ${pId}`);
+            const originalRydRequestDocRef = doc(db, "rydz", passengerManifestItem.originalRydRequestId);
+            const originalRydRequestSnap = await getFirestoreDoc(originalRydRequestDocRef);
+            if (originalRydRequestSnap.exists()) {
+                const originalRydData = originalRydRequestSnap.data() as RydData;
+                console.log("[RydRequestPage] Fetched original RydData:", originalRydData);
+                if (originalRydData.pickupLocation) {
+                    form.setValue("pickupLocation", originalRydData.pickupLocation);
+                    console.log(`[RydRequestPage] Pre-filled pickupLocation from original request: ${originalRydData.pickupLocation}`);
+                }
+                if (originalRydData.earliestPickupTimestamp) {
+                    form.setValue("earliestPickupTime", format(originalRydData.earliestPickupTimestamp.toDate(), "HH:mm"));
+                     console.log(`[RydRequestPage] Pre-filled earliestPickupTime from original request: ${format(originalRydData.earliestPickupTimestamp.toDate(), "HH:mm")}`);
+                }
+                if (originalRydData.notes) {
+                    originalRydNotes = originalRydData.notes;
+                     console.log(`[RydRequestPage] Original notes from request: "${originalRydNotes}"`);
+                }
+            } else {
+                console.warn(`[RydRequestPage] Original RydData request ${passengerManifestItem.originalRydRequestId} not found.`);
+            }
         }
+        
+        if (!form.getValues("pickupLocation") && userProfile?.address?.street) { // If not set by original request, use profile
+             form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
+             console.log("[RydRequestPage] Pre-filled pickupLocation from user profile.");
+        }
+
+        let currentNotes = form.getValues("notes") || ""; // Should be empty from defaultValues here
+        if (originalRydNotes) {
+            currentNotes = `From your original request: "${originalRydNotes}"\n(You can add more specific notes for this driver below if needed.)`;
+        }
+        form.setValue("notes", currentNotes);
+        console.log(`[RydRequestPage] Set notes field to: "${currentNotes}"`);
+
+
         if (userProfile?.role === UserRole.PARENT) {
             form.setValue("passengerUids", [pId]);
         }
@@ -194,7 +232,7 @@ export default function RydRequestPage() {
         form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
       }
     }
-  }, [searchParams, form, userProfile, availableEvents]); 
+  }, [searchParams, form, userProfile, availableEvents, toast]); // Added toast to dependencies
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -426,10 +464,9 @@ export default function RydRequestPage() {
     let baseList = [...managedStudentsList];
     if (userProfile?.role === UserRole.PARENT && authUser) {
         const parentSelfEntry = { id: authUser.uid, fullName: `${userProfile.fullName} (Me)` };
-        // Add parent self to list if not already there (e.g. if managedStudentsList is empty)
         if (!baseList.some(s => s.id === authUser.uid)) {
              baseList.unshift(parentSelfEntry);
-        } else { // Ensure parent's name is updated with "(Me)"
+        } else { 
             baseList = baseList.map(s => s.id === authUser.uid ? parentSelfEntry : s);
         }
     }
@@ -722,3 +759,5 @@ export default function RydRequestPage() {
   );
 }
 
+
+    
