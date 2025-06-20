@@ -370,18 +370,20 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                           const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
 
                           return (
-                            <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col gap-1.5">
-                              <div>
-                                <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
-                                    {passengerName}
-                                </Link>
-                                <span className="text-xs text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                            <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col">
+                              <div className="space-y-0.5"> 
+                                <div>
+                                  <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
+                                      {passengerName}
+                                  </Link>
+                                  <span className="text-xs text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                                </div>
+                                {manifestItem.pickupAddress && <p className="text-xs text-muted-foreground">Pickup: {manifestItem.pickupAddress}</p>}
+                                {manifestItem.notes && <p className="text-xs text-muted-foreground">Notes: "{manifestItem.notes}"</p>}
                               </div>
-                              {manifestItem.pickupAddress && <p className="text-xs text-muted-foreground">Pickup: {manifestItem.pickupAddress}</p>}
-                              {manifestItem.notes && <p className="text-xs text-muted-foreground">Notes: "{manifestItem.notes}"</p>}
                               
                               {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
-                                <div className="mt-1 flex justify-end">
+                                <div className="mt-2 flex justify-end">
                                   <Button
                                     variant="outline"
                                     className="px-2 py-1 h-auto text-xs text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -493,3 +495,5 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   );
 }
 
+
+    
