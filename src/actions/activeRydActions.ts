@@ -37,6 +37,7 @@ export async function requestToJoinActiveRydAction(
   }
 
   const batch = db.batch(); // Initialize batch write
+  let originalRydRequestIdForManifest: string | undefined = undefined;
 
   try {
     // 1. Verify requester's identity and passenger relationship (if parent)
@@ -95,8 +96,6 @@ export async function requestToJoinActiveRydAction(
     }
 
     // 4. Check for an existing open RydData request for the same event by the passenger
-    let originalRydRequestIdForManifest: string | undefined = undefined;
-    
     if (activeRydData.associatedEventId) {
       const existingRydRequestsQuery = db.collection('rydz')
         .where('passengerIds', 'array-contains', passengerUserId)
@@ -135,13 +134,17 @@ export async function requestToJoinActiveRydAction(
         fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
     }
 
-    const newManifestItem: PassengerManifestItem = {
+    const newManifestItemBase: Omit<PassengerManifestItem, 'originalRydRequestId'> = {
       userId: passengerUserId,
-      originalRydRequestId: originalRydRequestIdForManifest, // Link if found
       pickupAddress: fullPickupAddress, 
       destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
       status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
       requestedAt: Timestamp.now(),
+    };
+
+    const newManifestItem: PassengerManifestItem = {
+        ...newManifestItemBase,
+        ...(originalRydRequestIdForManifest && { originalRydRequestId: originalRydRequestIdForManifest }),
     };
 
     // 6. Add update for ActiveRyd manifest to the batch
