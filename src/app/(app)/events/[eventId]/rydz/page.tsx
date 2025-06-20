@@ -339,7 +339,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
       return;
     }
-    // Parents can request for themselves. The action validates further.
     if (authUserProfile.role !== UserRole.STUDENT && authUserProfile.role !== UserRole.PARENT) {
       toast({ title: "Action Not Available", description: "Only students or parents can request to join rydz.", variant: "destructive" });
       return;
@@ -352,9 +351,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     let serverRydId: string | undefined = undefined;
 
     try {
-      // For parents joining for themselves, passengerUserId and requestedByUserId are the same.
-      // If a parent were to join FOR a student via this button (not current design),
-      // passengerUserId would be student's UID, requestedByUserId parent's UID.
       const result = await requestToJoinActiveRydAction({
         activeRydId,
         passengerUserId: authUser.uid, 
@@ -375,7 +371,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         router.push(`/rydz/request?eventId=${eventId}&activeRydId=${serverRydId}&passengerId=${authUser.uid}&context=joinOffer`);
       } else if (success) {
         toast({ title: "Request Sent!", description: message });
-        if(eventId) fetchActiveRydzForEvent(eventId); // Refresh to show updated manifest or request status
+        if(eventId) fetchActiveRydzForEvent(eventId); 
       } else {
         toast({ title: "Request Failed", description: message, variant: "destructive" });
       }
@@ -890,7 +886,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                             disabled={fulfillmentLoading}
                         >
                             {fulfillmentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ThumbsUp className="mr-2 h-4 w-4" />}
-                            Add to My Existing Ryd
+                            Add to My Ryd
                         </Button>
                     ) : (
                         <Button
