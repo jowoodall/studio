@@ -291,24 +291,24 @@ export async function cancelPassengerSpotAction(
     }
     const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
+    // --- Authorization Check ---
     const cancellingUserProfile = await getUserProfile(cancellingUserId);
     if (!cancellingUserProfile) {
-      return { success: false, message: "Cancelling user profile not found." };
+      return { success: false, message: "Your user profile could not be found, so we cannot authorize this action." };
     }
+    
+    const isCancellingForSelf = cancellingUserId === passengerUserIdToCancel;
+    const isParentCancellingForStudent = 
+        !isCancellingForSelf &&
+        cancellingUserProfile.role === 'parent' &&
+        cancellingUserProfile.managedStudentIds?.includes(passengerUserIdToCancel);
 
-    if (cancellingUserId !== passengerUserIdToCancel) {
-      if (cancellingUserProfile.role !== 'parent') { 
-        return { success: false, message: "Unauthorized: Only parents can cancel for other users." };
-      }
-      if (!cancellingUserProfile.managedStudentIds?.includes(passengerUserIdToCancel)) {
-        return { success: false, message: "Unauthorized: You are not managing this student." };
-      }
+    if (!isCancellingForSelf && !isParentCancellingForStudent) {
+        return { success: false, message: "Unauthorized: You do not have permission to cancel this spot." };
     }
-
-    const passengerIndex = activeRydData.passengerManifest.findIndex(
-      (p) => p.userId === passengerUserIdToCancel
-    );
-
+    
+    // --- Data Validation ---
+    const passengerIndex = activeRydData.passengerManifest.findIndex(p => p.userId === passengerUserIdToCancel);
     if (passengerIndex === -1) {
       return { success: false, message: "Passenger not found on this ryd." };
     }
@@ -317,29 +317,30 @@ export async function cancelPassengerSpotAction(
     const passengerProfile = await getUserProfile(passengerUserIdToCancel); 
     const passengerName = passengerProfile?.fullName || `User ${passengerUserIdToCancel.substring(0,6)}`;
 
-    const cancellablePassengerStatuses: PassengerManifestStatus[] = [
+    // --- Status Validation ---
+    const cancellablePassengerStatuses = [
       PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
       PassengerManifestStatus.CONFIRMED_BY_DRIVER,
       PassengerManifestStatus.AWAITING_PICKUP,
     ];
-    const nonCancellableRydStatuses: ARStatus[] = [
+    if (!cancellablePassengerStatuses.includes(passengerToUpdate.status)) {
+      return { success: false, message: `${passengerName} cannot cancel at this stage (Current Status: ${passengerToUpdate.status.replace(/_/g, ' ')}).` };
+    }
+
+    const nonCancellableRydStatuses = [
       ARStatus.COMPLETED,
       ARStatus.CANCELLED_BY_DRIVER,
       ARStatus.CANCELLED_BY_SYSTEM,
       ARStatus.IN_PROGRESS_ROUTE, 
       ARStatus.IN_PROGRESS_PICKUP 
     ];
-
-    if (!cancellablePassengerStatuses.includes(passengerToUpdate.status)) {
-      return { success: false, message: `${passengerName} cannot cancel at this stage (Current Status: ${passengerToUpdate.status.replace(/_/g, ' ')}).` };
-    }
     if (nonCancellableRydStatuses.includes(activeRydData.status)) {
-         return { success: false, message: `This ryd cannot be cancelled by passenger at this stage (Ryd Status: ${activeRydData.status.replace(/_/g, ' ')}).` };
+      return { success: false, message: `This ryd cannot be cancelled by a passenger at this stage (Ryd Status: ${activeRydData.status.replace(/_/g, ' ')}).` };
     }
 
-    passengerToUpdate.status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
+    // --- Update Logic ---
     const updatedManifest = [...activeRydData.passengerManifest];
-    updatedManifest[passengerIndex] = passengerToUpdate;
+    updatedManifest[passengerIndex].status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
 
     await activeRydDocRef.update({
       passengerManifest: updatedManifest,
