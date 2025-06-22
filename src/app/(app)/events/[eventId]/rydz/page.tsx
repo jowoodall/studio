@@ -72,6 +72,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [isJoiningRyd, setIsJoiningRyd] = useState<Record<string, boolean>>({});
   const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
 
+  const [managedStudents, setManagedStudents] = useState<UserProfileData[]>([]);
+  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true);
+  const [addStudentPopoverOpen, setAddStudentPopoverOpen] = useState<Record<string, boolean>>({});
+  const [isAddingStudent, setIsAddingStudent] = useState<Record<string, boolean>>({});
+
+
   const fetchEventDetails = useCallback(async () => {
     if (!eventId) {
       setEventError("Event ID is missing.");
@@ -121,6 +127,29 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       setIsLoadingAllGroups(false);
     }
   }, [toast]);
+
+  const fetchManagedStudents = useCallback(async () => {
+    if (authUserProfile?.role !== UserRole.PARENT || !authUserProfile.managedStudentIds?.length) {
+      setIsLoadingManagedStudents(false);
+      setManagedStudents([]);
+      return;
+    }
+    setIsLoadingManagedStudents(true);
+    try {
+      const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
+        const studentDocRef = doc(db, "users", studentId);
+        const studentDocSnap = await getDoc(studentDocRef);
+        return studentDocSnap.exists() ? (studentDocSnap.data() as UserProfileData) : null;
+      });
+      const students = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
+      setManagedStudents(students);
+    } catch (e) {
+      console.error("Error fetching managed students:", e);
+      toast({ title: "Error", description: "Could not load managed students.", variant: "destructive" });
+    } finally {
+      setIsLoadingManagedStudents(false);
+    }
+  }, [authUserProfile, toast]);
 
   const fetchActiveRydzForEvent = useCallback(async (currentEventId: string) => {
     if (!currentEventId) {
@@ -283,7 +312,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   useEffect(() => {
     fetchEventDetails();
     fetchAllGroups();
-  }, [fetchEventDetails, fetchAllGroups]);
+    fetchManagedStudents();
+  }, [fetchEventDetails, fetchAllGroups, fetchManagedStudents]);
 
   useEffect(() => {
     if (eventId && eventDetails) {
@@ -374,6 +404,40 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
   }, [authUser, authUserProfile, eventId, fetchActiveRydzForEvent, toast, router]);
 
+  const handleAddStudentToRyd = useCallback(async (activeRydId: string, studentId: string, studentName: string) => {
+    if (!authUser) {
+      toast({ title: "Not Logged In", description: "You need to be logged in to add a student.", variant: "destructive" });
+      return;
+    }
+    setIsAddingStudent(prev => ({ ...prev, [studentId]: true }));
+    let success = false;
+    let message = '';
+
+    try {
+      const result = await requestToJoinActiveRydAction({
+        activeRydId,
+        passengerUserId: studentId,
+        requestedByUserId: authUser.uid,
+      });
+      success = result.success;
+      message = result.message;
+
+      if (success) {
+        toast({ title: "Request Sent!", description: `Request for ${studentName} to join has been sent to the driver.` });
+        if (eventId) fetchActiveRydzForEvent(eventId);
+        setAddStudentPopoverOpen(prev => ({ ...prev, [activeRydId]: false }));
+      } else {
+        toast({ title: "Request Failed", description: message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      message = `An unexpected error occurred: ${error.message || "Unknown client error"}`;
+      console.error("[EventRydzPage] Client-side error calling handleAddStudentToRyd:", error);
+      toast({ title: "Request Failed", description: message, variant: "destructive" });
+    } finally {
+      setIsAddingStudent(prev => ({ ...prev, [studentId]: false }));
+    }
+  }, [authUser, eventId, fetchActiveRydzForEvent, toast]);
+
   const handleFulfillWithExistingRyd = async (rydRequestId: string, existingActiveRydId: string) => {
     if (!authUser) {
       toast({ title: "Error", description: "Authentication missing.", variant: "destructive" });
@@ -404,7 +468,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   };
 
 
-  if (authLoading || isLoadingEvent || isLoadingAllGroups) {
+  const isLoadingPage = authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingManagedStudents;
+
+  if (isLoadingPage) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -612,6 +678,16 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             const canRequestToJoin = canBePassenger && isRydJoinableStatus && !isRydFull && !hasAlreadyRequested && !isCurrentUserTheDriverOfThisRyd;
             const joinButtonLoading = isJoiningRyd[activeRyd.id];
+            
+            const isCurrentUserParent = authUserProfile?.role === UserRole.PARENT;
+            const studentsNotOnRyd = isCurrentUserParent ? managedStudents.filter(
+              student => !activeRyd.passengerManifest.some(p =>
+                p.userId === student.uid &&
+                p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+                p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
+              )
+            ) : [];
+            const canAddStudent = isCurrentUserParent && studentsNotOnRyd.length > 0 && isRydJoinableStatus && !isRydFull;
 
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
@@ -695,6 +771,44 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     {joinButtonLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCheck className="mr-2 h-4 w-4" />}
                     Request to Join Ryd
                   </Button>
+                )}
+                {canAddStudent && (
+                  <Popover open={addStudentPopoverOpen[activeRyd.id] || false} onOpenChange={(isOpen) => setAddStudentPopoverOpen(p => ({...p, [activeRyd.id]: isOpen}))}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Add a Student to this Ryd
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search student..." />
+                        <CommandList>
+                          <CommandEmpty>No available students found.</CommandEmpty>
+                          <CommandGroup>
+                            {studentsNotOnRyd.map((student) => {
+                              const studentIsBeingAdded = isAddingStudent[student.uid];
+                              return (
+                                <CommandItem
+                                  key={student.uid}
+                                  value={student.fullName}
+                                  onSelect={() => handleAddStudentToRyd(activeRyd.id, student.uid, student.fullName)}
+                                  disabled={studentIsBeingAdded}
+                                  className="flex justify-between items-center"
+                                >
+                                  {student.fullName}
+                                  {studentIsBeingAdded && <Loader2 className="h-4 w-4 animate-spin" />}
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 )}
                 {canBePassenger && !canRequestToJoin && isRydJoinableStatus && !isRydFull && hasAlreadyRequested && !isCurrentUserTheDriverOfThisRyd && (
                   <Button type="button" variant="outline" className="w-full" disabled>
