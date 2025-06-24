@@ -39,13 +39,15 @@ export async function requestToJoinActiveRydAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    // --- Authorization and Profile Checks (outside transaction) ---
-    const requesterProfile = await getUserProfile(requestedByUserId);
+    // --- Authorization and Profile Checks (run in parallel for efficiency) ---
+    const [requesterProfile, passengerProfile] = await Promise.all([
+      getUserProfile(requestedByUserId),
+      getUserProfile(passengerUserId),
+    ]);
+
     if (!requesterProfile) {
       return { success: false, message: "Requester profile not found." };
     }
-
-    const passengerProfile = await getUserProfile(passengerUserId);
     if (!passengerProfile) {
       return { success: false, message: "Passenger profile not found." };
     }
@@ -105,7 +107,7 @@ export async function requestToJoinActiveRydAction(
           fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
       }
       
-      const newManifestItem: Omit<PassengerManifestItem, 'originalRydRequestId'> & { requestedAt: Timestamp } = {
+      const newManifestItem: PassengerManifestItem = {
         userId: passengerUserId,
         pickupAddress: fullPickupAddress,
         destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
@@ -113,11 +115,9 @@ export async function requestToJoinActiveRydAction(
         requestedAt: Timestamp.now(),
       };
 
-      const newManifest = [...activeRydData.passengerManifest, newManifestItem];
-
-      // Update the ActiveRyd manifest within the transaction
+      // Use atomic arrayUnion to add the new passenger. This is more efficient.
       transaction.update(activeRydDocRef, {
-        passengerManifest: newManifest,
+        passengerManifest: FieldValue.arrayUnion(newManifestItem),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
@@ -132,14 +132,13 @@ export async function requestToJoinActiveRydAction(
 
   } catch (error: any) {
     console.error("[Action: requestToJoinActiveRydAction] Error processing request:", error);
-    // Differentiate between transaction errors and other errors
-    if (error.message && error.message.includes('Could not refresh access token')) {
+    // Catch specific auth/timeout errors from the environment
+    if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED')) {
        return {
         success: false,
-        message: `A server authentication error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment. Details: ${error.message}`
+        message: `A server authentication or timeout error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment. Details: ${error.message}`
        };
     }
-    // This will catch errors thrown from within the transaction (e.g., "This ryd is already full.")
     return {
         success: false,
         message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
@@ -168,56 +167,57 @@ export async function managePassengerJoinRequestAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    const activeRydDocSnap = await activeRydDocRef.get();
-    if (!activeRydDocSnap.exists) {
-      return { success: false, message: "ActiveRyd not found." };
-    }
-    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
-
-    // Verify the acting user is the driver
-    if (activeRydData.driverId !== actingUserId) {
-      return { success: false, message: "Unauthorized: Only the driver can manage join requests." };
-    }
-
-    const passengerIndex = activeRydData.passengerManifest.findIndex(
-      (p) => p.userId === passengerUserId && p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
-    );
-
-    if (passengerIndex === -1) {
-      return { success: false, message: "Passenger request not found or not in pending state." };
-    }
-
-    const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
-    const passengerProfile = await getUserProfile(passengerUserId);
-    const passengerName = passengerProfile?.fullName || `User ${passengerUserId.substring(0,6)}`;
-
-    if (newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER) {
-      const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
-      const confirmedPassengersCount = activeRydData.passengerManifest.filter(
-        p => p.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER || p.status === PassengerManifestStatus.AWAITING_PICKUP || p.status === PassengerManifestStatus.ON_BOARD
-      ).length;
-
-      if (confirmedPassengersCount >= passengerCapacity) {
-        return { success: false, message: `Cannot approve ${passengerName}: Ryd is already full.` };
+    const resultMessage = await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) {
+        throw new Error("ActiveRyd not found.");
       }
-      passengerToUpdate.status = PassengerManifestStatus.CONFIRMED_BY_DRIVER;
-    } else if (newStatus === PassengerManifestStatus.REJECTED_BY_DRIVER) {
-      passengerToUpdate.status = PassengerManifestStatus.REJECTED_BY_DRIVER;
-    } else {
-      return { success: false, message: "Invalid status update." }; 
-    }
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-    const updatedManifest = [...activeRydData.passengerManifest];
-    updatedManifest[passengerIndex] = passengerToUpdate;
+      // Verify the acting user is the driver
+      if (activeRydData.driverId !== actingUserId) {
+        throw new Error("Unauthorized: Only the driver can manage join requests.");
+      }
 
-    await activeRydDocRef.update({
-      passengerManifest: updatedManifest,
-      updatedAt: FieldValue.serverTimestamp(),
+      const passengerIndex = activeRydData.passengerManifest.findIndex(
+        (p) => p.userId === passengerUserId && p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
+      );
+
+      if (passengerIndex === -1) {
+        throw new Error("Passenger request not found or not in pending state.");
+      }
+      
+      // Fetch profile inside transaction because we need to confirm passenger exists first
+      const passengerProfile = await getUserProfile(passengerUserId);
+      const passengerName = passengerProfile?.fullName || `User ${passengerUserId.substring(0,6)}`;
+
+      if (newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER) {
+        const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
+        const confirmedPassengersCount = activeRydData.passengerManifest.filter(
+          p => p.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER || p.status === PassengerManifestStatus.AWAITING_PICKUP || p.status === PassengerManifestStatus.ON_BOARD
+        ).length;
+
+        if (confirmedPassengersCount >= passengerCapacity) {
+          throw new Error(`Cannot approve ${passengerName}: Ryd is already full.`);
+        }
+      } else if (newStatus !== PassengerManifestStatus.REJECTED_BY_DRIVER) {
+        throw new Error("Invalid status update."); 
+      }
+      
+      const updatedManifest = [...activeRydData.passengerManifest];
+      updatedManifest[passengerIndex].status = newStatus;
+
+      transaction.update(activeRydDocRef, {
+        passengerManifest: updatedManifest,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      
+      const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
+      return `Passenger ${passengerName}'s request has been ${actionVerb}.`;
     });
 
-    const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
-    console.log(`[Action: managePassengerJoinRequestAction] Successfully ${actionVerb} passenger ${passengerName} for rydId: ${activeRydId}`);
-    return { success: true, message: `Passenger ${passengerName}'s request has been ${actionVerb}.` };
+    console.log(`[Action: managePassengerJoinRequestAction] Transaction successful for rydId: ${activeRydId}`);
+    return { success: true, message: resultMessage };
 
   } catch (error: any) {
     console.error("[Action: managePassengerJoinRequestAction] Error processing request:", error);
@@ -247,7 +247,7 @@ export async function cancelPassengerSpotAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    // --- Authorization Check ---
+    // --- Authorization Check (can be outside transaction for early exit) ---
     const cancellingUserProfile = await getUserProfile(cancellingUserId);
     if (!cancellingUserProfile) {
       return { success: false, message: "Your user profile could not be found." };
