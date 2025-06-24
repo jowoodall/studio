@@ -36,8 +36,10 @@ export async function requestToJoinActiveRydAction(
     return { success: false, message: "Missing required IDs." };
   }
 
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
   try {
-    // 1. Verify requester's identity and passenger relationship (if parent)
+    // --- Authorization and Profile Checks (outside transaction) ---
     const requesterProfile = await getUserProfile(requestedByUserId);
     if (!requesterProfile) {
       return { success: false, message: "Requester profile not found." };
@@ -57,72 +59,71 @@ export async function requestToJoinActiveRydAction(
       }
     }
 
-    // 2. Fetch the ActiveRyd document
-    const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
-    const activeRydDocSnap = await activeRydDocRef.get();
+    // --- Transactional Read-Modify-Write ---
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
 
-    if (!activeRydDocSnap.exists) {
-      return { success: false, message: "The selected ryd offer does not exist." };
-    }
-    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+      if (!activeRydDocSnap.exists) {
+        throw new Error("The selected ryd offer does not exist.");
+      }
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-    // 3. Validations for ActiveRyd
-    const joinableRydStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
-    if (!joinableRydStatuses.includes(activeRydData.status)) {
-      return { success: false, message: `This ryd is no longer accepting new passengers (Status: ${activeRydData.status}).` };
-    }
+      // Validations for ActiveRyd
+      const joinableRydStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
+      if (!joinableRydStatuses.includes(activeRydData.status)) {
+        throw new Error(`This ryd is no longer accepting new passengers (Status: ${activeRydData.status}).`);
+      }
 
-    const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
-    const activePassengersCount = activeRydData.passengerManifest.filter(p =>
-        p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
-        p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
-        p.status !== PassengerManifestStatus.MISSED_PICKUP
-    ).length;
+      const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
+      const activePassengersCount = activeRydData.passengerManifest.filter(p =>
+          p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+          p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+          p.status !== PassengerManifestStatus.MISSED_PICKUP
+      ).length;
 
-    if (activePassengersCount >= passengerCapacity) {
-      return { success: false, message: "This ryd is already full." };
-    }
+      if (activePassengersCount >= passengerCapacity) {
+        throw new Error("This ryd is already full.");
+      }
 
-    const existingPassengerEntry = activeRydData.passengerManifest.find(
-      p => p.userId === passengerUserId &&
-           p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
-           p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
-    );
-    if (existingPassengerEntry) {
-      return { success: false, message: `${passengerProfile.fullName} is already on this ryd or has a pending request.` };
-    }
-    
-    // 4. Prepare new passenger manifest item
-    const passengerPickupStreet = passengerProfile.address?.street || "";
-    const passengerPickupCity = passengerProfile.address?.city || "";
-    const passengerPickupState = passengerProfile.address?.state || "";
-    const passengerPickupZip = passengerProfile.address?.zip || "";
+      const existingPassengerEntry = activeRydData.passengerManifest.find(
+        p => p.userId === passengerUserId &&
+             p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
+             p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
+      );
+      if (existingPassengerEntry) {
+        throw new Error(`${passengerProfile.fullName} is already on this ryd or has a pending request.`);
+      }
+      
+      // Prepare new passenger manifest item
+      const passengerPickupStreet = passengerProfile.address?.street || "";
+      const passengerPickupCity = passengerProfile.address?.city || "";
+      const passengerPickupState = passengerProfile.address?.state || "";
+      const passengerPickupZip = passengerProfile.address?.zip || "";
 
-    let fullPickupAddress = [passengerPickupStreet, passengerPickupCity, passengerPickupState, passengerPickupZip].filter(Boolean).join(", ");
-    if (fullPickupAddress.trim() === "") {
-        fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
-    }
-    
-    // Simplified manifest item, removed originalRydRequestId logic for stability.
-    const newManifestItem: Omit<PassengerManifestItem, 'originalRydRequestId'> & { requestedAt: Timestamp } = {
-      userId: passengerUserId,
-      pickupAddress: fullPickupAddress, 
-      destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
-      status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
-      requestedAt: Timestamp.now(),
-    };
+      let fullPickupAddress = [passengerPickupStreet, passengerPickupCity, passengerPickupState, passengerPickupZip].filter(Boolean).join(", ");
+      if (fullPickupAddress.trim() === "") {
+          fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
+      }
+      
+      const newManifestItem: Omit<PassengerManifestItem, 'originalRydRequestId'> & { requestedAt: Timestamp } = {
+        userId: passengerUserId,
+        pickupAddress: fullPickupAddress,
+        destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
+        status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+        requestedAt: Timestamp.now(),
+      };
 
+      const newManifest = [...activeRydData.passengerManifest, newManifestItem];
 
-    // 5. Update the ActiveRyd manifest directly.
-    await activeRydDocRef.update({
-      passengerManifest: FieldValue.arrayUnion(newManifestItem),
-      updatedAt: FieldValue.serverTimestamp(),
+      // Update the ActiveRyd manifest within the transaction
+      transaction.update(activeRydDocRef, {
+        passengerManifest: newManifest,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
-    console.log(`[Action: requestToJoinActiveRydAction] Successfully added join request for passenger ${passengerUserId} to ActiveRyd ${activeRydId}.`);
-    
+
     const successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
-    
-    console.log("[Action: requestToJoinActiveRydAction] Successfully processed join request for rydId:", activeRydId);
+    console.log("[Action: requestToJoinActiveRydAction] Transaction successful for rydId:", activeRydId);
     return {
         success: true,
         message: successMessage,
@@ -131,12 +132,14 @@ export async function requestToJoinActiveRydAction(
 
   } catch (error: any) {
     console.error("[Action: requestToJoinActiveRydAction] Error processing request:", error);
+    // Differentiate between transaction errors and other errors
     if (error.message && error.message.includes('Could not refresh access token')) {
        return {
         success: false,
-        message: `A server authentication error occurred while trying to process your request. This may be a temporary issue with the environment. Please try again in a moment. Error: ${error.message}`
+        message: `A server authentication error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment. Details: ${error.message}`
        };
     }
+    // This will catch errors thrown from within the transaction (e.g., "This ryd is already full.")
     return {
         success: false,
         message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
