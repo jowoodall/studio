@@ -477,39 +477,41 @@ export async function submitPassengerDetailsForActiveRydAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    const activeRydDocSnap = await activeRydDocRef.get();
-    if (!activeRydDocSnap.exists) {
-      return { success: false, message: "ActiveRyd not found." };
-    }
-    const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) {
+        throw new Error("ActiveRyd not found.");
+      }
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-    const passengerIndex = activeRydData.passengerManifest.findIndex(
-      (p) => p.userId === passengerUserId
-    );
+      const passengerIndex = activeRydData.passengerManifest.findIndex(
+        (p) => p.userId === passengerUserId
+      );
 
-    if (passengerIndex === -1) {
-      return { success: false, message: "You are not listed as a passenger on this ryd, or your request was removed." };
-    }
+      if (passengerIndex === -1) {
+        throw new Error("You are not listed as a passenger on this ryd, or your request was removed.");
+      }
 
-    const passengerToUpdate = activeRydData.passengerManifest[passengerIndex];
+      const updatedManifest = [...activeRydData.passengerManifest];
+      const passengerToUpdate = { ...updatedManifest[passengerIndex] }; // Create a shallow copy to modify
 
-    passengerToUpdate.pickupAddress = pickupLocation;
-    passengerToUpdate.notes = notes || "";
+      passengerToUpdate.pickupAddress = pickupLocation;
+      passengerToUpdate.notes = notes || "";
 
-    const [hours, minutes] = earliestPickupTimeStr.split(':').map(Number);
-    if (isNaN(hours) || isNaN(minutes)) {
-      return { success: false, message: "Invalid earliest pickup time format."};
-    }
-    const pickupDateTime = new Date(eventDate); 
-    pickupDateTime.setHours(hours, minutes, 0, 0); 
-    passengerToUpdate.earliestPickupTimestamp = Timestamp.fromDate(pickupDateTime);
+      const [hours, minutes] = earliestPickupTimeStr.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) {
+        throw new Error("Invalid earliest pickup time format.");
+      }
+      const pickupDateTime = new Date(eventDate);
+      pickupDateTime.setHours(hours, minutes, 0, 0);
+      passengerToUpdate.earliestPickupTimestamp = Timestamp.fromDate(pickupDateTime);
 
-    const updatedManifest = [...activeRydData.passengerManifest];
-    updatedManifest[passengerIndex] = passengerToUpdate;
+      updatedManifest[passengerIndex] = passengerToUpdate;
 
-    await activeRydDocRef.update({
-      passengerManifest: updatedManifest,
-      updatedAt: FieldValue.serverTimestamp(),
+      transaction.update(activeRydDocRef, {
+        passengerManifest: updatedManifest,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
 
     console.log(`[Action: submitPassengerDetailsForActiveRydAction] Successfully updated details for passenger ${passengerUserId} on ryd ${activeRydId}.`);
@@ -542,29 +544,27 @@ export async function cancelRydRequestByUserAction(
   const rydRequestDocRef = db.collection('rydz').doc(rydRequestId);
 
   try {
-    const rydRequestSnap = await rydRequestDocRef.get();
-    if (!rydRequestSnap.exists) {
-      return { success: false, message: "Ryd request not found." };
-    }
-    const rydRequestData = rydRequestSnap.data() as RydData;
+    await db.runTransaction(async (transaction) => {
+      const rydRequestSnap = await transaction.get(rydRequestDocRef);
+      if (!rydRequestSnap.exists) {
+        throw new Error("Ryd request not found.");
+      }
+      const rydRequestData = rydRequestSnap.data() as RydData;
 
-    // Verify the user is the original requester
-    if (rydRequestData.requestedBy !== cancellingUserId) {
-      // Additional check: If parent, are they managing one of the passengerIds?
-      // For now, keeping it simple: only original requester can cancel.
-      return { success: false, message: "Unauthorized: Only the original requester can cancel this ryd request." };
-    }
+      // Verify the user is the original requester
+      if (rydRequestData.requestedBy !== cancellingUserId) {
+        throw new Error("Unauthorized: Only the original requester can cancel this ryd request.");
+      }
 
-    // Check if the ryd request is in a cancellable state
-    const cancellableStatuses: RydStatus[] = ['requested', 'searching_driver'];
-    if (!cancellableStatuses.includes(rydRequestData.status)) {
-      return { success: false, message: `This ryd request cannot be cancelled at this stage (Status: ${rydRequestData.status.replace(/_/g, ' ')}).` };
-    }
+      const cancellableStatuses: RydStatus[] = ['requested', 'searching_driver'];
+      if (!cancellableStatuses.includes(rydRequestData.status)) {
+        throw new Error(`This ryd request cannot be cancelled at this stage (Status: ${rydRequestData.status.replace(/_/g, ' ')}).`);
+      }
 
-    // Update the status to 'cancelled_by_user'
-    await rydRequestDocRef.update({
-      status: 'cancelled_by_user' as RydStatus,
-      updatedAt: FieldValue.serverTimestamp(),
+      transaction.update(rydRequestDocRef, {
+        status: 'cancelled_by_user' as RydStatus,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
 
     console.log(`[Action: cancelRydRequestByUserAction] Successfully cancelled ryd request ${rydRequestId} by user ${cancellingUserId}.`);
