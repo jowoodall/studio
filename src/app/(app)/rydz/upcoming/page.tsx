@@ -5,22 +5,32 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle } from "lucide-react"; // Added XCircle
+import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { RydData, RydStatus, UserProfileData } from '@/types';
+import type { RydData, RydStatus, UserProfileData, ActiveRyd, ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { cancelRydRequestByUserAction } from '@/actions/activeRydActions'; // Import the new action
+import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 
-interface DisplayRydData extends RydData {
+interface DisplayRydData extends Partial<RydData> {
+  id: string;
+  isDriver?: boolean;
   driverProfile?: UserProfileData;
+  // Make fields from RydData optional to accommodate ActiveRyd shape
+  rydTimestamp: Timestamp;
+  eventName?: string;
+  destination: string;
+  status: RydStatus | ARStatus;
+  assignedActiveRydId?: string;
+  requestedBy?: string;
 }
 
-const upcomingStatuses: RydStatus[] = [
+
+const upcomingRequestStatuses: RydStatus[] = [
   'requested',
   'searching_driver',
   'driver_assigned',
@@ -29,18 +39,25 @@ const upcomingStatuses: RydStatus[] = [
   'en_route_destination',
 ];
 
+const upcomingActiveRydStatuses: ARStatus[] = [
+  ARStatus.PLANNING,
+  ARStatus.AWAITING_PASSENGERS,
+  ARStatus.IN_PROGRESS_PICKUP,
+  ARStatus.IN_PROGRESS_ROUTE,
+];
+
 export default function UpcomingRydzPage() {
-  const { user: authUser, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const { toast } = useToast();
 
   const [upcomingRydz, setUpcomingRydz] = useState<DisplayRydData[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({}); // For loading state
+  const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({});
 
   const fetchUpcomingRydz = useCallback(async () => {
-    if (!authUser) {
-      if (!authLoading && !isLoadingProfile) { 
+    if (!authUser || !authUserProfile) {
+      if (!authLoading && !isLoadingProfile) {
         setIsLoadingRydz(false);
         setUpcomingRydz([]);
       }
@@ -50,38 +67,89 @@ export default function UpcomingRydzPage() {
     setIsLoadingRydz(true);
     setError(null);
     try {
-      const rydzQuery = query(
+      // --- Queries ---
+      // 1. Rydz requested by the user
+      const requestsByUserQuery = query(
         collection(db, "rydz"),
         where("requestedBy", "==", authUser.uid),
-        where("status", "in", upcomingStatuses),
-        orderBy("rydTimestamp", "asc")
+        where("status", "in", upcomingRequestStatuses)
       );
-      const querySnapshot = await getDocs(rydzQuery);
-      const fetchedRydzPromises: Promise<DisplayRydData | null>[] = [];
+      // 2. Rydz requested for the user (as passenger)
+      const requestsForUserQuery = query(
+        collection(db, "rydz"),
+        where("passengerIds", "array-contains", authUser.uid),
+        where("status", "in", upcomingRequestStatuses)
+      );
+      // 3. Active Rydz where the user is the driver
+      const activeRydzAsDriverQuery = query(
+        collection(db, "activeRydz"),
+        where("driverId", "==", authUser.uid),
+        where("status", "in", upcomingActiveRydStatuses)
+      );
 
-      querySnapshot.forEach((docSnap) => {
-        const ryd = { id: docSnap.id, ...docSnap.data() } as RydData;
-        
-        const promise = async (): Promise<DisplayRydData | null> => {
-          let driverProfile: UserProfileData | undefined = undefined;
-          if (ryd.driverId) {
-            try {
-              const driverDocRef = doc(db, "users", ryd.driverId);
-              const driverDocSnap = await getDoc(driverDocRef);
-              if (driverDocSnap.exists()) {
-                driverProfile = driverDocSnap.data() as UserProfileData;
-              }
-            } catch (e) {
-              console.warn(`Failed to fetch driver profile for ${ryd.driverId}`, e);
+      const [
+        requestsByUserSnap,
+        requestsForUserSnap,
+        activeRydzAsDriverSnap
+      ] = await Promise.all([
+        getDocs(requestsByUserQuery),
+        getDocs(requestsForUserQuery),
+        getDocs(activeRydzAsDriverQuery)
+      ]);
+
+      // --- Process Ryd Requests ---
+      const rydzMap = new Map<string, RydData>();
+      requestsByUserSnap.forEach((doc) => {
+        rydzMap.set(doc.id, { id: doc.id, ...doc.data() } as RydData);
+      });
+      requestsForUserSnap.forEach((doc) => {
+        rydzMap.set(doc.id, { id: doc.id, ...doc.data() } as RydData);
+      });
+
+      const fetchedRydzPromises = Array.from(rydzMap.values()).map(async (ryd): Promise<DisplayRydData | null> => {
+        let driverProfile: UserProfileData | undefined = undefined;
+        if (ryd.driverId) {
+          try {
+            const driverDocRef = doc(db, "users", ryd.driverId);
+            const driverDocSnap = await getDoc(driverDocRef);
+            if (driverDocSnap.exists()) {
+              driverProfile = driverDocSnap.data() as UserProfileData;
             }
+          } catch (e) {
+            console.warn(`Failed to fetch driver profile for ${ryd.driverId}`, e);
           }
-          return { ...ryd, driverProfile };
-        };
-        fetchedRydzPromises.push(promise());
+        }
+        return { ...ryd, driverProfile, isDriver: false };
       });
       
-      const resolvedRydz = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as DisplayRydData[];
-      setUpcomingRydz(resolvedRydz);
+      const resolvedRydRequests = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as DisplayRydData[];
+
+      // --- Process Active Rydz (as Driver) ---
+      const activeRydzAsDriver = activeRydzAsDriverSnap.docs.map(docSnap => {
+        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+        // Map ActiveRyd to DisplayRydData shape
+        return {
+            id: activeRyd.id,
+            rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
+            destination: activeRyd.finalDestinationAddress || 'Destination TBD',
+            eventName: activeRyd.eventName || 'Unnamed Ryd',
+            status: activeRyd.status,
+            driverProfile: authUserProfile,
+            assignedActiveRydId: activeRyd.id,
+            isDriver: true,
+            requestedBy: activeRyd.driverId,
+        } as DisplayRydData;
+      });
+
+      // --- Combine and Sort ---
+      const combinedRydz = [...resolvedRydRequests, ...activeRydzAsDriver];
+      combinedRydz.sort((a, b) => {
+        const dateA = a.rydTimestamp ? (a.rydTimestamp as Timestamp).toDate() : new Date(0);
+        const dateB = b.rydTimestamp ? (b.rydTimestamp as Timestamp).toDate() : new Date(0);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+      setUpcomingRydz(combinedRydz);
 
     } catch (e: any) {
       console.error("Error fetching upcoming rydz:", e);
@@ -96,7 +164,7 @@ export default function UpcomingRydzPage() {
     } finally {
       setIsLoadingRydz(false);
     }
-  }, [authUser, toast, authLoading, isLoadingProfile]);
+  }, [authUser, authUserProfile, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
     if (!authLoading && !isLoadingProfile) { 
@@ -182,10 +250,12 @@ export default function UpcomingRydzPage() {
       {upcomingRydz.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {upcomingRydz.map((ryd) => {
-            const rydDate = ryd.rydTimestamp instanceof Timestamp ? ryd.rydTimestamp.toDate() : new Date();
+            const rydDate = (ryd.rydTimestamp as Timestamp)?.toDate() || new Date();
             const driverName = ryd.driverProfile?.fullName || "Pending";
             const trackable = !!ryd.assignedActiveRydId;
-            const canCancel = (ryd.status === 'requested' || ryd.status === 'searching_driver') && ryd.requestedBy === authUser?.uid;
+            const isDriver = !!ryd.isDriver;
+            
+            const canCancelRequest = !isDriver && (ryd.status === 'requested' || ryd.status === 'searching_driver') && ryd.requestedBy === authUser?.uid;
             const isCancellingThisRyd = isCancellingRyd[ryd.id];
 
             return (
@@ -206,13 +276,15 @@ export default function UpcomingRydzPage() {
                 <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
                 <div className="text-sm text-muted-foreground space-y-1 mb-2">
                   <div className="flex items-center">
-                    <CalendarDays className="mr-1.5 h-4 w-4" /> {format(rydDate, "PPP 'at' p")}
+                    <CalendarDays className="mr-1.5 h-4 w-4" /> {rydDate ? format(rydDate, "PPP 'at' p") : "Date TBD"}
                   </div>
                   <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> To: {ryd.destination}</div>
                   <div className="flex items-center">
                     <User className="mr-1.5 h-4 w-4" />
-                    Driver: {ryd.driverId && ryd.driverProfile ? (
-                      <Link href={`/profile/view/${ryd.driverId}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
+                    Driver: {isDriver ? (
+                      <span className="ml-1 font-medium text-primary">You</span>
+                    ) : ryd.driverProfile ? (
+                      <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
                     ) : (
                       <span className="ml-1">{driverName}</span>
                     )}
@@ -223,7 +295,8 @@ export default function UpcomingRydzPage() {
                 <Button variant="default" className="w-full" asChild={trackable} disabled={!trackable}>
                   {trackable ? (
                     <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
-                      <Eye className="mr-2 h-4 w-4" /> View Details / Track
+                      <Eye className="mr-2 h-4 w-4" />
+                      {isDriver ? 'Manage My Ryd' : 'View Details / Track'}
                     </Link>
                   ) : (
                     <span>
@@ -231,7 +304,7 @@ export default function UpcomingRydzPage() {
                     </span>
                   )}
                 </Button>
-                {canCancel && (
+                {canCancelRequest && (
                   <Button
                     variant="destructive"
                     className="w-full"
@@ -267,3 +340,4 @@ export default function UpcomingRydzPage() {
     </>
   );
 }
+
