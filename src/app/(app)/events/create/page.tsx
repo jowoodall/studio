@@ -32,10 +32,6 @@ const eventFormSchema = z.object({
   eventDate: z.date({ required_error: "Event date is required." }),
   eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
-  eventStreet: z.string().optional(),
-  eventCity: z.string().optional(),
-  eventState: z.string().optional(),
-  eventZip: z.string().optional(),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
   selectedGroups: z.array(z.string()).optional(),
@@ -70,14 +66,11 @@ export default function CreateEventPage() {
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
+      eventName: "",
       eventTime: "10:00",
       eventType: "",
       selectedGroups: [],
       eventLocation: "",
-      eventStreet: "",
-      eventCity: "",
-      eventState: "",
-      eventZip: "",
     },
   });
 
@@ -140,27 +133,13 @@ export default function CreateEventPage() {
       const combinedDateTime = new Date(data.eventDate);
       combinedDateTime.setHours(hours, minutes, 0, 0);
       const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
-
-      let finalLocation: string;
-      const street = data.eventStreet || "";
-      const city = data.eventCity || "";
-      const state = data.eventState || "";
-      const zip = data.eventZip || "";
       
-      let detailedAddressParts = [street, city, state, zip].filter(Boolean);
-      if (detailedAddressParts.length > 0) {
-          let cityStateZip = [city, state].filter(Boolean).join(", ");
-          if (zip) cityStateZip = [cityStateZip, zip].filter(Boolean).join(" ");
-          finalLocation = [street, cityStateZip].filter(Boolean).join(", ");
-      } else {
-          finalLocation = data.eventLocation; 
-      }
+      const finalLocation = data.eventLocation;
       if (finalLocation.trim() === "") {
-        toast({ title: "Location Missing", description: "Please provide either a general location or detailed address.", variant: "destructive" });
+        toast({ title: "Location Missing", description: "Please provide an event location/address.", variant: "destructive" });
         setIsSubmitting(false);
         return;
       }
-
 
       const newEventData: Omit<EventData, 'id' | 'createdAt'> & { createdAt: any } = {
         name: data.eventName,
@@ -223,6 +202,36 @@ export default function CreateEventPage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
+              {savedLocations.length > 0 && (
+                <FormItem>
+                  <FormLabel>Use a Saved Location</FormLabel>
+                  <Select
+                    onValueChange={(value) => {
+                      const selectedLoc = savedLocations.find(loc => loc.id === value);
+                      if (selectedLoc) {
+                        form.setValue("eventName", selectedLoc.name);
+                        form.setValue("eventLocation", formatAddress(selectedLoc.address));
+                      }
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a saved location to pre-fill..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {savedLocations.map((loc) => (
+                        <SelectItem key={loc.id} value={loc.id}>
+                          {`${loc.name} (${formatAddress(loc.address)})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>Selecting a location will populate the fields below.</FormDescription>
+                </FormItem>
+              )}
+
+
               <FormField
                 control={form.control}
                 name="eventName"
@@ -230,8 +239,23 @@ export default function CreateEventPage() {
                   <FormItem>
                     <FormLabel>Event Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., School Science Fair" {...field} />
+                      <Input placeholder="e.g., School Science Fair, Northwood High" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="eventLocation"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Event Location / Address</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., 123 Main St, Anytown, CA or Northwood High Gymnasium" {...field} />
+                    </FormControl>
+                    <FormDescription>Enter the full address or venue name for the event.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -291,116 +315,6 @@ export default function CreateEventPage() {
                   )}
                 />
               </div>
-
-              {savedLocations.length > 0 && (
-                <FormItem>
-                  <FormLabel>Use a Saved Location</FormLabel>
-                  <Select
-                    onValueChange={(value) => {
-                      const selectedLoc = savedLocations.find(loc => loc.id === value);
-                      if (selectedLoc) {
-                        form.setValue("eventLocation", selectedLoc.name);
-                        form.setValue("eventStreet", selectedLoc.address.street || "");
-                        form.setValue("eventCity", selectedLoc.address.city || "");
-                        form.setValue("eventState", selectedLoc.address.state || "");
-                        form.setValue("eventZip", selectedLoc.address.zip || "");
-                      }
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a saved location to pre-fill..." />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {savedLocations.map((loc) => (
-                        <SelectItem key={loc.id} value={loc.id}>
-                          {`${loc.name} (${formatAddress(loc.address)})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>Selecting a location will populate the fields below.</FormDescription>
-                </FormItem>
-              )}
-
-
-              <FormField
-                control={form.control}
-                name="eventLocation"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Event Location Name / General Area</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Northwood High Gymnasium, City Park Downtown" {...field} />
-                    </FormControl>
-                    <FormDescription>Enter a name for the venue or general location of the event.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="space-y-3 p-4 border rounded-md bg-muted/20">
-                <FormLabel className="text-sm font-medium flex items-center">
-                    <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
-                    Detailed Event Address (Optional, improves matching)
-                </FormLabel>
-                <FormField
-                    control={form.control}
-                    name="eventStreet"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel className="text-xs">Street Address</FormLabel>
-                        <FormControl>
-                            <Input placeholder="123 Main St" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField
-                        control={form.control}
-                        name="eventCity"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel className="text-xs">City</FormLabel>
-                            <FormControl>
-                            <Input placeholder="Anytown" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={form.control}
-                        name="eventState"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel className="text-xs">State / Province</FormLabel>
-                            <FormControl>
-                            <Input placeholder="CA" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={form.control}
-                        name="eventZip"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel className="text-xs">Zip / Postal Code</FormLabel>
-                            <FormControl>
-                            <Input placeholder="90210" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                </div>
-              </div>
-
 
               <FormField
                 control={form.control}
