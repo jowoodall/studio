@@ -58,6 +58,8 @@ export default function CreateEventPage() {
   const [availableGroups, setAvailableGroups] = useState<GroupSelectItem[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(true);
 
+  const savedLocations = userProfile?.savedLocations || [];
+
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
@@ -282,6 +284,40 @@ export default function CreateEventPage() {
                   )}
                 />
               </div>
+
+              {savedLocations.length > 0 && (
+                <FormItem>
+                  <FormLabel>Use a Saved Location</FormLabel>
+                  <Select
+                    onValueChange={(value) => {
+                      const selectedLoc = savedLocations.find(loc => loc.id === value);
+                      if (selectedLoc) {
+                        form.setValue("eventLocation", selectedLoc.address);
+                        // Clear detailed fields if a general one is chosen
+                        form.setValue("eventStreet", "");
+                        form.setValue("eventCity", "");
+                        form.setValue("eventState", "");
+                        form.setValue("eventZip", "");
+                      }
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a saved location to pre-fill..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {savedLocations.map((loc) => (
+                        <SelectItem key={loc.id} value={loc.id}>
+                          {`${loc.name} (${loc.address})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>Selecting a location will populate the location field below.</FormDescription>
+                </FormItem>
+              )}
+
 
               <FormField
                 control={form.control}
