@@ -105,6 +105,7 @@ export default function RydRequestPage() {
   const [isLoadingJoinOfferDetails, setIsLoadingJoinOfferDetails] = useState(false);
   const [joinOfferError, setJoinOfferError] = useState<string | null>(null);
 
+  const savedLocations = userProfile?.savedLocations || [];
 
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(createRydRequestFormSchema(userProfile?.role, isJoinOfferContext)), 
@@ -572,6 +573,28 @@ export default function RydRequestPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Destination Address</FormLabel>
+                    {savedLocations.length > 0 && !isJoinOfferContext && (!selectedEventId || selectedEventId === "custom") && (
+                      <Select
+                        onValueChange={(value) => {
+                          const selectedLoc = savedLocations.find(loc => loc.id === value);
+                          if (selectedLoc) {
+                            form.setValue("destination", selectedLoc.address);
+                          }
+                        }}
+                        disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Or use a saved location for destination..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {savedLocations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                              {`${loc.name} (${loc.address})`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     <FormControl>
                       <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} className={(isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) ? "bg-muted/50" : ""} />
                     </FormControl>
@@ -588,6 +611,27 @@ export default function RydRequestPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Your Pickup Location</FormLabel>
+                    {savedLocations.length > 0 && (
+                      <Select
+                        onValueChange={(value) => {
+                          const selectedLoc = savedLocations.find(loc => loc.id === value);
+                          if (selectedLoc) {
+                            form.setValue("pickupLocation", selectedLoc.address);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Or use a saved location for pickup..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {savedLocations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                               {`${loc.name} (${loc.address})`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     <FormControl>
                       <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} />
                     </FormControl>
@@ -758,6 +802,3 @@ export default function RydRequestPage() {
     </>
   );
 }
-
-
-    
