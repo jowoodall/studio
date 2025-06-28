@@ -11,7 +11,8 @@ import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { RydData, RydStatus, UserProfileData, ActiveRyd, ActiveRydStatus as ARStatus } from '@/types';
+import type { RydData, RydStatus, UserProfileData, ActiveRyd } from '@/types';
+import { ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
@@ -340,4 +341,3 @@ export default function UpcomingRydzPage() {
     </>
   );
 }
-
