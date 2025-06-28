@@ -197,6 +197,20 @@ export default function CreateEventPage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
+              <FormField
+                control={form.control}
+                name="eventName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Event Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., School Science Fair, Northwood High" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {savedLocations.length > 0 && (
                 <FormItem>
                   <FormLabel>Use a Saved Location</FormLabel>
@@ -222,24 +236,9 @@ export default function CreateEventPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription>Selecting a location will populate the fields below.</FormDescription>
+                  <FormDescription>Selecting a location will populate the fields above and below.</FormDescription>
                 </FormItem>
               )}
-
-
-              <FormField
-                control={form.control}
-                name="eventName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Event Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., School Science Fair, Northwood High" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               
               <FormField
                 control={form.control}
