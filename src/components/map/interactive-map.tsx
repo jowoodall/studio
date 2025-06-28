@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -44,8 +43,6 @@ export function InteractiveMap({
 }: InteractiveMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  const [currentCenter, setCurrentCenter] = useState({ lat: defaultCenterLat, lng: defaultCenterLng });
-  const [currentZoom, setCurrentZoom] = useState(defaultZoom);
   const [geolocationAttempted, setGeolocationAttempted] = useState(false);
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
   const [mapsApi, setMapsApi] = useState<typeof google.maps | null>(null); // To store the google.maps API object
@@ -59,8 +56,7 @@ export function InteractiveMap({
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           };
-          setCurrentCenter(userLocation);
-          setCurrentZoom(USER_LOCATION_ZOOM);
+          // Only use mapInstance methods, don't update state for controlled behavior
           if (mapInstance) {
             mapInstance.panTo(userLocation);
             mapInstance.setZoom(USER_LOCATION_ZOOM);
@@ -72,9 +68,6 @@ export function InteractiveMap({
           if (mapInstance) {
             mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
             mapInstance.setZoom(defaultZoom);
-          } else {
-            setCurrentCenter({ lat: defaultCenterLat, lng: defaultCenterLng });
-            setCurrentZoom(defaultZoom);
           }
         }
       );
@@ -83,21 +76,9 @@ export function InteractiveMap({
       if (mapInstance) {
         mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
         mapInstance.setZoom(defaultZoom);
-      } else {
-        setCurrentCenter({ lat: defaultCenterLat, lng: defaultCenterLng });
-        setCurrentZoom(defaultZoom);
       }
     }
   };
-
-  useEffect(() => {
-    if (!geolocationAttempted && !mapInstance) { // Only fetch if not attempted and map not loaded yet
-      // Defer initial fetchUserLocation until map is loaded or attempt it once
-    } else if (geolocationAttempted && mapInstance && currentCenter.lat === defaultCenterLat && currentCenter.lng === defaultCenterLng) {
-      // If already attempted but map is on default, perhaps retry or respect user's choice.
-      // For now, this handles the initial load and centering.
-    }
-  }, [geolocationAttempted, mapInstance, defaultCenterLat, defaultCenterLng, defaultZoom, currentCenter]);
 
   useEffect(() => {
     // Clean up existing polyline if it exists
@@ -151,16 +132,17 @@ export function InteractiveMap({
   }
 
   return (
-    <Card className={cn("overflow-hidden relative", className)}>
+    <Card className={cn("relative", className)}>
       <APIProvider apiKey={apiKey}>
-        <div className="w-full h-full">
+        <div className="w-full h-full relative" style={{ pointerEvents: 'auto' }}>
           <Map
-            center={currentCenter}
-            zoom={currentZoom}
+            defaultCenter={{ lat: defaultCenterLat, lng: defaultCenterLng }}
+            defaultZoom={defaultZoom}
             gestureHandling={'greedy'}
             disableDefaultUI={true}
             mapId="rydzconnect_map"
             className="w-full h-full"
+            style={{ pointerEvents: 'auto' }}
             onLoad={(evt) => {
               setMapInstance(evt.map);
               setMapsApi(evt.maps);
@@ -169,8 +151,16 @@ export function InteractiveMap({
                 setGeolocationAttempted(true);
               }
             }}
-            scrollwheel={true}
             zoomControl={true}
+            // Remove controlled behavior options since we're using uncontrolled mode
+            options={{
+              zoomControl: true,
+              panControl: false,
+              streetViewControl: false,
+              fullscreenControl: false,
+              mapTypeControl: false,
+              gestureHandling: 'greedy',
+            }}
           >
             {markers.map(marker => (
               <AdvancedMarker key={marker.id} position={marker.position} title={marker.title}>
@@ -184,8 +174,9 @@ export function InteractiveMap({
             variant="outline"
             size="icon"
             onClick={fetchUserLocation} // Re-center on user location when clicked
-            className="absolute bottom-4 right-4 bg-background/80 hover:bg-background shadow-md z-10"
+            className="absolute bottom-4 right-4 bg-background/80 hover:bg-background shadow-md z-20"
             aria-label="Center map on my location"
+            style={{ pointerEvents: 'auto' }}
         >
             <LocateFixed className="h-5 w-5" />
         </Button>

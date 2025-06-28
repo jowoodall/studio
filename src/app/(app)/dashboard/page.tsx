@@ -1,4 +1,3 @@
-
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,10 +105,17 @@ export default function DashboardPage() {
             <CardTitle>Community Map Overview</CardTitle>
             <CardDescription>Visualize rydz and events in your area. Markers indicate upcoming event locations.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden">
+        <CardContent className="p-0">
+          <div 
+            className="aspect-video bg-muted rounded-md flex items-center justify-center"
+            style={{ 
+              pointerEvents: 'auto',
+              touchAction: 'manipulation',
+              overflow: 'visible'
+            }}
+          >
             <InteractiveMap 
-                className="w-full h-full" 
+                className="w-full h-full rounded-md" 
                 defaultCenterLat={35.0456} // Center on Chattanooga
                 defaultCenterLng={-85.3097}
                 defaultZoom={9} // Zoom level for ~25-mile radius view
