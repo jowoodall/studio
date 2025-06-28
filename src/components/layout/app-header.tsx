@@ -1,7 +1,8 @@
 
 'use client';
 import Link from 'next/link';
-import { Bell, UserCircle, Menu, LogOut, Settings, Loader2 } from 'lucide-react'; // Added Loader2
+import React, { useState, useEffect } from 'react'; // Import React, useState, useEffect
+import { Bell, UserCircle, Menu, LogOut, Settings, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,7 +26,13 @@ export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth(); // Get userProfile and isLoadingProfile
+  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  
+  const [hasMounted, setHasMounted] = React.useState(false);
+  React.useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
 
   const handleLogout = async (event: Event) => {
     event.preventDefault(); 
@@ -52,20 +59,27 @@ export function AppHeader() {
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center space-x-4 sm:justify-between sm:space-x-0">
         <div className="flex gap-6 md:gap-10 items-center">
-          {isMobile && (
-             <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="Toggle sidebar">
-                <Menu className="h-5 w-5" />
-             </Button>
-          )}
-          {!isMobile && (
+          {!hasMounted ? (
+            // Render a static placeholder on the server and initial client render to avoid mismatch
              <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
                 <Logo iconOnly />
                 <span className="hidden font-bold sm:inline-block font-headline">{siteConfig.name}</span>
              </Link>
-          )}
-           {isMobile && (
-             <Link href="/dashboard" className="flex items-center space-x-2">
+          ) : isMobile ? (
+            // Render mobile view only on the client
+            <>
+              <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="Toggle sidebar">
+                 <Menu className="h-5 w-5" />
+              </Button>
+              <Link href="/dashboard" className="flex items-center space-x-2">
+                 <Logo iconOnly />
+              </Link>
+            </>
+          ) : (
+            // Render desktop view only on the client
+             <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
                 <Logo iconOnly />
+                <span className="hidden font-bold sm:inline-block font-headline">{siteConfig.name}</span>
              </Link>
           )}
         </div>
