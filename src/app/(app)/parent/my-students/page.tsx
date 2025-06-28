@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
-import { type UserProfileData, UserRole, type GroupData, type RydData, type RydStatus } from '@/types';
+import { type UserProfileData, UserRole, type GroupData, type RydData, type RydStatus, type ActiveRyd, ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
@@ -47,10 +47,11 @@ interface StudentRydInfo {
   eventName?: string;
   destination: string;
   rydTimestamp: Timestamp;
-  status: RydStatus;
+  status: RydStatus | ARStatus;
   driverName?: string;
   driverId?: string;
   assignedActiveRydId?: string;
+  isDriver?: boolean;
 }
 
 
@@ -117,29 +118,48 @@ export default function MyStudentsPage() {
     }
   }, [authUser, authUserProfile, authLoading, isLoadingContextProfile, fetchManagedStudentsList]);
   
-  const fetchStudentRydz = useCallback(async (studentId: string) => {
+  const fetchStudentRydz = useCallback(async (studentId: string, studentName: string) => {
     if (!studentId) return;
     setIsFetchingStudentRydz(true);
     setStudentRydz([]);
     try {
+      // Statuses for passenger requests
       const upcomingRequestStatuses: RydStatus[] = [
         'requested', 'searching_driver', 'driver_assigned', 'confirmed_by_driver',
         'en_route_pickup', 'en_route_destination'
       ];
-      const rydzQuery = query(
+      // Statuses for driver rydz
+      const upcomingActiveRydStatuses: ARStatus[] = [
+        ARStatus.PLANNING,
+        ARStatus.AWAITING_PASSENGERS,
+        ARStatus.IN_PROGRESS_PICKUP,
+        ARStatus.IN_PROGRESS_ROUTE,
+      ];
+      
+      // Query 1: Rydz requested FOR the student (as passenger)
+      const requestsForUserQuery = query(
         collection(db, "rydz"),
         where("passengerIds", "array-contains", studentId),
         where("status", "in", upcomingRequestStatuses)
       );
 
-      const querySnapshot = await getDocs(rydzQuery);
-      if (querySnapshot.empty) {
-        setStudentRydz([]);
-        setIsFetchingStudentRydz(false);
-        return;
-      }
+      // Query 2: Active Rydz where the student is the DRIVER
+      const activeRydzAsDriverQuery = query(
+        collection(db, "activeRydz"),
+        where("driverId", "==", studentId),
+        where("status", "in", upcomingActiveRydStatuses)
+      );
       
-      const fetchedRydzPromises = querySnapshot.docs.map(async (docSnap) => {
+      const [
+        requestsForUserSnap,
+        activeRydzAsDriverSnap
+      ] = await Promise.all([
+        getDocs(requestsForUserQuery),
+        getDocs(activeRydzAsDriverQuery)
+      ]);
+      
+      // Process passenger rydz
+      const passengerRydzPromises = requestsForUserSnap.docs.map(async (docSnap) => {
         const rydData = docSnap.data() as RydData;
         let driverName = "Pending";
         let driverId: string | undefined = undefined;
@@ -150,9 +170,7 @@ export default function MyStudentsPage() {
                     driverName = (driverDoc.data() as UserProfileData).fullName;
                     driverId = driverDoc.id;
                 }
-            } catch (e) {
-                console.warn(`Could not fetch driver profile for ${rydData.driverId}`);
-            }
+            } catch (e) { console.warn(`Could not fetch driver profile for ${rydData.driverId}`); }
         }
         return {
             id: docSnap.id,
@@ -162,18 +180,36 @@ export default function MyStudentsPage() {
             status: rydData.status,
             driverName: driverName,
             driverId: driverId,
-            assignedActiveRydId: rydData.assignedActiveRydId
+            assignedActiveRydId: rydData.assignedActiveRydId,
+            isDriver: false,
         };
       });
 
-      const fetchedRydz = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as StudentRydInfo[];
+      // Process driver rydz
+      const driverRydz = activeRydzAsDriverSnap.docs.map(docSnap => {
+        const activeRyd = docSnap.data() as ActiveRyd;
+        return {
+            id: docSnap.id,
+            eventName: activeRyd.eventName || activeRyd.finalDestinationAddress,
+            destination: activeRyd.finalDestinationAddress || 'Destination TBD',
+            rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
+            status: activeRyd.status,
+            driverName: studentName, // The student is the driver
+            driverId: studentId,
+            assignedActiveRydId: docSnap.id,
+            isDriver: true,
+        };
+      });
 
-      fetchedRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
-      setStudentRydz(fetchedRydz);
+      const passengerRydz = (await Promise.all(passengerRydzPromises)).filter(Boolean) as StudentRydInfo[];
+      const combinedRydz = [...passengerRydz, ...driverRydz];
+      
+      combinedRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
+      setStudentRydz(combinedRydz);
 
     } catch (e: any) {
       console.error("Error fetching student rydz:", e);
-      toast({ title: "Error", description: "Could not load the student's upcoming rydz.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not load the student's upcoming rydz. Please check Firestore security rules.", variant: "destructive" });
     } finally {
       setIsFetchingStudentRydz(false);
     }
@@ -191,15 +227,16 @@ export default function MyStudentsPage() {
     setError(null);
     setStudentRydz([]);
 
-    // Fetch student's profile and their rydz concurrently
-    fetchStudentRydz(studentId);
-
     try {
         const studentDocRef = doc(db, "users", studentId);
         const studentDocSnap = await getDoc(studentDocRef);
 
         if (studentDocSnap.exists()) {
             const studentData = studentDocSnap.data() as UserProfileData;
+            
+            // Fetch student's profile and their rydz concurrently
+            fetchStudentRydz(studentId, studentData.fullName);
+
             const basicInfo: ManagedStudentForList = {
                 id: studentDocSnap.id,
                 fullName: studentData.fullName,
@@ -446,13 +483,17 @@ export default function MyStudentsPage() {
                         <h4 className="font-semibold text-sm">{ryd.eventName}</h4>
                         <div className="text-xs text-muted-foreground space-y-0.5 mt-1">
                           <p className="flex items-center"><CalendarDays className="mr-1.5 h-3 w-3" /> {format(ryd.rydTimestamp.toDate(), "MMM d, yyyy 'at' p")}</p>
-                          <p className="flex items-center"><User className="mr-1.5 h-3 w-3" /> Driver: {ryd.driverName}</p>
-                          <p className="flex items-center font-medium capitalize"><Clock className="mr-1.5 h-3 w-3" /> Status: {ryd.status.replace(/_/g, ' ')}</p>
+                          {ryd.isDriver ? (
+                              <p className="flex items-center font-medium text-primary"><User className="mr-1.5 h-3 w-3" /> Driving</p>
+                          ) : (
+                              <p className="flex items-center"><User className="mr-1.5 h-3 w-3" /> Driver: {ryd.driverName}</p>
+                          )}
+                          <p className="flex items-center font-medium capitalize"><Clock className="mr-1.5 h-3 w-3" /> Status: {String(ryd.status).replace(/_/g, ' ')}</p>
                         </div>
                         {ryd.assignedActiveRydId && (
                           <Button asChild variant="link" size="sm" className="px-0 h-auto mt-1">
                             <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
-                              View Details
+                              {ryd.isDriver ? 'Manage Ryd' : 'View Details'}
                               <ExternalLink className="ml-1 h-3 w-3" />
                             </Link>
                           </Button>
