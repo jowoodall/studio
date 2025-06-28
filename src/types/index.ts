@@ -21,6 +21,13 @@ export type NavItem = {
   collapsible?: boolean;
 };
 
+export interface SavedLocation {
+  id: string;
+  name: string;
+  address: string;
+  icon: 'Home' | 'Briefcase' | 'School' | 'MapPin';
+}
+
 export interface UserProfileData {
   uid: string;
   fullName: string;
@@ -40,6 +47,7 @@ export interface UserProfileData {
     state?: string;
     zip?: string;
   };
+  savedLocations?: SavedLocation[];
   canDrive?: boolean;
   driverDetails?: {
     ageRange?: string;
@@ -158,6 +166,7 @@ export interface PassengerManifestItem {
   actualDropoffTime?: Timestamp; 
   notes?: string; 
   requestedAt: Timestamp; // Added to track when the request to join was made
+  earliestPickupTimestamp?: Timestamp; // Added for passenger-specific timing
 }
 
 export interface ActiveRyd {
@@ -181,5 +190,6 @@ export interface ActiveRyd {
   routePolyline?: string; 
   passengerManifest: PassengerManifestItem[];
   associatedEventId?: string; 
-  notes?: string; 
+  notes?: string;
+  eventName?: string; // Denormalized from event
 }

@@ -1,53 +1,64 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { PlusCircle, Edit3, Trash2, Home, Briefcase, School, MapPin, Loader2 } from "lucide-react";
+import { PlusCircle, Edit3, Trash2, Home, Briefcase, School, MapPin, Loader2, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-
-interface SavedLocation {
-  id: string;
-  name: string;
-  address: string;
-  icon?: React.ElementType; // For specific icons like Home, Briefcase, School
-}
+import { useAuth } from '@/context/AuthContext';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import type { SavedLocation } from '@/types';
+import Link from 'next/link';
 
 const locationFormSchema = z.object({
   name: z.string().min(2, { message: "Location name must be at least 2 characters." }),
   address: z.string().min(5, { message: "Address must be at least 5 characters." }),
+  icon: z.enum(['Home', 'Briefcase', 'School', 'MapPin']).default('MapPin'),
 });
 
 type LocationFormValues = z.infer<typeof locationFormSchema>;
 
-const initialMockLocations: SavedLocation[] = [
-  { id: "loc1", name: "Home", address: "123 Main Street, Anytown, CA 90210", icon: Home },
-  { id: "loc2", name: "Work", address: "456 Business Ave, Metropolis, NY 10001", icon: Briefcase },
-  { id: "loc3", name: "Northwood High", address: "789 Education Rd, Anytown, CA 90210", icon: School },
-];
+const iconMap: { [key: string]: React.ElementType } = {
+  Home,
+  Briefcase,
+  School,
+  MapPin,
+};
 
 export default function MyLocationsPage() {
   const { toast } = useToast();
-  const [locations, setLocations] = useState<SavedLocation[]>(initialMockLocations);
+  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+
+  const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<SavedLocation | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (userProfile?.savedLocations) {
+      setLocations(userProfile.savedLocations);
+    } else {
+      setLocations([]);
+    }
+  }, [userProfile]);
 
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationFormSchema),
     defaultValues: {
       name: "",
       address: "",
+      icon: "MapPin",
     },
   });
 
@@ -55,45 +66,94 @@ export default function MyLocationsPage() {
     if (location) {
       setIsEditMode(true);
       setCurrentLocation(location);
-      form.reset({ name: location.name, address: location.address });
+      form.reset({ name: location.name, address: location.address, icon: location.icon });
     } else {
       setIsEditMode(false);
       setCurrentLocation(null);
-      form.reset({ name: "", address: "" });
+      form.reset({ name: "", address: "", icon: "MapPin" });
     }
     setIsDialogOpen(true);
   };
 
-  const handleDeleteLocation = (locationId: string) => {
-    setLocations(prev => prev.filter(loc => loc.id !== locationId));
-    toast({
-      title: "Location Removed",
-      description: "The location has been successfully removed.",
-      variant: "destructive"
-    });
+  const handleDatabaseUpdate = async (updatedLocations: SavedLocation[]) => {
+    if (!user) {
+      toast({ title: "Not Authenticated", description: "You must be logged in to manage locations.", variant: "destructive" });
+      return false;
+    }
+    setIsSubmitting(true);
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, { savedLocations: updatedLocations });
+      setLocations(updatedLocations); // Optimistic update on success
+      return true;
+    } catch (error: any) {
+      console.error("Error updating locations:", error);
+      toast({ title: "Update Failed", description: error.message || "Could not save changes to the database.", variant: "destructive" });
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  function onSubmit(data: LocationFormValues) {
-    setIsSubmitting(true);
-    // Simulate API call
-    setTimeout(() => {
-      if (isEditMode && currentLocation) {
-        setLocations(prev => prev.map(loc => loc.id === currentLocation.id ? { ...loc, ...data } : loc));
+  const handleDeleteLocation = async (locationId: string) => {
+    const updatedLocations = locations.filter(loc => loc.id !== locationId);
+    const success = await handleDatabaseUpdate(updatedLocations);
+    if (success) {
+      toast({ title: "Location Removed", description: "The location has been successfully removed." });
+    }
+  };
+
+  async function onSubmit(data: LocationFormValues) {
+    let updatedLocations: SavedLocation[];
+    let success = false;
+
+    if (isEditMode && currentLocation) {
+      updatedLocations = locations.map(loc =>
+        loc.id === currentLocation.id ? { ...loc, ...data } : loc
+      );
+      success = await handleDatabaseUpdate(updatedLocations);
+      if (success) {
         toast({ title: "Location Updated", description: `"${data.name}" has been updated.` });
-      } else {
-        const newLocation: SavedLocation = {
-          id: `loc${Date.now()}`,
-          name: data.name,
-          address: data.address,
-          icon: MapPin, // Default icon for new locations
-        };
-        setLocations(prev => [newLocation, ...prev]);
+      }
+    } else {
+      const newLocation: SavedLocation = {
+        id: `loc_${Date.now()}`,
+        name: data.name,
+        address: data.address,
+        icon: data.icon,
+      };
+      updatedLocations = [newLocation, ...locations];
+      success = await handleDatabaseUpdate(updatedLocations);
+      if (success) {
         toast({ title: "Location Added", description: `"${data.name}" has been added to your locations.` });
       }
-      setIsSubmitting(false);
+    }
+
+    if (success) {
       setIsDialogOpen(false);
-      form.reset({ name: "", address: "" });
-    }, 1000);
+      form.reset({ name: "", address: "", icon: "MapPin" });
+    }
+  }
+  
+  const isLoading = authLoading || isLoadingProfile;
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+        <p className="text-muted-foreground px-4">You must be logged in to manage your locations.</p>
+        <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
+      </div>
+    );
   }
 
   return (
@@ -143,6 +203,29 @@ export default function MyLocationsPage() {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="icon"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Icon</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger>
+                                <SelectValue placeholder="Select an icon" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="Home"><span className="flex items-center"><Home className="mr-2 h-4 w-4"/> Home</span></SelectItem>
+                                <SelectItem value="Briefcase"><span className="flex items-center"><Briefcase className="mr-2 h-4 w-4"/> Work</span></SelectItem>
+                                <SelectItem value="School"><span className="flex items-center"><School className="mr-2 h-4 w-4"/> School</span></SelectItem>
+                                <SelectItem value="MapPin"><span className="flex items-center"><MapPin className="mr-2 h-4 w-4"/> Other</span></SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <DialogFooter>
                     <DialogClose asChild>
                         <Button type="button" variant="outline">Cancel</Button>
@@ -161,7 +244,7 @@ export default function MyLocationsPage() {
       {locations.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {locations.map((location) => {
-            const IconComponent = location.icon || MapPin;
+            const IconComponent = iconMap[location.icon] || MapPin;
             return (
               <Card key={location.id} className="shadow-lg">
                 <CardHeader>
