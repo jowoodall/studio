@@ -47,6 +47,8 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const [passengerNamesToFulfill, setPassengerNamesToFulfill] = useState<string>("");
   const requestId = searchParams.get('requestId');
 
+  const savedLocations = userProfile?.savedLocations || [];
+
   const form = useForm<OfferDriveFormValues>({
     resolver: zodResolver(offerDriveFormSchema),
     defaultValues: {
@@ -502,6 +504,29 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Your Starting Location / General Pickup Area</FormLabel>
+                       {savedLocations.length > 0 && (
+                        <Select
+                          onValueChange={(value) => {
+                            const selectedLoc = savedLocations.find(loc => loc.id === value);
+                            if (selectedLoc) {
+                              form.setValue("driverStartLocation", selectedLoc.address);
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="mt-1 mb-2">
+                              <SelectValue placeholder="Or use a saved location..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {savedLocations.map((loc) => (
+                              <SelectItem key={loc.id} value={loc.id}>
+                                {`${loc.name} (${loc.address})`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                       <FormControl>
                         <Input placeholder="e.g., My home (123 Main St), or 'Downtown Area'" {...field} />
                       </FormControl>
@@ -596,4 +621,3 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     </>
   );
 }
-
