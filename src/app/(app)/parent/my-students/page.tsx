@@ -12,8 +12,10 @@ import { User, Users, ExternalLink, Car, CalendarDays, Clock, Loader2, AlertTria
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'; // Added collection, query, where, getDocs
-import { type UserProfileData, UserRole, type GroupData } from '@/types'; 
+import { doc, getDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { type UserProfileData, UserRole, type GroupData, type RydData, type RydStatus } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
 
 interface ManagedStudentForList {
   id: string;
@@ -37,16 +39,33 @@ interface ActiveGroupInfo {
 interface SelectedStudentFullInfo extends ManagedStudentForList {
     associatedParentIds?: string[];
     associatedParentsDetails: AssociatedParentDetail[];
-    activeGroups: ActiveGroupInfo[]; // Added for active groups
+    activeGroups: ActiveGroupInfo[];
 }
+
+interface StudentRydInfo {
+  id: string;
+  eventName?: string;
+  destination: string;
+  rydTimestamp: Timestamp;
+  status: RydStatus;
+  driverName?: string;
+  driverId?: string;
+  assignedActiveRydId?: string;
+}
+
 
 export default function MyStudentsPage() {
   const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth();
+  const { toast } = useToast();
+
   const [managedStudentsList, setManagedStudentsList] = useState<ManagedStudentForList[]>([]);
   const [selectedStudentDetails, setSelectedStudentDetails] = useState<SelectedStudentFullInfo | null>(null);
   const [isFetchingStudentDetails, setIsFetchingStudentDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  
+  const [studentRydz, setStudentRydz] = useState<StudentRydInfo[]>([]);
+  const [isFetchingStudentRydz, setIsFetchingStudentRydz] = useState(false);
 
   const fetchManagedStudentsList = useCallback(async () => {
     if (!authUserProfile || authUserProfile.role !== UserRole.PARENT) {
@@ -97,16 +116,83 @@ export default function MyStudentsPage() {
       setError("Please log in to view your students.");
     }
   }, [authUser, authUserProfile, authLoading, isLoadingContextProfile, fetchManagedStudentsList]);
+  
+  const fetchStudentRydz = useCallback(async (studentId: string) => {
+    if (!studentId) return;
+    setIsFetchingStudentRydz(true);
+    setStudentRydz([]);
+    try {
+      const upcomingRequestStatuses: RydStatus[] = [
+        'requested', 'searching_driver', 'driver_assigned', 'confirmed_by_driver',
+        'en_route_pickup', 'en_route_destination'
+      ];
+      const rydzQuery = query(
+        collection(db, "rydz"),
+        where("passengerIds", "array-contains", studentId),
+        where("status", "in", upcomingRequestStatuses)
+      );
+
+      const querySnapshot = await getDocs(rydzQuery);
+      if (querySnapshot.empty) {
+        setStudentRydz([]);
+        setIsFetchingStudentRydz(false);
+        return;
+      }
+      
+      const fetchedRydzPromises = querySnapshot.docs.map(async (docSnap) => {
+        const rydData = docSnap.data() as RydData;
+        let driverName = "Pending";
+        let driverId: string | undefined = undefined;
+        if (rydData.driverId) {
+            try {
+                const driverDoc = await getDoc(doc(db, "users", rydData.driverId));
+                if (driverDoc.exists()) {
+                    driverName = (driverDoc.data() as UserProfileData).fullName;
+                    driverId = driverDoc.id;
+                }
+            } catch (e) {
+                console.warn(`Could not fetch driver profile for ${rydData.driverId}`);
+            }
+        }
+        return {
+            id: docSnap.id,
+            eventName: rydData.eventName || rydData.destination,
+            destination: rydData.destination,
+            rydTimestamp: rydData.rydTimestamp,
+            status: rydData.status,
+            driverName: driverName,
+            driverId: driverId,
+            assignedActiveRydId: rydData.assignedActiveRydId
+        };
+      });
+
+      const fetchedRydz = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as StudentRydInfo[];
+
+      fetchedRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
+      setStudentRydz(fetchedRydz);
+
+    } catch (e: any) {
+      console.error("Error fetching student rydz:", e);
+      toast({ title: "Error", description: "Could not load the student's upcoming rydz.", variant: "destructive" });
+    } finally {
+      setIsFetchingStudentRydz(false);
+    }
+  }, [toast]);
 
   const handleStudentSelect = async (studentId: string) => {
     if (!studentId) {
         setSelectedStudentDetails(null);
         setSelectedStudentId(null);
+        setStudentRydz([]);
         return;
     }
     setSelectedStudentId(studentId);
     setIsFetchingStudentDetails(true);
     setError(null);
+    setStudentRydz([]);
+
+    // Fetch student's profile and their rydz concurrently
+    fetchStudentRydz(studentId);
 
     try {
         const studentDocRef = doc(db, "users", studentId);
@@ -169,7 +255,7 @@ export default function MyStudentsPage() {
     }
   };
 
-  const isLoading = authLoading || isLoadingContextProfile || isFetchingStudentDetails;
+  const isLoading = authLoading || isLoadingContextProfile;
 
   if (isLoading && managedStudentsList.length === 0 && !error) {
     return (
@@ -239,7 +325,7 @@ export default function MyStudentsPage() {
               </SelectContent>
             </Select>
           ) : (
-             <p className="text-muted-foreground">{isLoading ? "Loading students..." : "You are not managing any students yet. You can add students from your main profile page."}</p>
+             <p className="text-muted-foreground">{isFetchingStudentDetails ? "Loading students..." : "You are not managing any students yet. You can add students from your main profile page."}</p>
           )}
         </CardContent>
       </Card>
@@ -341,13 +427,44 @@ export default function MyStudentsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Car className="mr-2 h-5 w-5 text-blue-500" />
-                  Student's Rydz
+                  Student's Upcoming Rydz
                 </CardTitle>
-                <CardDescription>Quick overview of {selectedStudentDetails.fullName}'s upcoming rydz. (Mock Data)</CardDescription>
+                <CardDescription>
+                  Upcoming rydz for {selectedStudentDetails.fullName}.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                 <p className="text-sm text-muted-foreground">Rydz display temporarily commented out for debugging.</p>
-                 <p className="text-xs text-muted-foreground pt-2">Note: Rydz data shown here is currently mock data and not live.</p>
+                {isFetchingStudentRydz ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <p className="ml-2 text-muted-foreground">Loading rydz...</p>
+                  </div>
+                ) : studentRydz.length > 0 ? (
+                  <ul className="space-y-3 max-h-96 overflow-y-auto">
+                    {studentRydz.map(ryd => (
+                      <li key={ryd.id} className="p-3 border rounded-md bg-muted/20">
+                        <h4 className="font-semibold text-sm">{ryd.eventName}</h4>
+                        <div className="text-xs text-muted-foreground space-y-0.5 mt-1">
+                          <p className="flex items-center"><CalendarDays className="mr-1.5 h-3 w-3" /> {format(ryd.rydTimestamp.toDate(), "MMM d, yyyy 'at' p")}</p>
+                          <p className="flex items-center"><User className="mr-1.5 h-3 w-3" /> Driver: {ryd.driverName}</p>
+                          <p className="flex items-center font-medium capitalize"><Clock className="mr-1.5 h-3 w-3" /> Status: {ryd.status.replace(/_/g, ' ')}</p>
+                        </div>
+                        {ryd.assignedActiveRydId && (
+                          <Button asChild variant="link" size="sm" className="px-0 h-auto mt-1">
+                            <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
+                              View Details
+                              <ExternalLink className="ml-1 h-3 w-3" />
+                            </Link>
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No upcoming rydz found for this student.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
