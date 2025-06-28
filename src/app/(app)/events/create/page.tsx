@@ -44,12 +44,7 @@ interface GroupSelectItem {
   name: string;
 }
 
-const formatAddress = (address: SavedLocation['address']) => {
-  if (!address) return "No address provided";
-  const cityState = [address.city, address.state].filter(Boolean).join(', ');
-  const fullLine = [cityState, address.zip].filter(Boolean).join(' ');
-  return [address.street, fullLine].filter(Boolean).join(', ');
-};
+const formatAddress = (address: string) => address || "No address provided";
 
 export default function CreateEventPage() {
   const { toast } = useToast();

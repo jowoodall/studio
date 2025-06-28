@@ -22,10 +22,7 @@ import Link from 'next/link';
 
 const locationFormSchema = z.object({
   name: z.string().min(2, { message: "Location name must be at least 2 characters." }),
-  street: z.string().min(3, { message: "Street address must be at least 3 characters." }),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zip: z.string().optional(),
+  address: z.string().min(5, { message: "Address must be at least 5 characters." }),
   icon: z.enum(['Home', 'Briefcase', 'School', 'MapPin']).default('MapPin'),
 });
 
@@ -38,12 +35,7 @@ const iconMap: { [key: string]: React.ElementType } = {
   MapPin,
 };
 
-const formatAddress = (address: SavedLocation['address']) => {
-  if (!address) return "No address provided";
-  const cityState = [address.city, address.state].filter(Boolean).join(', ');
-  const fullLine = [cityState, address.zip].filter(Boolean).join(' ');
-  return [address.street, fullLine].filter(Boolean).join(', ');
-};
+const formatAddress = (address: string) => address || "No address provided";
 
 export default function MyLocationsPage() {
   const { toast } = useToast();
@@ -67,10 +59,7 @@ export default function MyLocationsPage() {
     resolver: zodResolver(locationFormSchema),
     defaultValues: {
       name: "",
-      street: "",
-      city: "",
-      state: "",
-      zip: "",
+      address: "",
       icon: "MapPin",
     },
   });
@@ -81,16 +70,13 @@ export default function MyLocationsPage() {
       setCurrentLocation(location);
       form.reset({ 
         name: location.name,
-        street: location.address.street || "",
-        city: location.address.city || "",
-        state: location.address.state || "",
-        zip: location.address.zip || "",
+        address: location.address,
         icon: location.icon 
       });
     } else {
       setIsEditMode(false);
       setCurrentLocation(null);
-      form.reset({ name: "", street: "", city: "", state: "", zip: "", icon: "MapPin" });
+      form.reset({ name: "", address: "", icon: "MapPin" });
     }
     setIsDialogOpen(true);
   };
@@ -127,16 +113,9 @@ export default function MyLocationsPage() {
     let updatedLocations: SavedLocation[];
     let success = false;
 
-    const newAddress = {
-      street: data.street,
-      city: data.city || "",
-      state: data.state || "",
-      zip: data.zip || "",
-    };
-
     if (isEditMode && currentLocation) {
       updatedLocations = locations.map(loc =>
-        loc.id === currentLocation.id ? { ...loc, name: data.name, icon: data.icon, address: newAddress } : loc
+        loc.id === currentLocation.id ? { ...loc, name: data.name, icon: data.icon, address: data.address } : loc
       );
       success = await handleDatabaseUpdate(updatedLocations);
       if (success) {
@@ -146,7 +125,7 @@ export default function MyLocationsPage() {
       const newLocation: SavedLocation = {
         id: `loc_${Date.now()}`,
         name: data.name,
-        address: newAddress,
+        address: data.address,
         icon: data.icon,
       };
       updatedLocations = [newLocation, ...locations];
@@ -158,7 +137,7 @@ export default function MyLocationsPage() {
 
     if (success) {
       setIsDialogOpen(false);
-      form.reset({ name: "", street: "", city: "", state: "", zip: "", icon: "MapPin" });
+      form.reset({ name: "", address: "", icon: "MapPin" });
     }
   }
   
@@ -219,52 +198,17 @@ export default function MyLocationsPage() {
                   />
                   <FormField
                     control={form.control}
-                    name="street"
+                    name="address"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Street Address</FormLabel>
+                        <FormLabel>Address</FormLabel>
                         <FormControl>
-                          <Input placeholder="123 Main St" {...field} />
+                          <Input placeholder="123 Main St, Anytown, CA 90210" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="city"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>City</FormLabel>
-                          <FormControl><Input placeholder="Anytown" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="state"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>State</FormLabel>
-                          <FormControl><Input placeholder="CA" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="zip"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Zip</FormLabel>
-                          <FormControl><Input placeholder="90210" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
                   <FormField
                     control={form.control}
                     name="icon"

@@ -24,12 +24,7 @@ export type NavItem = {
 export interface SavedLocation {
   id: string;
   name: string;
-  address: {
-    street: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-  };
+  address: string;
   icon: 'Home' | 'Briefcase' | 'School' | 'MapPin';
 }
 
