@@ -25,7 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import type { EventData, GroupData } from "@/types";
+import type { EventData, GroupData, SavedLocation } from "@/types";
 
 const eventFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
@@ -47,6 +47,13 @@ interface GroupSelectItem {
   id: string;
   name: string;
 }
+
+const formatAddress = (address: SavedLocation['address']) => {
+  if (!address) return "No address provided";
+  const cityState = [address.city, address.state].filter(Boolean).join(', ');
+  const fullLine = [cityState, address.zip].filter(Boolean).join(' ');
+  return [address.street, fullLine].filter(Boolean).join(', ');
+};
 
 export default function CreateEventPage() {
   const { toast } = useToast();
@@ -292,12 +299,11 @@ export default function CreateEventPage() {
                     onValueChange={(value) => {
                       const selectedLoc = savedLocations.find(loc => loc.id === value);
                       if (selectedLoc) {
-                        form.setValue("eventLocation", selectedLoc.address);
-                        // Clear detailed fields if a general one is chosen
-                        form.setValue("eventStreet", "");
-                        form.setValue("eventCity", "");
-                        form.setValue("eventState", "");
-                        form.setValue("eventZip", "");
+                        form.setValue("eventLocation", selectedLoc.name);
+                        form.setValue("eventStreet", selectedLoc.address.street || "");
+                        form.setValue("eventCity", selectedLoc.address.city || "");
+                        form.setValue("eventState", selectedLoc.address.state || "");
+                        form.setValue("eventZip", selectedLoc.address.zip || "");
                       }
                     }}
                   >
@@ -309,12 +315,12 @@ export default function CreateEventPage() {
                     <SelectContent>
                       {savedLocations.map((loc) => (
                         <SelectItem key={loc.id} value={loc.id}>
-                          {`${loc.name} (${loc.address})`}
+                          {`${loc.name} (${formatAddress(loc.address)})`}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription>Selecting a location will populate the location field below.</FormDescription>
+                  <FormDescription>Selecting a location will populate the fields below.</FormDescription>
                 </FormItem>
               )}
 
