@@ -39,12 +39,6 @@ export const navMenuItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    title: 'Find Carpool',
-    href: '/find-carpool',
-    icon: Search,
-    label: 'AI Powered',
-  },
-  {
     title: 'My Rydz',
     icon: Car,
     href: '/rydz', // A general rydz page, could be a parent item

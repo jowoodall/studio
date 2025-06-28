@@ -94,7 +94,6 @@ export default function DashboardPage() {
             <CardDescription>Access common actions quickly.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <Button variant="outline" asChild><Link href="/find-carpool">Find a Carpool (AI)</Link></Button>
             <Button variant="outline" asChild><Link href="/groups/create">Create New Group</Link></Button>
             <Button variant="outline" asChild><Link href="/events/create">Create New Event</Link></Button>
             <Button variant="outline" asChild><Link href="/profile">View Profile</Link></Button>
