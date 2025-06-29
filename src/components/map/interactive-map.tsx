@@ -1,10 +1,10 @@
+
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
-// Removed Polyline from this import
-import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, AdvancedMarker, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, MapPin, LocateFixed } from "lucide-react";
+import { AlertTriangle, MapPin, LocateFixed, Loader2 } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -14,100 +14,146 @@ interface MapMarker {
   title?: string;
 }
 
-interface RouteCoordinate {
-  lat: number;
-  lng: number;
-}
-
 interface InteractiveMapProps {
   className?: string;
   defaultCenterLat?: number;
   defaultCenterLng?: number;
   defaultZoom?: number;
   markers?: MapMarker[];
-  routeCoordinates?: RouteCoordinate[];
+  centerAddress?: string | null;
 }
 
 const CHATTANOOGA_CENTER_LAT = 35.0456;
 const CHATTANOOGA_CENTER_LNG = -85.3097;
 const AREA_ZOOM = 9;
-const USER_LOCATION_ZOOM = 12;
+const LOCATION_ZOOM = 14;
+
+function MapComponent({
+  defaultCenterLat,
+  defaultCenterLng,
+  defaultZoom,
+  markers: propMarkers = [],
+  centerAddress,
+}: Omit<InteractiveMapProps, 'className'>) {
+  const geocodingApi = useMapsLibrary('geocoding');
+  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
+  
+  const [internalMarker, setInternalMarker] = useState<MapMarker | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodingError, setGeocodingError] = useState<string | null>(null);
+  
+  const fetchUserLocation = () => {
+    if (navigator.geolocation && mapInstance) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          mapInstance.panTo({ lat: position.coords.latitude, lng: position.coords.longitude });
+          mapInstance.setZoom(LOCATION_ZOOM);
+        },
+        (error) => console.error("Error getting user location:", error.message)
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!geocodingApi || !mapInstance || !centerAddress) {
+      if (!centerAddress) {
+        setInternalMarker(null);
+        setGeocodingError(null);
+      }
+      return;
+    }
+    
+    setIsGeocoding(true);
+    setGeocodingError(null);
+
+    const geocoder = new geocodingApi.Geocoder();
+    geocoder.geocode({ address: centerAddress }, (results, status) => {
+      setIsGeocoding(false);
+      if (status === 'OK' && results && results[0]) {
+        const location = results[0].geometry.location;
+        const newPosition = { lat: location.lat(), lng: location.lng() };
+        mapInstance.panTo(newPosition);
+        mapInstance.setZoom(LOCATION_ZOOM);
+        setInternalMarker({
+          id: 'geocoded-marker',
+          position: newPosition,
+          title: centerAddress,
+        });
+      } else {
+        console.error(`Geocode was not successful for the following reason: ${status}`);
+        setGeocodingError(`Could not find location for: "${centerAddress}"`);
+        setInternalMarker(null);
+      }
+    });
+
+  }, [centerAddress, geocodingApi, mapInstance]);
+
+  const markersToDisplay = centerAddress ? (internalMarker ? [internalMarker] : []) : propMarkers;
+
+  return (
+    <div className="w-full h-full relative">
+      <Map
+        defaultCenter={{ lat: defaultCenterLat!, lng: defaultCenterLng! }}
+        defaultZoom={defaultZoom}
+        gestureHandling={'greedy'}
+        disableDefaultUI={true}
+        mapId="rydzconnect_map"
+        className="w-full h-full"
+        onLoad={(evt) => setMapInstance(evt.map)}
+        zoomControl={true}
+        options={{
+            zoomControl: true,
+            panControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+            mapTypeControl: false,
+            gestureHandling: 'greedy',
+        }}
+      >
+        {markersToDisplay!.map(marker => (
+          <AdvancedMarker key={marker.id} position={marker.position} title={marker.title}>
+              <span className="text-2xl">📍</span>
+          </AdvancedMarker>
+        ))}
+      </Map>
+      
+      {(isGeocoding || geocodingError) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-sm z-10">
+          {isGeocoding ? (
+            <div className="flex items-center gap-2 p-3 rounded-md bg-card shadow-lg">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Finding location...</span>
+            </div>
+          ) : (
+             <div className="flex items-center gap-2 p-3 rounded-md bg-destructive text-destructive-foreground shadow-lg">
+                <AlertTriangle className="h-5 w-5" />
+                <span>{geocodingError}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+       <Button
+            variant="outline"
+            size="icon"
+            onClick={fetchUserLocation}
+            className="absolute bottom-4 right-4 bg-background/80 hover:bg-background shadow-md z-10"
+            aria-label="Center map on my location"
+        >
+            <LocateFixed className="h-5 w-5" />
+        </Button>
+    </div>
+  );
+}
 
 export function InteractiveMap({
   className,
   defaultCenterLat = CHATTANOOGA_CENTER_LAT,
   defaultCenterLng = CHATTANOOGA_CENTER_LNG,
   defaultZoom = AREA_ZOOM,
-  markers = [],
-  routeCoordinates = [],
+  ...props
 }: InteractiveMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-  const [geolocationAttempted, setGeolocationAttempted] = useState(false);
-  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
-  const [mapsApi, setMapsApi] = useState<typeof google.maps | null>(null); // To store the google.maps API object
-  const polylineRef = useRef<google.maps.Polyline | null>(null); // Ref to store the polyline instance
-
-  const fetchUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          // Only use mapInstance methods, don't update state for controlled behavior
-          if (mapInstance) {
-            mapInstance.panTo(userLocation);
-            mapInstance.setZoom(USER_LOCATION_ZOOM);
-          }
-        },
-        (error) => {
-          console.error("Error getting user location:", error.message);
-          // Fallback to default center if geolocation fails or is denied
-          if (mapInstance) {
-            mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
-            mapInstance.setZoom(defaultZoom);
-          }
-        }
-      );
-    } else {
-      console.log("Geolocation is not supported by this browser.");
-      if (mapInstance) {
-        mapInstance.panTo({ lat: defaultCenterLat, lng: defaultCenterLng });
-        mapInstance.setZoom(defaultZoom);
-      }
-    }
-  };
-
-  useEffect(() => {
-    // Clean up existing polyline if it exists
-    if (polylineRef.current) {
-      polylineRef.current.setMap(null);
-      polylineRef.current = null;
-    }
-
-    // Draw new polyline if conditions are met
-    if (mapInstance && mapsApi && routeCoordinates && routeCoordinates.length > 1) {
-      const newPolyline = new mapsApi.Polyline({
-        path: routeCoordinates,
-        geodesic: true,
-        strokeColor: '#007bff',
-        strokeOpacity: 0.8,
-        strokeWeight: 5,
-      });
-      newPolyline.setMap(mapInstance);
-      polylineRef.current = newPolyline; // Store the new polyline instance
-    }
-
-    // Cleanup function for when the component unmounts or dependencies change
-    return () => {
-      if (polylineRef.current) {
-        polylineRef.current.setMap(null);
-        polylineRef.current = null;
-      }
-    };
-  }, [mapInstance, mapsApi, routeCoordinates]); // Rerun when map, mapsApi, or route changes
 
   if (!apiKey) {
     return (
@@ -130,56 +176,16 @@ export function InteractiveMap({
       </Card>
     );
   }
-
+  
   return (
-    <Card className={cn("relative", className)}>
+    <Card className={cn("relative overflow-hidden", className)}>
       <APIProvider apiKey={apiKey}>
-        <div className="w-full h-full relative" style={{ pointerEvents: 'auto' }}>
-          <Map
-            defaultCenter={{ lat: defaultCenterLat, lng: defaultCenterLng }}
+        <MapComponent 
+            defaultCenterLat={defaultCenterLat}
+            defaultCenterLng={defaultCenterLng}
             defaultZoom={defaultZoom}
-            gestureHandling={'greedy'}
-            disableDefaultUI={true}
-            mapId="rydzconnect_map"
-            className="w-full h-full"
-            style={{ pointerEvents: 'auto' }}
-            onLoad={(evt) => {
-              setMapInstance(evt.map);
-              setMapsApi(evt.maps);
-              if (!geolocationAttempted) { // Attempt geolocation once map is loaded if not tried before
-                fetchUserLocation();
-                setGeolocationAttempted(true);
-              }
-            }}
-            zoomControl={true}
-            // Remove controlled behavior options since we're using uncontrolled mode
-            options={{
-              zoomControl: true,
-              panControl: false,
-              streetViewControl: false,
-              fullscreenControl: false,
-              mapTypeControl: false,
-              gestureHandling: 'greedy',
-            }}
-          >
-            {markers.map(marker => (
-              <AdvancedMarker key={marker.id} position={marker.position} title={marker.title}>
-                 <span className="text-2xl">📍</span>
-              </AdvancedMarker>
-            ))}
-            {/* The Polyline React component is removed from here */}
-          </Map>
-        </div>
-        <Button
-            variant="outline"
-            size="icon"
-            onClick={fetchUserLocation} // Re-center on user location when clicked
-            className="absolute bottom-4 right-4 bg-background/80 hover:bg-background shadow-md z-20"
-            aria-label="Center map on my location"
-            style={{ pointerEvents: 'auto' }}
-        >
-            <LocateFixed className="h-5 w-5" />
-        </Button>
+            {...props} 
+        />
       </APIProvider>
     </Card>
   );
