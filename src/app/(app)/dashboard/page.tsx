@@ -4,18 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PlusCircle, Users, CalendarDays, Car } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
-import { InteractiveMap } from "@/components/map/interactive-map"; // Import the InteractiveMap
 
 export const metadata: Metadata = {
   title: 'Dashboard',
 };
-
-// Mock upcoming events around Chattanooga, TN (approx. 35.0456° N, 85.3097° W)
-const mockUpcomingEventsForMap = [
-  { id: "eventMap1", title: "Riverbend Festival Prep", lat: 35.0500, lng: -85.3000, description: "Downtown Chattanooga" },
-  { id: "eventMap2", title: "Lookout Mountain Hike Meetup", lat: 34.9950, lng: -85.3450, description: "Lookout Mountain Trailhead" },
-  { id: "eventMap3", title: "Tech Meetup @ The Edney", lat: 35.0460, lng: -85.3090, description: "Edney Innovation Center" },
-];
 
 export default function DashboardPage() {
   // This would be dynamic based on user role and data
@@ -24,12 +16,6 @@ export default function DashboardPage() {
     { title: "Active Groups", value: "5", icon: Users, color: "text-green-500", href: "/groups" },
     { title: "Pending Approvals", value: "2", icon: CalendarDays, color: "text-yellow-500", href: "/parent/approvals" }, // Example for parent
   ];
-
-  const mapMarkers = mockUpcomingEventsForMap.map(event => ({
-    id: event.id,
-    position: { lat: event.lat, lng: event.lng },
-    title: `${event.title} - ${event.description}`,
-  }));
 
   const redirectUrl = "/dashboard";
 
@@ -99,31 +85,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-      
-      <Card className="mt-8 shadow-lg">
-        <CardHeader>
-            <CardTitle>Community Map Overview</CardTitle>
-            <CardDescription>Visualize rydz and events in your area. Markers indicate upcoming event locations.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div 
-            className="aspect-video bg-muted rounded-md flex items-center justify-center"
-            style={{ 
-              pointerEvents: 'auto',
-              touchAction: 'manipulation',
-              overflow: 'visible'
-            }}
-          >
-            <InteractiveMap 
-                className="w-full h-full rounded-md" 
-                defaultCenterLat={35.0456} // Center on Chattanooga
-                defaultCenterLng={-85.3097}
-                defaultZoom={9} // Zoom level for ~25-mile radius view
-                markers={mapMarkers} 
-            />
-          </div>
-        </CardContent>
-      </Card>
     </>
   );
 }
