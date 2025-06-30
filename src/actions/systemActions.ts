@@ -87,9 +87,12 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
+    // UPDATED QUERY: Look for events that are not already completed or cancelled.
+    // This correctly finds events with status 'active' as well as older events
+    // that were created before the status field existed.
     const staleEventsQuery = db.collection('events')
       .where('eventTimestamp', '<', fortyEightHoursAgo)
-      .where('status', '==', EventStatus.ACTIVE);
+      .where('status', 'not-in', [EventStatus.COMPLETED, EventStatus.CANCELLED]);
 
     const snapshot = await staleEventsQuery.get();
 
