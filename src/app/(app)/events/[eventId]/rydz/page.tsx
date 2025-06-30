@@ -902,7 +902,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      ).length) >= request.passengerUserProfiles.length
                 );
                 if (foundRyd) {
-                    suitableExistingActiveRydId = foundRyd.id;
+                    suitableExistingActiveRyd = foundRyd.id;
                 }
             }
             const fulfillmentLoading = isFulfillingWithExisting[request.id];
