@@ -11,9 +11,31 @@ import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
-import type { EventData } from '@/types';
+import { EventData, EventStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { updateStaleEventsAction } from '@/actions/systemActions';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+
+const StatusBadge = ({ status }: { status: EventStatus }) => {
+  const statusText = status.replace(/_/g, ' ');
+
+  const getStatusClasses = () => {
+    switch (status) {
+      case EventStatus.COMPLETED:
+        return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+      case EventStatus.CANCELLED:
+        return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      case EventStatus.ACTIVE:
+      default:
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
+    }
+  };
+
+  return <Badge className={cn('absolute top-2 right-2 border-transparent text-xs font-semibold capitalize', getStatusClasses())}>{statusText}</Badge>;
+};
+
 
 export default function EventsPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -48,8 +70,10 @@ export default function EventsPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (!authLoading) { // Fetch only when auth state is resolved
-        fetchEvents();
+    if (!authLoading) { 
+        updateStaleEventsAction()
+            .catch(err => console.error("Background stale events check failed:", err.message))
+            .finally(() => fetchEvents());
     }
   }, [authLoading, fetchEvents]);
 
@@ -103,7 +127,7 @@ export default function EventsPage() {
                     className="rounded-t-lg object-cover" 
                     data-ai-hint={"event image"} // Replace with event.dataAiHint if available
                 />
-                 {/* Add external link badge if applicable from event data */}
+                 <StatusBadge status={event.status} />
               </CardHeader>
               <CardContent className="flex-grow pt-4">
                 <CardTitle className="font-headline text-xl mb-1">{event.name}</CardTitle>
@@ -113,10 +137,8 @@ export default function EventsPage() {
                         {format(eventDate, "PPP 'at' p")}
                     </div>
                     <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> {event.location}</div>
-                    {/* Placeholder for attendees, adjust if available in EventData */}
-                    {/* <div className="flex items-center"><Users className="mr-1.5 h-4 w-4" /> ... attendees</div> */}
                 </div>
-                <CardDescription className="text-xs bg-muted px-2 py-1 rounded-md inline-block capitalize">{event.eventType}</CardDescription>
+                <Badge variant="outline" className="text-xs capitalize">{event.eventType}</Badge>
               </CardContent>
               <CardFooter className="border-t pt-4">
                 <Button variant="default" className="w-full" asChild>

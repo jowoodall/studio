@@ -88,6 +88,7 @@ export interface EventData {
   eventType: string; 
   createdBy: string; 
   createdAt: Timestamp; 
+  updatedAt?: Timestamp;
   associatedGroupIds: string[];
   status: EventStatus;
   managerIds: string[];

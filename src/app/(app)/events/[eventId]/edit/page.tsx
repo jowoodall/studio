@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useState, use } from "react";
@@ -189,17 +190,18 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       
       const managerIds = managers.map(m => m.uid);
 
-      const updateData: Partial<EventData> = {
+      const updateData: Partial<EventData> & { updatedAt: Timestamp } = {
         name: data.eventName,
         location: data.eventLocation,
         description: data.description || "",
         eventType: data.eventType,
         status: data.status,
         eventTimestamp: eventFirestoreTimestamp,
-        managerIds: managerIds, // Add the updated manager list
+        managerIds: managerIds,
+        updatedAt: Timestamp.now(),
       };
 
-      await updateDoc(eventDocRef, updateData);
+      await updateDoc(eventDocRef, updateData as any);
 
       toast({
         title: "Event Updated!",

@@ -1,8 +1,9 @@
+
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
-import type { ActiveRyd } from '@/types';
+import { type ActiveRyd, type EventData, EventStatus } from '@/types';
 import { ActiveRydStatus as ARStatus } from '@/types';
 
 const db = admin.firestore();
@@ -69,6 +70,51 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     console.error('[Action: updateStaleRydzAction] Error processing stale rydz:', error);
     if (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index"))) {
       const detailedError = "A Firestore index is required for the stale rydz query. Please check the browser's console for a link to create it.";
+      return { success: false, message: detailedError, updatedCount: 0 };
+    }
+    return {
+      success: false,
+      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`,
+      updatedCount: 0,
+    };
+  }
+}
+
+export async function updateStaleEventsAction(): Promise<{ success: boolean; message: string; updatedCount: number }> {
+  console.log('[Action: updateStaleEventsAction] Running job to update stale events.');
+
+  const now = Timestamp.now();
+  const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
+
+  try {
+    const staleEventsQuery = db.collection('events')
+      .where('eventTimestamp', '<', fortyEightHoursAgo)
+      .where('status', '==', EventStatus.ACTIVE);
+
+    const snapshot = await staleEventsQuery.get();
+
+    if (snapshot.empty) {
+      const message = "No stale active events found to update.";
+      console.log(`[Action: updateStaleEventsAction] ${message}`);
+      return { success: true, message, updatedCount: 0 };
+    }
+
+    const batch = db.batch();
+    snapshot.forEach(doc => {
+      console.log(`[Action: updateStaleEventsAction] Marking event ${doc.id} as completed.`);
+      batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
+    });
+
+    await batch.commit();
+
+    const successMessage = `Successfully processed stale events check. Updated ${snapshot.size} events to completed.`;
+    console.log(`[Action: updateStaleEventsAction] ${successMessage}`);
+    return { success: true, message: successMessage, updatedCount: snapshot.size };
+
+  } catch (error: any) {
+    console.error('[Action: updateStaleEventsAction] Error processing stale events:', error);
+    if (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index"))) {
+      const detailedError = "A Firestore index is required for the stale events query. Please check the browser's console for a link to create it.";
       return { success: false, message: detailedError, updatedCount: 0 };
     }
     return {
