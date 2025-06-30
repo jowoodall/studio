@@ -494,6 +494,3 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     </>
   );
 }
-
-
-    
