@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import type { EventData, EventStatus, UserProfileData } from "@/types";
+import { type EventData, EventStatus, type UserProfileData } from "@/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -466,4 +466,3 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
-
