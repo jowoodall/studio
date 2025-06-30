@@ -17,6 +17,8 @@ import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { managePassengerJoinRequestAction, cancelPassengerSpotAction } from '@/actions/activeRydActions';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface RydDetailsPageParams { rideId: string; }
 
@@ -25,6 +27,30 @@ interface DisplayActiveRydData extends ActiveRyd {
   passengerProfiles?: UserProfileData[]; // Ensure this holds profiles for manifest items
   eventName?: string; // From associated event
 }
+
+const StatusBadge = ({ status }: { status: ARStatus }) => {
+  const statusText = status.replace(/_/g, ' ');
+
+  const getStatusClasses = () => {
+    switch (status) {
+      case ARStatus.COMPLETED:
+        return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+      case ARStatus.IN_PROGRESS_PICKUP:
+      case ARStatus.IN_PROGRESS_ROUTE:
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 animate-pulse';
+      case ARStatus.CANCELLED_BY_DRIVER:
+      case ARStatus.CANCELLED_BY_SYSTEM:
+        return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      case ARStatus.PLANNING:
+      case ARStatus.AWAITING_PASSENGERS:
+      default:
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
+    }
+  };
+
+  return <Badge className={cn('border-transparent text-xs font-semibold capitalize', getStatusClasses())}>{statusText}</Badge>;
+};
+
 
 export default function LiveRydTrackingPage({ params: paramsPromise }: { params: Promise<RydDetailsPageParams> }) {
   const params = use(paramsPromise);
@@ -283,8 +309,11 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
         <div className="lg:col-span-1">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Ryd Details</CardTitle>
-              <CardDescription>Status: <span className="font-semibold text-primary capitalize">{rydDetails.status.replace(/_/g, ' ')}</span></CardDescription>
+                <div className="flex items-center justify-between">
+                    <CardTitle>Ryd Details</CardTitle>
+                    <StatusBadge status={rydDetails.status} />
+                </div>
+                <CardDescription>Live and pending details for this carpool.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {rydDetails.driverId && (
