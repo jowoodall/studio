@@ -18,11 +18,12 @@ import { updateStaleEventsAction } from '@/actions/systemActions';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-const StatusBadge = ({ status }: { status: EventStatus }) => {
-  const statusText = status.replace(/_/g, ' ');
+const StatusBadge = ({ status }: { status?: EventStatus }) => {
+  const currentStatus = status || EventStatus.ACTIVE; // Default to ACTIVE if status is undefined
+  const statusText = currentStatus.replace(/_/g, ' ');
 
   const getStatusClasses = () => {
-    switch (status) {
+    switch (currentStatus) {
       case EventStatus.COMPLETED:
         return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
       case EventStatus.CANCELLED:
