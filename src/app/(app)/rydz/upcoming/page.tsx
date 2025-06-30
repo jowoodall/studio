@@ -16,6 +16,7 @@ import { ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
+import { updateStaleRydzAction } from '@/actions/systemActions';
 
 interface DisplayRydData extends Partial<RydData> {
   id: string;
@@ -169,8 +170,13 @@ export default function UpcomingRydzPage() {
   }, [authUser, authUserProfile, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
-    if (!authLoading && !isLoadingProfile) { 
-        fetchUpcomingRydz();
+    if (!authLoading && !isLoadingProfile) {
+      // Run the cleanup job. We don't need to await it.
+      // The subsequent fetch will get the latest data.
+      updateStaleRydzAction().catch(error => {
+        console.error("Background stale rydz check failed:", error);
+      });
+      fetchUpcomingRydz();
     }
   }, [authLoading, isLoadingProfile, fetchUpcomingRydz]);
 
