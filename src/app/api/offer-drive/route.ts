@@ -206,6 +206,7 @@ export async function POST(request: NextRequest) {
           createdAt: FieldValue.serverTimestamp() as Timestamp,
           passengerManifest: passengerManifestItems,
           associatedEventId: validatedData.eventId,
+          eventName: eventDetails.name,
           notes: validatedData.notes || "",
           vehicleDetails: {
             passengerCapacity: String(validatedData.seatsAvailable),
@@ -277,6 +278,7 @@ export async function POST(request: NextRequest) {
         createdAt: FieldValue.serverTimestamp() as Timestamp,
         passengerManifest: [], // Empty for a general offer
         associatedEventId: validatedData.eventId,
+        eventName: eventDetails.name,
         notes: validatedData.notes || "",
         vehicleDetails: {
           passengerCapacity: String(validatedData.seatsAvailable),

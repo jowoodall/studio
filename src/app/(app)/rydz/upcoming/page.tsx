@@ -134,7 +134,7 @@ export default function UpcomingRydzPage() {
             id: activeRyd.id,
             rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
             destination: activeRyd.finalDestinationAddress || 'Destination TBD',
-            eventName: activeRyd.eventName || 'Unnamed Ryd',
+            eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
             status: activeRyd.status,
             driverProfile: authUserProfile,
             assignedActiveRydId: activeRyd.id,
