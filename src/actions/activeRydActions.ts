@@ -352,9 +352,20 @@ export async function updatePassengerPickupStatusAction(
       const passengerIndex = activeRydData.passengerManifest.findIndex(p => p.userId === passengerUserId);
       if (passengerIndex === -1) throw new Error("Passenger not found on this ryd.");
       
+      // Explicitly check for authorization
       const isDriver = activeRydData.driverId === actingUserId;
-      const isPassenger = passengerUserId === actingUserId;
-      if (!isDriver && !isPassenger) throw new Error("Unauthorized: Only the driver or the passenger can confirm pickup.");
+      const isPassengerSelfReporting = passengerUserId === actingUserId;
+      
+      let authorized = false;
+      if (isDriver) {
+        authorized = true; // The driver can mark any passenger as picked up
+      } else if (isPassengerSelfReporting) {
+        authorized = true; // A passenger can mark themselves as picked up
+      }
+
+      if (!authorized) {
+        throw new Error("Unauthorized: Only the driver or the passenger themselves can confirm pickup.");
+      }
 
       if (activeRydData.status !== ARStatus.IN_PROGRESS_PICKUP) throw new Error(`Cannot update pickup status. Ryd is not in pickup phase (Status: ${activeRydData.status}).`);
       if (activeRydData.passengerManifest[passengerIndex].status !== PassengerManifestStatus.CONFIRMED_BY_DRIVER) throw new Error("Passenger is not in a confirmed state for pickup.");
