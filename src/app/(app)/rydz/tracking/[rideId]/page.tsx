@@ -6,17 +6,17 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, Timestamp } from 'firestore/lite';
 import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { format, isAfter, subHours } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
-import { managePassengerJoinRequestAction, cancelPassengerSpotAction } from '@/actions/activeRydActions';
-import { confirmRydPlanAction, cancelRydByDriverAction } from '@/actions/driverActions';
+import { managePassengerJoinRequestAction, cancelPassengerSpotAction, updatePassengerPickupStatusAction } from '@/actions/activeRydActions';
+import { confirmRydPlanAction, cancelRydByDriverAction, startRydAction, completeRydAction } from '@/actions/driverActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -25,8 +25,8 @@ interface RydDetailsPageParams { rideId: string; }
 
 interface DisplayActiveRydData extends ActiveRyd {
   driverProfile?: UserProfileData;
-  passengerProfiles?: UserProfileData[]; // Ensure this holds profiles for manifest items
-  eventName?: string; // From associated event
+  passengerProfiles?: UserProfileData[];
+  eventName?: string;
 }
 
 const StatusBadge = ({ status }: { status: ARStatus }) => {
@@ -42,9 +42,10 @@ const StatusBadge = ({ status }: { status: ARStatus }) => {
       case ARStatus.CANCELLED_BY_DRIVER:
       case ARStatus.CANCELLED_BY_SYSTEM:
         return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      case ARStatus.RYD_PLANNED:
+         return 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300';
       case ARStatus.PLANNING:
       case ARStatus.AWAITING_PASSENGERS:
-      case ARStatus.RYD_PLANNED:
       default:
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
     }
@@ -67,6 +68,9 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isCancellingSpot, setIsCancellingSpot] = useState<Record<string, boolean>>({});
   const [isConfirmingRyd, setIsConfirmingRyd] = useState(false);
   const [isCancellingRydByDriver, setIsCancellingRydByDriver] = useState(false);
+  const [isStartingRyd, setIsStartingRyd] = useState(false);
+  const [isCompletingRyd, setIsCompletingRyd] = useState(false);
+  const [isMarkingPickup, setIsMarkingPickup] = useState<Record<string, boolean>>({});
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -148,6 +152,28 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     }
   }, [rydDetails, rydError, rideId]);
 
+  const handleUpdatePassengerPickup = async (passengerUserId: string) => {
+    if (!authUser || !rideId) return;
+    setIsMarkingPickup(prev => ({ ...prev, [passengerUserId]: true }));
+    try {
+      const result = await updatePassengerPickupStatusAction({
+        activeRydId: rideId,
+        passengerUserId,
+        actingUserId: authUser.uid
+      });
+      if (result.success) {
+        toast({ title: "Status Updated", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Update Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsMarkingPickup(prev => ({ ...prev, [passengerUserId]: false }));
+    }
+  };
+
 
   const handleManageRequest = async (passengerUserId: string, newStatus: PassengerManifestStatus.CONFIRMED_BY_DRIVER | PassengerManifestStatus.REJECTED_BY_DRIVER) => {
     if (!authUser || !rideId) {
@@ -165,7 +191,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
 
       if (result.success) {
         toast({ title: "Request Updated", description: result.message });
-        fetchRydDetails(rideId); // Refresh details
+        fetchRydDetails(rideId);
       } else {
         toast({ title: "Update Failed", description: result.message, variant: "destructive" });
       }
@@ -191,7 +217,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
 
       if (result.success) {
         toast({ title: "Spot Cancelled", description: result.message });
-        fetchRydDetails(rideId); // Refresh details
+        fetchRydDetails(rideId);
       } else {
         toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
       }
@@ -237,7 +263,42 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       setIsCancellingRydByDriver(false);
     }
   };
+  
+  const handleStartRyd = async () => {
+    if (!authUser || !rideId) return;
+    setIsStartingRyd(true);
+    try {
+        const result = await startRydAction({ activeRydId: rideId, driverUserId: authUser.uid });
+        if (result.success) {
+            toast({ title: "Ryd Started!", description: result.message });
+            fetchRydDetails(rideId);
+        } else {
+            toast({ title: "Start Failed", description: result.message, variant: "destructive" });
+        }
+    } catch (e) {
+        toast({ title: "Error", description: "An unexpected client error occurred.", variant: "destructive" });
+    } finally {
+        setIsStartingRyd(false);
+    }
+  };
 
+  const handleCompleteRyd = async () => {
+    if (!authUser || !rideId) return;
+    setIsCompletingRyd(true);
+    try {
+        const result = await completeRydAction({ activeRydId: rideId, driverUserId: authUser.uid });
+        if (result.success) {
+            toast({ title: "Ryd Completed!", description: result.message });
+            fetchRydDetails(rideId);
+        } else {
+            toast({ title: "Completion Failed", description: result.message, variant: "destructive" });
+        }
+    } catch (e) {
+        toast({ title: "Error", description: "An unexpected client error occurred.", variant: "destructive" });
+    } finally {
+        setIsCompletingRyd(false);
+    }
+  };
 
   if (isLoadingRyd || authLoading) {
     return (
@@ -272,10 +333,13 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   }
 
   const mapMarkers = [];
-  if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` }); // Using placeholder lat/lng
-  if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`}); // Using placeholder lat/lng
+  if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` });
+  if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`});
 
   const proposedDepartureTime = rydDetails.proposedDepartureTime instanceof Timestamp ? rydDetails.proposedDepartureTime.toDate() : null;
+  const twoHoursBeforeDeparture = proposedDepartureTime ? subHours(proposedDepartureTime, 2) : null;
+  const canStartRyd = twoHoursBeforeDeparture && isAfter(new Date(), twoHoursBeforeDeparture);
+  
   const plannedArrivalTime = rydDetails.plannedArrivalTime instanceof Timestamp ? rydDetails.plannedArrivalTime.toDate() : null;
   
   const driverName = rydDetails.driverProfile?.fullName || "Driver details pending";
@@ -364,7 +428,22 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                             <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
                         </div>
                     )}
-
+                    {rydDetails.status === ARStatus.RYD_PLANNED && canStartRyd && (
+                         <div>
+                            <Button onClick={handleStartRyd} disabled={isStartingRyd} className="w-full bg-blue-600 hover:bg-blue-700">
+                                {isStartingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                                Start Ryd & Begin Pickups
+                            </Button>
+                         </div>
+                    )}
+                    {rydDetails.status === ARStatus.IN_PROGRESS_ROUTE && (
+                        <div>
+                            <Button onClick={handleCompleteRyd} disabled={isCompletingRyd} className="w-full bg-green-600 hover:bg-green-700">
+                                {isCompletingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                                Complete Ryd
+                            </Button>
+                        </div>
+                    )}
                     {isRydCancellableByDriver && (
                       <div className="pt-4 border-t">
                         <Button
@@ -526,9 +605,11 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                             ARStatus.IN_PROGRESS_ROUTE, ARStatus.IN_PROGRESS_PICKUP 
                           ];
                           const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
+                          
+                          const isLoadingPickupAction = isMarkingPickup[manifestItem.userId];
 
                           return (
-                            <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col">
+                            <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col gap-2">
                               <div className="space-y-0.5"> 
                                 <div>
                                   <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
@@ -540,8 +621,18 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                                 {manifestItem.notes && <p className="text-xs text-muted-foreground">Notes: "{manifestItem.notes}"</p>}
                               </div>
                               
-                              {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
-                                <div className="mt-2 flex justify-end">
+                              <div className="flex justify-end items-center gap-2">
+                                {isCurrentUserDriver && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
+                                  <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
+                                    {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} Mark Picked Up
+                                  </Button>
+                                )}
+                                {isCurrentUserThisPassenger && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
+                                  <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
+                                    {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} I've Been Picked Up
+                                  </Button>
+                                )}
+                                {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
                                   <Button
                                     variant="outline"
                                     className="px-2 py-1 h-auto text-xs text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -551,8 +642,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                                     {isCancellingSpot[manifestItem.userId] ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
                                     <span className="ml-1">Cancel Spot</span>
                                   </Button>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </li>
                           );
                       })}

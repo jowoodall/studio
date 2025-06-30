@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
         await existingActiveRydRef.update({
           passengerManifest: FieldValue.arrayUnion(...passengerManifestItems),
           updatedAt: FieldValue.serverTimestamp(),
+          status: ActiveRydStatus.PLANNING, // Transition to PLANNING since passengers are added
         });
         
         await originalRequestDocRef.update({
@@ -201,7 +202,7 @@ export async function POST(request: NextRequest) {
 
         const newActiveRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
           driverId: verifiedUserId,
-          status: ActiveRydStatus.AWAITING_PASSENGERS, // Starts with confirmed passengers
+          status: ActiveRydStatus.PLANNING, // It has passengers, so start as PLANNING
           createdAt: FieldValue.serverTimestamp() as Timestamp,
           passengerManifest: passengerManifestItems,
           associatedEventId: validatedData.eventId,
@@ -272,7 +273,7 @@ export async function POST(request: NextRequest) {
 
       const newActiveRydObject: Omit<ActiveRyd, 'id' | 'updatedAt'> = {
         driverId: verifiedUserId,
-        status: ActiveRydStatus.PLANNING,
+        status: ActiveRydStatus.AWAITING_PASSENGERS, // A new general offer is awaiting passengers
         createdAt: FieldValue.serverTimestamp() as Timestamp,
         passengerManifest: [], // Empty for a general offer
         associatedEventId: validatedData.eventId,

@@ -96,7 +96,6 @@ export async function requestToJoinActiveRydAction(
         throw new Error(`${passengerProfile.fullName} is already on this ryd or has a pending request.`);
       }
       
-      // Prepare new passenger manifest item
       const passengerPickupStreet = passengerProfile.address?.street || "";
       const passengerPickupCity = passengerProfile.address?.city || "";
       const passengerPickupState = passengerProfile.address?.state || "";
@@ -104,7 +103,7 @@ export async function requestToJoinActiveRydAction(
 
       let fullPickupAddress = [passengerPickupStreet, passengerPickupCity, passengerPickupState, passengerPickupZip].filter(Boolean).join(", ");
       if (fullPickupAddress.trim() === "") {
-          fullPickupAddress = "Pickup to be coordinated"; // Default if no address in profile
+          fullPickupAddress = "Pickup to be coordinated";
       }
       
       const newManifestItem: PassengerManifestItem = {
@@ -114,10 +113,12 @@ export async function requestToJoinActiveRydAction(
         status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
         requestedAt: Timestamp.now(),
       };
+      
+      const newStatus = activeRydData.status === ARStatus.AWAITING_PASSENGERS ? ARStatus.PLANNING : activeRydData.status;
 
-      // Use atomic arrayUnion to add the new passenger. This is more efficient.
       transaction.update(activeRydDocRef, {
         passengerManifest: FieldValue.arrayUnion(newManifestItem),
+        status: newStatus,
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
@@ -132,7 +133,6 @@ export async function requestToJoinActiveRydAction(
 
   } catch (error: any) {
     console.error("[Action: requestToJoinActiveRydAction] Error processing request:", error);
-    // Catch specific auth/timeout errors from the environment
     if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED')) {
        return {
         success: false,
@@ -151,7 +151,7 @@ interface ManagePassengerRequestInput {
   activeRydId: string;
   passengerUserId: string;
   newStatus: PassengerManifestStatus.CONFIRMED_BY_DRIVER | PassengerManifestStatus.REJECTED_BY_DRIVER;
-  actingUserId: string; // UID of the driver performing the action
+  actingUserId: string;
 }
 
 export async function managePassengerJoinRequestAction(
@@ -174,7 +174,6 @@ export async function managePassengerJoinRequestAction(
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-      // Verify the acting user is the driver
       if (activeRydData.driverId !== actingUserId) {
         throw new Error("Unauthorized: Only the driver can manage join requests.");
       }
@@ -187,7 +186,6 @@ export async function managePassengerJoinRequestAction(
         throw new Error("Passenger request not found or not in pending state.");
       }
       
-      // Fetch profile inside transaction because we need to confirm passenger exists first
       const passengerProfile = await getUserProfile(passengerUserId);
       const passengerName = passengerProfile?.fullName || `User ${passengerUserId.substring(0,6)}`;
 
@@ -206,9 +204,13 @@ export async function managePassengerJoinRequestAction(
       
       const updatedManifest = [...activeRydData.passengerManifest];
       updatedManifest[passengerIndex].status = newStatus;
+      
+      // If passenger is confirmed, status should be PLANNING
+      const newRydStatus = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? ARStatus.PLANNING : activeRydData.status;
 
       transaction.update(activeRydDocRef, {
         passengerManifest: updatedManifest,
+        status: newRydStatus,
         updatedAt: FieldValue.serverTimestamp(),
       });
       
@@ -231,7 +233,7 @@ export async function managePassengerJoinRequestAction(
 interface CancelPassengerSpotInput {
   activeRydId: string;
   passengerUserIdToCancel: string;
-  cancellingUserId: string; // UID of the user performing the action
+  cancellingUserId: string;
 }
 
 export async function cancelPassengerSpotAction(
@@ -247,7 +249,6 @@ export async function cancelPassengerSpotAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    // --- Authorization Check (can be outside transaction for early exit) ---
     const cancellingUserProfile = await getUserProfile(cancellingUserId);
     if (!cancellingUserProfile) {
       return { success: false, message: "Your user profile could not be found." };
@@ -262,7 +263,6 @@ export async function cancelPassengerSpotAction(
       return { success: false, message: "Unauthorized: You may only cancel for yourself or for a student you manage." };
     }
     
-    // --- Data Validation & Update Logic (within a transaction) ---
     const result = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
       if (!activeRydDocSnap.exists) {
@@ -301,11 +301,19 @@ export async function cancelPassengerSpotAction(
 
       const updatedManifest = [...activeRydData.passengerManifest];
       updatedManifest[passengerIndex].status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
-
-      transaction.update(activeRydDocRef, {
+      
+      const remainingActivePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.MISSED_PICKUP).length;
+      
+      const updatePayload: { passengerManifest: PassengerManifestItem[], updatedAt: FieldValue, status?: ARStatus } = {
         passengerManifest: updatedManifest,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      
+      if (remainingActivePassengers === 0 && activeRydData.status === ARStatus.PLANNING) {
+        updatePayload.status = ARStatus.AWAITING_PASSENGERS;
+      }
+
+      transaction.update(activeRydDocRef, updatePayload);
 
       return { passengerName };
     });
@@ -322,6 +330,66 @@ export async function cancelPassengerSpotAction(
   }
 }
 
+interface UpdatePassengerPickupStatusInput {
+  activeRydId: string;
+  passengerUserId: string;
+  actingUserId: string;
+}
+
+export async function updatePassengerPickupStatusAction(
+  input: UpdatePassengerPickupStatusInput
+): Promise<{ success: boolean; message: string }> {
+  const { activeRydId, passengerUserId, actingUserId } = input;
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    const resultMessage = await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
+
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+      
+      const passengerIndex = activeRydData.passengerManifest.findIndex(p => p.userId === passengerUserId);
+      if (passengerIndex === -1) throw new Error("Passenger not found on this ryd.");
+      
+      const isDriver = activeRydData.driverId === actingUserId;
+      const isPassenger = passengerUserId === actingUserId;
+      if (!isDriver && !isPassenger) throw new Error("Unauthorized: Only the driver or the passenger can confirm pickup.");
+
+      if (activeRydData.status !== ARStatus.IN_PROGRESS_PICKUP) throw new Error(`Cannot update pickup status. Ryd is not in pickup phase (Status: ${activeRydData.status}).`);
+      if (activeRydData.passengerManifest[passengerIndex].status !== PassengerManifestStatus.CONFIRMED_BY_DRIVER) throw new Error("Passenger is not in a confirmed state for pickup.");
+
+      const updatedManifest = [...activeRydData.passengerManifest];
+      updatedManifest[passengerIndex].status = PassengerManifestStatus.ON_BOARD;
+      updatedManifest[passengerIndex].actualPickupTime = Timestamp.now();
+      
+      const activePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.MISSED_PICKUP);
+      const allOnBoard = activePassengers.every(p => p.status === PassengerManifestStatus.ON_BOARD);
+      
+      const updatePayload: any = {
+        passengerManifest: updatedManifest,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      if (allOnBoard) {
+        updatePayload.status = ARStatus.IN_PROGRESS_ROUTE;
+      }
+
+      transaction.update(activeRydDocRef, updatePayload);
+      
+      const passengerProfile = await getUserProfile(passengerUserId);
+      return allOnBoard ?
+        `Passenger ${passengerProfile?.fullName} marked as on board. All passengers picked up, ryd is now en route!` :
+        `Passenger ${passengerProfile?.fullName} marked as on board.`;
+    });
+
+    return { success: true, message: resultMessage };
+
+  } catch (error: any) {
+    console.error("[Action: updatePassengerPickupStatusAction] Error:", error);
+    return { success: false, message: error.message || "An unexpected server error occurred." };
+  }
+}
 
 interface FulfillRequestWithExistingRydInput {
   rydRequestId: string;
@@ -427,6 +495,7 @@ export async function fulfillRequestWithExistingRydAction(
 
     batch.update(activeRydRef, {
       passengerManifest: FieldValue.arrayUnion(...newManifestItems),
+      status: ARStatus.PLANNING, // It now has passengers, so it's planning
       updatedAt: FieldValue.serverTimestamp(),
     });
 
@@ -493,7 +562,7 @@ export async function submitPassengerDetailsForActiveRydAction(
       }
 
       const updatedManifest = [...activeRydData.passengerManifest];
-      const passengerToUpdate = { ...updatedManifest[passengerIndex] }; // Create a shallow copy to modify
+      const passengerToUpdate = { ...updatedManifest[passengerIndex] };
 
       passengerToUpdate.pickupAddress = pickupLocation;
       passengerToUpdate.notes = notes || "";
@@ -551,7 +620,6 @@ export async function cancelRydRequestByUserAction(
       }
       const rydRequestData = rydRequestSnap.data() as RydData;
 
-      // Verify the user is the original requester
       if (rydRequestData.requestedBy !== cancellingUserId) {
         throw new Error("Unauthorized: Only the original requester can cancel this ryd request.");
       }
