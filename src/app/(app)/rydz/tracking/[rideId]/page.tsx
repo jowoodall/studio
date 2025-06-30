@@ -10,7 +10,7 @@ import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, Ma
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
-import { doc, getDoc, Timestamp } from 'firestore/lite';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, isAfter, subHours } from 'date-fns';
