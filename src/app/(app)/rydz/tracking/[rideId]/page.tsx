@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { managePassengerJoinRequestAction, cancelPassengerSpotAction } from '@/actions/activeRydActions';
-import { confirmRydPlanAction } from '@/actions/driverActions';
+import { confirmRydPlanAction, cancelRydByDriverAction } from '@/actions/driverActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -66,6 +66,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isManagingRequest, setIsManagingRequest] = useState<Record<string, boolean>>({});
   const [isCancellingSpot, setIsCancellingSpot] = useState<Record<string, boolean>>({});
   const [isConfirmingRyd, setIsConfirmingRyd] = useState(false);
+  const [isCancellingRydByDriver, setIsCancellingRydByDriver] = useState(false);
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -219,6 +220,24 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     }
   };
 
+  const handleCancelRydByDriver = async () => {
+    if (!authUser || !rideId) return;
+    setIsCancellingRydByDriver(true);
+    try {
+      const result = await cancelRydByDriverAction({ activeRydId: rideId, driverUserId: authUser.uid });
+      if (result.success) {
+        toast({ title: "Ryd Cancelled", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsCancellingRydByDriver(false);
+    }
+  };
+
 
   if (isLoadingRyd || authLoading) {
     return (
@@ -310,6 +329,8 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     pageTitleElement = `Tracking Ryd ID: ${rideId}`;
   }
 
+  const isRydCancellableByDriver = ![ARStatus.COMPLETED, ARStatus.CANCELLED_BY_DRIVER, ARStatus.CANCELLED_BY_SYSTEM].includes(rydDetails.status);
+
 
   return (
     <>
@@ -343,6 +364,21 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                             <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
                         </div>
                     )}
+
+                    {isRydCancellableByDriver && (
+                      <div className="pt-4 border-t">
+                        <Button
+                          variant="destructive"
+                          onClick={handleCancelRydByDriver}
+                          disabled={isCancellingRydByDriver}
+                          className="w-full"
+                        >
+                          {isCancellingRydByDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                          Cancel This Entire Ryd
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-1.5">This will cancel the ryd for all passengers.</p>
+                      </div>
+                    )}
                     
                     {pendingJoinRequests.length > 0 && (
                        <div>
@@ -366,7 +402,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                                                 </Avatar>
                                                 <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
                                                 </div>
-                                                <p className="text-xs text-muted-foreground">Requested: {request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
+                                                <p className="text-xs text-muted-foreground">{request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
                                             </div>
                                             {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
                                             {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}

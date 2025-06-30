@@ -72,3 +72,58 @@ export async function confirmRydPlanAction(
     };
   }
 }
+
+
+export async function cancelRydByDriverAction(
+  input: DriverActionInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: cancelRydByDriverAction] Called with input:", input);
+  const { activeRydId, driverUserId } = input;
+
+  if (!activeRydId || !driverUserId) {
+    return { success: false, message: "Missing required IDs." };
+  }
+
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) {
+        throw new Error("ActiveRyd not found.");
+      }
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+      // Authorization check
+      if (activeRydData.driverId !== driverUserId) {
+        throw new Error("Unauthorized: You are not the driver of this ryd.");
+      }
+
+      // Check if the ryd can be cancelled
+      const nonCancellableStatuses: ARStatus[] = [
+        ARStatus.COMPLETED,
+        ARStatus.CANCELLED_BY_DRIVER,
+        ARStatus.CANCELLED_BY_SYSTEM,
+      ];
+      if (nonCancellableStatuses.includes(activeRydData.status)) {
+        throw new Error(`This ryd cannot be cancelled at this stage. Current status: ${activeRydData.status.replace(/_/g, ' ')}`);
+      }
+
+      // Update status to CANCELLED_BY_DRIVER
+      transaction.update(activeRydDocRef, {
+        status: ARStatus.CANCELLED_BY_DRIVER,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    console.log(`[Action: cancelRydByDriverAction] Successfully cancelled rydId: ${activeRydId}`);
+    return { success: true, message: "The ryd has been successfully cancelled. All passengers will be notified." };
+
+  } catch (error: any) {
+    console.error("[Action: cancelRydByDriverAction] Error processing request:", error);
+    return {
+      success: false,
+      message: error.message || `An unexpected error occurred while cancelling the ryd.`
+    };
+  }
+}
