@@ -1,3 +1,4 @@
+
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
@@ -12,17 +13,6 @@ interface DriverActionInput {
   driverUserId: string;
 }
 
-// Helper function to get user profile
-async function getDriverProfile(userId: string): Promise<UserProfileData | null> {
-  const userDocRef = db.collection('users').doc(userId);
-  const userDocSnap = await userDocRef.get();
-  if (!userDocSnap.exists || !(userDocSnap.data() as UserProfileData).canDrive) {
-    return null;
-  }
-  return userDocSnap.data() as UserProfileData;
-}
-
-
 export async function confirmRydPlanAction(
   input: DriverActionInput
 ): Promise<{ success: boolean; message: string }> {
@@ -34,17 +24,23 @@ export async function confirmRydPlanAction(
   }
 
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+  const driverDocRef = db.collection('users').doc(driverUserId);
 
   try {
-    const driverProfile = await getDriverProfile(driverUserId);
-    if (!driverProfile) {
-      return { success: false, message: "Action requires a valid, authorized driver profile." };
-    }
-    
     await db.runTransaction(async (transaction) => {
-      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      // Get both documents at the start of the transaction for consistency
+      const [activeRydDocSnap, driverDocSnap] = await transaction.getAll(activeRydDocRef, driverDocRef);
+
+      if (!driverDocSnap.exists) {
+        throw new Error("Could not find your driver profile. Unable to authorize this action.");
+      }
+      const driverProfile = driverDocSnap.data() as UserProfileData;
+      if (!driverProfile.canDrive) {
+        throw new Error("Your profile does not permit you to drive.");
+      }
+      
       if (!activeRydDocSnap.exists) {
-        throw new Error("ActiveRyd not found.");
+        throw new Error("ActiveRyd not found. The ryd may have been deleted.");
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
@@ -69,9 +65,10 @@ export async function confirmRydPlanAction(
 
   } catch (error: any) {
     console.error("[Action: confirmRydPlanAction] Error processing request:", error);
+    // Now, any error thrown within the transaction (including our custom ones) will be caught here.
     return {
       success: false,
-      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
+      message: error.message || `An unexpected error occurred with the database transaction.`
     };
   }
 }
