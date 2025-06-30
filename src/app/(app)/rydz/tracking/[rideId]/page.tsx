@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map, Undo2, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
@@ -15,8 +15,8 @@ import { type RydData, type UserProfileData, type ActiveRyd, type EventData, Pas
 import { useToast } from '@/hooks/use-toast';
 import { format, isAfter, subHours } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
-import { managePassengerJoinRequestAction, cancelPassengerSpotAction, updatePassengerPickupStatusAction } from '@/actions/activeRydActions';
-import { confirmRydPlanAction, cancelRydByDriverAction, startRydAction, completeRydAction } from '@/actions/driverActions';
+import { managePassengerJoinRequestAction, cancelPassengerSpotAction, updatePassengerPickupStatusAction, revertPassengerPickupAction } from '@/actions/activeRydActions';
+import { confirmRydPlanAction, cancelRydByDriverAction, startRydAction, completeRydAction, revertToPlanningAction, revertToRydPlannedAction } from '@/actions/driverActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -71,6 +71,9 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isStartingRyd, setIsStartingRyd] = useState(false);
   const [isCompletingRyd, setIsCompletingRyd] = useState(false);
   const [isMarkingPickup, setIsMarkingPickup] = useState<Record<string, boolean>>({});
+  const [isRevertingToPlanning, setIsRevertingToPlanning] = useState(false);
+  const [isRevertingToRydPlanned, setIsRevertingToRydPlanned] = useState(false);
+  const [isRevertingPickup, setIsRevertingPickup] = useState<Record<string, boolean>>({});
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -300,6 +303,60 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     }
   };
 
+  const handleRevertToPlanning = async () => {
+    if (!authUser || !rideId) return;
+    setIsRevertingToPlanning(true);
+    try {
+      const result = await revertToPlanningAction({ activeRydId: rideId, driverUserId: authUser.uid });
+      if (result.success) {
+        toast({ title: "Status Reverted", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Revert Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "An unknown error occurred.", variant: "destructive" });
+    } finally {
+      setIsRevertingToPlanning(false);
+    }
+  };
+
+  const handleRevertToRydPlanned = async () => {
+    if (!authUser || !rideId) return;
+    setIsRevertingToRydPlanned(true);
+    try {
+      const result = await revertToRydPlannedAction({ activeRydId: rideId, driverUserId: authUser.uid });
+      if (result.success) {
+        toast({ title: "Status Reverted", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Revert Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "An unknown error occurred.", variant: "destructive" });
+    } finally {
+      setIsRevertingToRydPlanned(false);
+    }
+  };
+  
+  const handleRevertPassengerPickup = async (passengerUserId: string) => {
+    if (!authUser || !rideId) return;
+    setIsRevertingPickup(prev => ({ ...prev, [passengerUserId]: true }));
+    try {
+      const result = await revertPassengerPickupAction({ activeRydId: rideId, passengerUserId, actingUserId: authUser.uid });
+      if (result.success) {
+        toast({ title: "Pickup Undone", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Undo Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "An unknown error occurred.", variant: "destructive" });
+    } finally {
+      setIsRevertingPickup(prev => ({ ...prev, [passengerUserId]: false }));
+    }
+  };
+
   if (isLoadingRyd || authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
@@ -412,13 +469,14 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
             defaultZoom={12}
           />
         </div>
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           {isCurrentUserDriver && (
             <Card className="shadow-lg">
                 <CardHeader>
                     <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5" /> Driver Controls</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    {/* Status: PLANNING or AWAITING_PASSENGERS */}
                     {(rydDetails.status === ARStatus.PLANNING || rydDetails.status === ARStatus.AWAITING_PASSENGERS) && (
                         <div>
                             <Button onClick={handleConfirmRyd} disabled={isConfirmingRyd} className="w-full">
@@ -428,14 +486,30 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                             <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
                         </div>
                     )}
-                    {rydDetails.status === ARStatus.RYD_PLANNED && canStartRyd && (
-                         <div>
-                            <Button onClick={handleStartRyd} disabled={isStartingRyd} className="w-full bg-blue-600 hover:bg-blue-700">
-                                {isStartingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-                                Start Ryd & Begin Pickups
-                            </Button>
-                         </div>
+
+                    {/* Status: RYD_PLANNED */}
+                    {rydDetails.status === ARStatus.RYD_PLANNED && (
+                      <div className="flex flex-col gap-2">
+                        <Button onClick={handleStartRyd} disabled={isStartingRyd || !canStartRyd} className="w-full bg-blue-600 hover:bg-blue-700" title={!canStartRyd ? "Can be started up to 2 hours before departure" : "Start Ryd"}>
+                            {isStartingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                            Start Ryd & Begin Pickups
+                        </Button>
+                        <Button onClick={handleRevertToPlanning} disabled={isRevertingToPlanning} variant="outline">
+                            {isRevertingToPlanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
+                            Return to Planning
+                        </Button>
+                      </div>
                     )}
+
+                    {/* Status: IN_PROGRESS_PICKUP */}
+                    {rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && (
+                      <Button onClick={handleRevertToRydPlanned} disabled={isRevertingToRydPlanned} variant="outline" className="w-full">
+                          {isRevertingToRydPlanned ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                          Pause Ryd & Return to Plan
+                      </Button>
+                    )}
+
+                    {/* Status: IN_PROGRESS_ROUTE */}
                     {rydDetails.status === ARStatus.IN_PROGRESS_ROUTE && (
                         <div>
                             <Button onClick={handleCompleteRyd} disabled={isCompletingRyd} className="w-full bg-green-600 hover:bg-green-700">
@@ -515,7 +589,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
             </Card>
           )}
 
-          <Card className={cn("shadow-lg", isCurrentUserDriver && "mt-6")}>
+          <Card className="shadow-lg">
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <CardTitle>Ryd Details</CardTitle>
@@ -607,6 +681,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                           const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
                           
                           const isLoadingPickupAction = isMarkingPickup[manifestItem.userId];
+                          const isLoadingUndoPickupAction = isRevertingPickup[manifestItem.userId];
 
                           return (
                             <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col gap-2">
@@ -622,6 +697,11 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                               </div>
                               
                               <div className="flex justify-end items-center gap-2">
+                                {isCurrentUserDriver && manifestItem.status === PassengerManifestStatus.ON_BOARD && rydDetails.status !== ARStatus.COMPLETED && (
+                                    <Button size="sm" variant="outline" onClick={() => handleRevertPassengerPickup(manifestItem.userId)} disabled={isLoadingUndoPickupAction}>
+                                      {isLoadingUndoPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Undo2 className="mr-2 h-4 w-4" />} Undo Pickup
+                                    </Button>
+                                )}
                                 {isCurrentUserDriver && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
                                   <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
                                     {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} Mark Picked Up

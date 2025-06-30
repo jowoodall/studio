@@ -646,4 +646,64 @@ export async function cancelRydRequestByUserAction(
     };
   }
 }
+
+interface RevertPassengerPickupInput {
+  activeRydId: string;
+  passengerUserId: string;
+  actingUserId: string;
+}
+
+export async function revertPassengerPickupAction(
+  input: RevertPassengerPickupInput
+): Promise<{ success: boolean; message: string }> {
+  const { activeRydId, passengerUserId, actingUserId } = input;
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    const resultMessage = await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
+
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+      const isDriver = activeRydData.driverId === actingUserId;
+      if (!isDriver) throw new Error("Unauthorized: Only the driver can undo a pickup.");
+
+      const passengerIndex = activeRydData.passengerManifest.findIndex(p => p.userId === passengerUserId);
+      if (passengerIndex === -1) throw new Error("Passenger not found on this ryd.");
+      
+      const currentPassengerStatus = activeRydData.passengerManifest[passengerIndex].status;
+      if (currentPassengerStatus !== PassengerManifestStatus.ON_BOARD) {
+        throw new Error(`Cannot undo pickup for this passenger. Their status is: ${currentPassengerStatus}.`);
+      }
+
+      const updatedManifest = [...activeRydData.passengerManifest];
+      const passengerToUpdate = { ...updatedManifest[passengerIndex] };
+      passengerToUpdate.status = PassengerManifestStatus.CONFIRMED_BY_DRIVER;
+      delete passengerToUpdate.actualPickupTime; // Remove timestamp
+      updatedManifest[passengerIndex] = passengerToUpdate;
+
+      const updatePayload: any = {
+        passengerManifest: updatedManifest,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      
+      // If ryd was IN_PROGRESS_ROUTE, it must now go back to IN_PROGRESS_PICKUP
+      if (activeRydData.status === ARStatus.IN_PROGRESS_ROUTE) {
+        updatePayload.status = ARStatus.IN_PROGRESS_PICKUP;
+      }
+      
+      transaction.update(activeRydDocRef, updatePayload);
+      
+      const passengerProfile = await getUserProfile(passengerUserId);
+      return `Pickup for passenger ${passengerProfile?.fullName} has been undone.`;
+    });
+
+    return { success: true, message: resultMessage };
+
+  } catch (error: any) {
+    console.error("[Action: revertPassengerPickupAction] Error:", error);
+    return { success: false, message: error.message || "An unexpected server error occurred." };
+  }
+}
     

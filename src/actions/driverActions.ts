@@ -189,3 +189,62 @@ export async function cancelRydByDriverAction(
     };
   }
 }
+
+export async function revertToPlanningAction(
+  input: DriverActionInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: revertToPlanningAction] Called with input:", input);
+  const { activeRydId, driverUserId } = input;
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+      if (activeRydData.driverId !== driverUserId) throw new Error("Unauthorized: You are not the driver.");
+      if (activeRydData.status !== ARStatus.RYD_PLANNED) throw new Error(`Ryd cannot be reverted. Current status is: ${activeRydData.status}.`);
+
+      transaction.update(activeRydDocRef, {
+        status: ARStatus.PLANNING,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { success: true, message: "Ryd has been unlocked and returned to planning status." };
+  } catch (error: any) {
+    console.error("[Action: revertToPlanningAction] Error:", error);
+    return { success: false, message: error.message || "An unknown error occurred." };
+  }
+}
+
+export async function revertToRydPlannedAction(
+  input: DriverActionInput
+): Promise<{ success: boolean; message: string }> {
+  console.log("[Action: revertToRydPlannedAction] Called with input:", input);
+  const { activeRydId, driverUserId } = input;
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+      if (activeRydData.driverId !== driverUserId) throw new Error("Unauthorized: You are not the driver.");
+      if (activeRydData.status !== ARStatus.IN_PROGRESS_PICKUP) throw new Error(`Ryd cannot be reverted. Current status is: ${activeRydData.status}.`);
+
+      transaction.update(activeRydDocRef, {
+        status: ARStatus.RYD_PLANNED,
+        actualDepartureTime: FieldValue.delete(), // Remove the start time
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { success: true, message: "Ryd has been paused and returned to the planned state." };
+  } catch (error: any) {
+    console.error("[Action: revertToRydPlannedAction] Error:", error);
+    return { success: false, message: error.message || "An unknown error occurred." };
+  }
+}
