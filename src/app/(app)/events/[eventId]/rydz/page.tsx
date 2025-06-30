@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck
+  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck, Edit
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -460,6 +460,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
   const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
   const redirectBackUrl = '/events/' + eventId + '/rydz';
+  const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
   return (
     <>
@@ -468,6 +469,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         description={'Event at ' + eventDetails.location + ' on ' + format(eventDate, "PPP 'at' p") + ". View rydz or manage associated groups."}
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
+            {isEventManager && (
+              <Button variant="secondary" asChild>
+                <Link href={`/events/${eventId}/edit`}>
+                  <Edit className="mr-2 h-4 w-4" /> Edit Event
+                </Link>
+              </Button>
+            )}
             <Button asChild>
               <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
                 <span className="flex items-center">
@@ -902,7 +910,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      ).length) >= request.passengerUserProfiles.length
                 );
                 if (foundRyd) {
-                    suitableExistingActiveRyd = foundRyd.id;
+                    suitableExistingActiveRydId = foundRyd.id;
                 }
             }
             const fulfillmentLoading = isFulfillingWithExisting[request.id];
@@ -1020,4 +1028,3 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
-    
