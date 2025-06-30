@@ -9,6 +9,12 @@ export enum UserRole {
   ADMIN = 'admin',
 }
 
+export enum EventStatus {
+  ACTIVE = 'active',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
 export type NavItem = {
   title: string;
   href: string;
@@ -82,7 +88,9 @@ export interface EventData {
   eventType: string; 
   createdBy: string; 
   createdAt: Timestamp; 
-  associatedGroupIds: string[]; 
+  associatedGroupIds: string[];
+  status: EventStatus;
+  managerIds: string[];
 }
 
 export type EventDriverStatus = "driving" | "not_driving" | "pending_response" | "full_car";

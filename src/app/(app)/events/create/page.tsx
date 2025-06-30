@@ -25,7 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import type { EventData, GroupData, SavedLocation } from "@/types";
+import type { EventData, GroupData, SavedLocation, EventStatus } from "@/types";
 
 const eventFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
@@ -145,6 +145,8 @@ export default function CreateEventPage() {
         createdBy: authUser.uid,
         createdAt: serverTimestamp(),
         associatedGroupIds: data.selectedGroups || [],
+        status: 'active' as EventStatus,
+        managerIds: [authUser.uid],
       };
 
       const docRef = await addDoc(collection(db, "events"), newEventData);
