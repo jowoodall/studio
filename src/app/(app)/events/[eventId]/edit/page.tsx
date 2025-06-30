@@ -10,20 +10,22 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Edit, Loader2, Save, CalendarIcon, ArrowLeft } from "lucide-react";
+import { AlertTriangle, Edit, Loader2, Save, CalendarIcon, ArrowLeft, Users, UserPlus, XCircle } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import type { EventData, EventStatus } from "@/types";
+import type { EventData, EventStatus, UserProfileData } from "@/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 
 const eventEditFormSchema = z.object({
@@ -49,9 +51,14 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
 
   const { toast } = useToast();
   const { user: authUser, loading: authLoading, userProfile } = useAuth();
+  
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
+  const [managers, setManagers] = useState<UserProfileData[]>([]);
+  const [newManagerEmail, setNewManagerEmail] = useState("");
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAddingManager, setIsAddingManager] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
 
@@ -94,6 +101,16 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             eventDate: eventDate,
             eventTime: format(eventDate, "HH:mm"),
           });
+
+          if (data.managerIds && data.managerIds.length > 0) {
+            const managerPromises = data.managerIds.map(id => getDoc(doc(db, "users", id)));
+            const managerDocs = await Promise.all(managerPromises);
+            const managerProfiles = managerDocs
+              .filter(doc => doc.exists())
+              .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfileData));
+            setManagers(managerProfiles);
+          }
+
         } else {
           setError(`Event with ID "${eventId}" not found.`);
           setEventDetails(null);
@@ -106,12 +123,55 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       }
     };
     
-    // Fetch only when auth state is resolved to avoid race conditions
     if (!authLoading) {
       fetchEventData();
     }
 
   }, [eventId, form, toast, authLoading, authUser]);
+  
+  const handleAddManager = async () => {
+    if (!newManagerEmail.trim()) {
+      toast({ title: "Email required", description: "Please enter an email to add a manager.", variant: "destructive" });
+      return;
+    }
+    setIsAddingManager(true);
+    try {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", newManagerEmail.trim().toLowerCase()));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        toast({ title: "User Not Found", description: `No user found with email: ${newManagerEmail}.`, variant: "destructive" });
+        return;
+      }
+
+      const newManagerDoc = querySnapshot.docs[0];
+      const newManagerData = { uid: newManagerDoc.id, ...newManagerDoc.data() } as UserProfileData;
+
+      if (managers.some(m => m.uid === newManagerData.uid)) {
+        toast({ title: "Already a Manager", description: `${newManagerData.fullName} is already a manager for this event.` });
+        return;
+      }
+      
+      setManagers(prev => [...prev, newManagerData]);
+      setNewManagerEmail("");
+      toast({ title: "Manager Added", description: `${newManagerData.fullName} added. Save changes to confirm.` });
+
+    } catch (error: any) {
+      toast({ title: "Error Adding Manager", description: error.message, variant: "destructive" });
+    } finally {
+      setIsAddingManager(false);
+    }
+  };
+
+  const handleRemoveManager = (uidToRemove: string) => {
+    if (managers.length <= 1) {
+      toast({ title: "Cannot Remove", description: "An event must have at least one manager.", variant: "destructive" });
+      return;
+    }
+    setManagers(prev => prev.filter(m => m.uid !== uidToRemove));
+  };
+
 
   async function onSubmit(data: EventEditFormValues) {
     if (!eventId || !eventDetails || !isAuthorized) {
@@ -126,6 +186,8 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       const combinedDateTime = new Date(data.eventDate);
       combinedDateTime.setHours(hours, minutes, 0, 0);
       const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
+      
+      const managerIds = managers.map(m => m.uid);
 
       const updateData: Partial<EventData> = {
         name: data.eventName,
@@ -134,11 +196,11 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
         eventType: data.eventType,
         status: data.status,
         eventTimestamp: eventFirestoreTimestamp,
+        managerIds: managerIds, // Add the updated manager list
       };
 
       await updateDoc(eventDocRef, updateData);
 
-      setEventDetails(prev => prev ? { ...prev, ...updateData } : null);
       toast({
         title: "Event Updated!",
         description: `The event "${data.eventName}" has been successfully updated.`,
@@ -331,12 +393,70 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
                   </FormItem>
                 )}
               />
+              
+              <Separator />
 
-              <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
+              {/* Manage Managers Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Event Managers</h3>
+                </div>
+                <FormDescription>Add or remove users who can manage this event.</FormDescription>
+                
+                <div className="space-y-2">
+                    {managers.map(manager => (
+                        <div key={manager.uid} className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
+                            <div className="flex items-center gap-2">
+                                <Avatar className="h-8 w-8">
+                                    <AvatarImage src={manager.avatarUrl} alt={manager.fullName} />
+                                    <AvatarFallback>{manager.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <p className="text-sm font-medium">{manager.fullName}</p>
+                                    <p className="text-xs text-muted-foreground">{manager.email}</p>
+                                </div>
+                            </div>
+                            <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleRemoveManager(manager.uid)}
+                                disabled={managers.length <= 1}
+                                title={managers.length <= 1 ? "Cannot remove the last manager" : "Remove manager"}
+                            >
+                                <XCircle className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex gap-2 items-end">
+                    <div className="flex-grow">
+                        <Label htmlFor="new-manager-email">Add Manager by Email</Label>
+                        <Input
+                            id="new-manager-email"
+                            type="email"
+                            placeholder="manager@example.com"
+                            value={newManagerEmail}
+                            onChange={e => setNewManagerEmail(e.target.value)}
+                            className="mt-1"
+                        />
+                    </div>
+                    <Button type="button" variant="outline" onClick={handleAddManager} disabled={isAddingManager}>
+                        {isAddingManager ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <UserPlus className="mr-2 h-4 w-4" />}
+                        Add
+                    </Button>
+                </div>
+              </div>
+
+
+              <Button type="submit" className="w-full !mt-8" disabled={isSubmitting || isLoading}>
                 {isSubmitting ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving All Changes...</>
                 ) : (
-                  <><Save className="mr-2 h-4 w-4" /> Save Changes</>
+                  <><Save className="mr-2 h-4 w-4" /> Save All Changes</>
                 )}
               </Button>
             </form>
@@ -346,3 +466,4 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
+
