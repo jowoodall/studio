@@ -108,32 +108,10 @@ export type RydStatus =
   | 'cancelled_by_driver' 
   | 'no_driver_found';
 
-export interface RydData {
-  requestedBy: string; 
-  eventId?: string; 
-  eventName?: string; 
-  
-  destination: string; 
-  pickupLocation: string; 
-
-  rydTimestamp: Timestamp; 
-  earliestPickupTimestamp: Timestamp; 
-  
-  status: RydStatus; 
-  
-  driverId?: string; 
-  passengerIds: string[]; 
-  
-  notes?: string; 
-  
-  createdAt: Timestamp; 
-  updatedAt?: Timestamp; 
-  assignedActiveRydId?: string; 
-}
-
 export enum ActiveRydStatus {
   PLANNING = 'planning', 
   AWAITING_PASSENGERS = 'awaiting_passengers', 
+  RYD_PLANNED = 'ryd_planned',
   IN_PROGRESS_PICKUP = 'in_progress_pickup', 
   IN_PROGRESS_ROUTE = 'in_progress_route', 
   COMPLETED = 'completed', 

@@ -43,6 +43,7 @@ const upcomingRequestStatuses: RydStatus[] = [
 const upcomingActiveRydStatuses: ARStatus[] = [
   ARStatus.PLANNING,
   ARStatus.AWAITING_PASSENGERS,
+  ARStatus.RYD_PLANNED,
   ARStatus.IN_PROGRESS_PICKUP,
   ARStatus.IN_PROGRESS_ROUTE,
 ];
