@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { managePassengerJoinRequestAction, cancelPassengerSpotAction } from '@/actions/activeRydActions';
+import { confirmRydPlanAction } from '@/actions/driverActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -64,6 +65,7 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [rydError, setRydError] = useState<string | null>(null);
   const [isManagingRequest, setIsManagingRequest] = useState<Record<string, boolean>>({});
   const [isCancellingSpot, setIsCancellingSpot] = useState<Record<string, boolean>>({});
+  const [isConfirmingRyd, setIsConfirmingRyd] = useState(false);
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -196,6 +198,24 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
     } finally {
       setIsCancellingSpot(prev => ({ ...prev, [passengerUserIdToCancel]: false }));
+    }
+  };
+
+  const handleConfirmRyd = async () => {
+    if (!authUser || !rideId) return;
+    setIsConfirmingRyd(true);
+    try {
+      const result = await confirmRydPlanAction({ activeRydId: rideId, driverUserId: authUser.uid });
+      if (result.success) {
+        toast({ title: "Ryd Confirmed!", description: result.message });
+        fetchRydDetails(rideId);
+      } else {
+        toast({ title: "Confirmation Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsConfirmingRyd(false);
     }
   };
 
@@ -452,72 +472,77 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
             </CardContent>
           </Card>
 
-          {isCurrentUserDriver && pendingJoinRequests.length > 0 && (
+          {isCurrentUserDriver && (
             <Card className="shadow-lg mt-6">
-              <CardHeader>
-                <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-amber-600" /> Pending Join Requests ({pendingJoinRequests.length})</CardTitle>
-                <CardDescription>Review and respond to passengers who want to join this ryd.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {pendingJoinRequests.map(request => {
-                  const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === request.userId);
-                  const passengerName = passengerProfile?.fullName || `User ${request.userId.substring(0,6)}...`;
-                  const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
-                  const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
-                  const isLoadingAction = isManagingRequest[request.userId];
-                  const earliestPickupTimestamp = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
-
-
-                  return (
-                    <div key={request.userId} className="p-3 border rounded-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={passengerAvatar} alt={passengerName} data-ai-hint={passengerDataAiHint} />
-                            <AvatarFallback>{passengerName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                          </Avatar>
-                          <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
+                <CardHeader>
+                    <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5" /> Driver Controls</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {(rydDetails.status === ARStatus.PLANNING || rydDetails.status === ARStatus.AWAITING_PASSENGERS) && (
+                        <div>
+                            <Button onClick={handleConfirmRyd} disabled={isConfirmingRyd} className="w-full">
+                                {isConfirmingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                                Confirm Ryd Plan
+                            </Button>
+                            <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
                         </div>
-                         <p className="text-xs text-muted-foreground">Requested: {request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
-                      </div>
-                      {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
-                      {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}
-                      {request.notes && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Notes: "{request.notes}"</p>}
-                      <div className="flex gap-2 mt-2 justify-end">
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
-                          onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.REJECTED_BY_DRIVER)}
-                          disabled={isLoadingAction}
-                        >
-                          {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />} Reject
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          className="bg-green-600 hover:bg-green-700"
-                          onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.CONFIRMED_BY_DRIVER)}
-                          disabled={isLoadingAction}
-                        >
-                          {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />} Approve
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
+                    )}
+                    
+                    {pendingJoinRequests.length > 0 && (
+                       <div>
+                            <h4 className="text-sm font-medium mb-2">Pending Join Requests ({pendingJoinRequests.length})</h4>
+                            <div className="space-y-3">
+                                {pendingJoinRequests.map(request => {
+                                    const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === request.userId);
+                                    const passengerName = passengerProfile?.fullName || `User ${request.userId.substring(0,6)}...`;
+                                    const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
+                                    const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
+                                    const isLoadingAction = isManagingRequest[request.userId];
+                                    const earliestPickupTimestamp = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+
+                                    return (
+                                        <div key={request.userId} className="p-3 border rounded-md">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                <Avatar className="h-8 w-8">
+                                                    <AvatarImage src={passengerAvatar} alt={passengerName} data-ai-hint={passengerDataAiHint} />
+                                                    <AvatarFallback>{passengerName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                                </Avatar>
+                                                <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">Requested: {request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
+                                            </div>
+                                            {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
+                                            {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}
+                                            {request.notes && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Notes: "{request.notes}"</p>}
+                                            <div className="flex gap-2 mt-2 justify-end">
+                                                <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                                                onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.REJECTED_BY_DRIVER)}
+                                                disabled={isLoadingAction}
+                                                >
+                                                {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />} Reject
+                                                </Button>
+                                                <Button 
+                                                size="sm" 
+                                                className="bg-green-600 hover:bg-green-700"
+                                                onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.CONFIRMED_BY_DRIVER)}
+                                                disabled={isLoadingAction}
+                                                >
+                                                {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />} Approve
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                       </div>
+                    )}
+                </CardContent>
             </Card>
           )}
-           {isCurrentUserDriver && pendingJoinRequests.length === 0 && rydDetails.passengerManifest.length > 0 && (
-             <Card className="shadow-lg mt-6">
-               <CardHeader>
-                <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" /> Join Requests</CardTitle>
-               </CardHeader>
-               <CardContent>
-                <p className="text-sm text-muted-foreground">No pending join requests for this ryd at the moment.</p>
-               </CardContent>
-             </Card>
-           )}
 
         </div>
       </div>
