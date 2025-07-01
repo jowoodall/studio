@@ -118,6 +118,7 @@ export async function requestToJoinActiveRydAction(
 
       transaction.update(activeRydDocRef, {
         passengerManifest: FieldValue.arrayUnion(newManifestItem),
+        passengerUids: FieldValue.arrayUnion(passengerUserId), // Update passengerUids
         status: newStatus,
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -205,14 +206,20 @@ export async function managePassengerJoinRequestAction(
       const updatedManifest = [...activeRydData.passengerManifest];
       updatedManifest[passengerIndex].status = newStatus;
       
-      // If passenger is confirmed, status should be PLANNING
       const newRydStatus = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? ARStatus.PLANNING : activeRydData.status;
 
-      transaction.update(activeRydDocRef, {
+      const updatePayload: any = {
         passengerManifest: updatedManifest,
         status: newRydStatus,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      
+      // If passenger is rejected, remove them from the simple UID list
+      if (newStatus === PassengerManifestStatus.REJECTED_BY_DRIVER) {
+          updatePayload.passengerUids = FieldValue.arrayRemove(passengerUserId);
+      }
+
+      transaction.update(activeRydDocRef, updatePayload);
       
       const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
       return `Passenger ${passengerName}'s request has been ${actionVerb}.`;
@@ -304,9 +311,10 @@ export async function cancelPassengerSpotAction(
       
       const remainingActivePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.MISSED_PICKUP).length;
       
-      const updatePayload: { passengerManifest: PassengerManifestItem[], updatedAt: FieldValue, status?: ARStatus } = {
+      const updatePayload: { passengerManifest: PassengerManifestItem[], updatedAt: FieldValue, status?: ARStatus, passengerUids?: FieldValue } = {
         passengerManifest: updatedManifest,
         updatedAt: FieldValue.serverTimestamp(),
+        passengerUids: FieldValue.arrayRemove(passengerUserIdToCancel), // Remove from passengerUids
       };
       
       if (remainingActivePassengers === 0 && activeRydData.status === ARStatus.PLANNING) {
@@ -506,6 +514,7 @@ export async function fulfillRequestWithExistingRydAction(
 
     batch.update(activeRydRef, {
       passengerManifest: FieldValue.arrayUnion(...newManifestItems),
+      passengerUids: FieldValue.arrayUnion(...rydRequestData.passengerIds), // Update passengerUids
       status: ARStatus.PLANNING, // It now has passengers, so it's planning
       updatedAt: FieldValue.serverTimestamp(),
     });

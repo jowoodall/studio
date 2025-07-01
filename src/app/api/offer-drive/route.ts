@@ -168,6 +168,7 @@ export async function POST(request: NextRequest) {
         const existingActiveRydRef = activeRydzCollectionRef.doc(existingActiveRydId);
         await existingActiveRydRef.update({
           passengerManifest: FieldValue.arrayUnion(...passengerManifestItems),
+          passengerUids: FieldValue.arrayUnion(...body.passengersToFulfill), // Update passengerUids
           updatedAt: FieldValue.serverTimestamp(),
           status: ActiveRydStatus.PLANNING, // Transition to PLANNING since passengers are added
         });
@@ -205,6 +206,7 @@ export async function POST(request: NextRequest) {
           status: ActiveRydStatus.PLANNING, // It has passengers, so start as PLANNING
           createdAt: FieldValue.serverTimestamp() as Timestamp,
           passengerManifest: passengerManifestItems,
+          passengerUids: body.passengersToFulfill, // Initialize passengerUids
           associatedEventId: validatedData.eventId,
           eventName: eventDetails.name,
           notes: validatedData.notes || "",
@@ -277,6 +279,7 @@ export async function POST(request: NextRequest) {
         status: ActiveRydStatus.AWAITING_PASSENGERS, // A new general offer is awaiting passengers
         createdAt: FieldValue.serverTimestamp() as Timestamp,
         passengerManifest: [], // Empty for a general offer
+        passengerUids: [], // Empty for a general offer
         associatedEventId: validatedData.eventId,
         eventName: eventDetails.name,
         notes: validatedData.notes || "",
@@ -309,4 +312,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: errorMessage, errorDetails: error.toString() }, { status: 500 });
   }
 }
-    

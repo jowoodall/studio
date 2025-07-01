@@ -160,6 +160,7 @@ export interface PassengerManifestItem {
 export interface ActiveRyd {
   id: string; 
   driverId: string; 
+  passengerUids?: string[]; // Efficient array for querying
   vehicleDetails?: { 
     make?: string;
     model?: string;
@@ -180,4 +181,20 @@ export interface ActiveRyd {
   associatedEventId?: string; 
   notes?: string;
   eventName?: string; // Denormalized from event
+}
+
+export interface DashboardRydData {
+  id: string;
+  rydFor: { name: string; relation: 'self' | 'student'; uid: string };
+  isDriver: boolean;
+  eventName: string;
+  destination: string;
+  rydStatus: ActiveRydStatus; // The overall status of the ActiveRyd
+  eventTimestamp: Timestamp; // The time the event itself starts
+  earliestPickupTimestamp?: Timestamp; // For passengers, their requested pickup window start
+  proposedDepartureTimestamp?: Timestamp; // For drivers, their planned departure time
+  driverName?: string;
+  driverId?: string;
+  passengerCount?: { confirmed: number; pending: number; totalInManifest: number; };
+  passengerStatus?: PassengerManifestStatus; // The status of the specific person this ryd is for
 }
