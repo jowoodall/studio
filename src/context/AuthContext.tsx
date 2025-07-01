@@ -36,8 +36,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (userDocSnap.exists()) {
             setUserProfile(userDocSnap.data() as UserProfileData);
           } else {
-            // Handle case where user exists in Auth but not Firestore (e.g., incomplete signup)
-            // For now, set profile to null, or you could create a default one.
             setUserProfile(null); 
             console.warn("User exists in Auth but no profile in Firestore for UID:", firebaseUser.uid);
           }
@@ -56,20 +54,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  // Show a global loader if either Firebase auth or Firestore profile is loading initially.
-  // This prevents rendering parts of the app that depend on role before role is known.
-  if (loading || isLoadingProfile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">Loading authentication & profile...</p>
-      </div>
-    );
-  }
+  const isLoading = loading || isLoadingProfile;
 
   return (
     <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile }}>
-      {children}
+      {isLoading ? (
+        <div className="flex items-center justify-center min-h-screen bg-background">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-3 text-muted-foreground">Loading authentication & profile...</p>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };
