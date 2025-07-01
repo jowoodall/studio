@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ArrowLeft, CalendarDays, MapPin, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { EventData, EventStatus } from '@/types';
@@ -37,6 +38,7 @@ const StatusBadge = ({ status }: { status?: EventStatus }) => {
 
 
 export default function ArchivedEventsPage() {
+  const { user: authUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
   
   const [events, setEvents] = useState<EventData[]>([]);
@@ -77,10 +79,14 @@ export default function ArchivedEventsPage() {
   }, [toast]);
 
   useEffect(() => {
-    fetchArchivedEvents();
-  }, [fetchArchivedEvents]);
+    if (!authLoading) { 
+        fetchArchivedEvents();
+    }
+  }, [authLoading, fetchArchivedEvents]);
 
-  if (isLoadingEvents) {
+  const isLoading = authLoading || isLoadingEvents;
+
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />

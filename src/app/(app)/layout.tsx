@@ -20,9 +20,20 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, router]);
 
-  // Always render the main application shell.
-  // The content inside the <main> tag will be conditional based on the loading state.
-  // This ensures the server-rendered HTML and initial client-rendered HTML have the same structure.
+  // While loading or if no user (and about to redirect), show a full-page loader.
+  // This prevents flashing content before the redirect happens.
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Once authenticated, render the full application shell and content.
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
@@ -30,16 +41,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col min-h-screen">
           <AppHeader />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
-            {loading || !user ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-muted-foreground">Loading...</p>
-                </div>
-              </div>
-            ) : (
-              children // Only render the page content once authentication is confirmed
-            )}
+            {children}
           </main>
         </div>
       </SidebarInset>
