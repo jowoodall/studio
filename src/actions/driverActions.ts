@@ -8,6 +8,18 @@ import { ActiveRydStatus as ARStatus, PassengerManifestStatus } from '@/types';
 
 const db = admin.firestore();
 
+const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
+    console.error(`[Action: ${actionName}] Error:`, error);
+    const errorMessage = error.message || "An unknown server error occurred.";
+    if (errorMessage.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED') {
+        return {
+            success: false,
+            message: `A server authentication or timeout error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`
+        };
+    }
+    return { success: false, message: `An unexpected error occurred: ${errorMessage}` };
+};
+
 interface DriverActionInput {
   activeRydId: string;
   driverUserId: string;
@@ -62,11 +74,8 @@ export async function confirmRydPlanAction(
     return { success: true, message: "The ryd plan has been confirmed. No more passengers can join." };
 
   } catch (error: any) {
-    console.error("[Action: confirmRydPlanAction] Error processing request:", error);
-    return {
-      success: false,
-      message: error.message || `An unexpected error occurred with the database transaction.`
-    };
+    const { success, message } = handleActionError(error, "confirmRydPlanAction");
+    return { success, message: message || "An unexpected error occurred." };
   }
 }
 
@@ -99,8 +108,8 @@ export async function startRydAction(
 
     return { success: true, message: "Ryd started! You are now in the pickup phase." };
   } catch (error: any) {
-    console.error("[Action: startRydAction] Error:", error);
-    return { success: false, message: error.message || "An unknown error occurred." };
+    const { success, message } = handleActionError(error, "startRydAction");
+    return { success, message: message || "An unknown error occurred." };
   }
 }
 
@@ -134,8 +143,8 @@ export async function completeRydAction(
     });
     return { success: true, message: "Ryd marked as completed!" };
   } catch (error: any) {
-    console.error("[Action: completeRydAction] Error:", error);
-    return { success: false, message: error.message || "An unknown error occurred." };
+    const { success, message } = handleActionError(error, "completeRydAction");
+    return { success, message: message || "An unknown error occurred." };
   }
 }
 
@@ -182,11 +191,8 @@ export async function cancelRydByDriverAction(
     return { success: true, message: "The ryd has been successfully cancelled. All passengers will be notified." };
 
   } catch (error: any) {
-    console.error("[Action: cancelRydByDriverAction] Error processing request:", error);
-    return {
-      success: false,
-      message: error.message || `An unexpected error occurred while cancelling the ryd.`
-    };
+    const { success, message } = handleActionError(error, "cancelRydByDriverAction");
+    return { success, message: message || "An unexpected error occurred." };
   }
 }
 
@@ -214,8 +220,8 @@ export async function revertToPlanningAction(
 
     return { success: true, message: "Ryd has been unlocked and returned to planning status." };
   } catch (error: any) {
-    console.error("[Action: revertToPlanningAction] Error:", error);
-    return { success: false, message: error.message || "An unknown error occurred." };
+    const { success, message } = handleActionError(error, "revertToPlanningAction");
+    return { success, message: message || "An unknown error occurred." };
   }
 }
 
@@ -244,7 +250,7 @@ export async function revertToRydPlannedAction(
 
     return { success: true, message: "Ryd has been paused and returned to the planned state." };
   } catch (error: any) {
-    console.error("[Action: revertToRydPlannedAction] Error:", error);
-    return { success: false, message: error.message || "An unknown error occurred." };
+    const { success, message } = handleActionError(error, "revertToRydPlannedAction");
+    return { success, message: message || "An unknown error occurred." };
   }
 }

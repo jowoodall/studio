@@ -19,6 +19,19 @@ async function getUserProfile(userId: string): Promise<UserProfileData | null> {
   return userDocSnap.data() as UserProfileData;
 }
 
+const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
+    console.error(`[Action: ${actionName}] Error:`, error);
+    const errorMessage = error.message || "An unknown server error occurred.";
+    if (errorMessage.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED') {
+        return {
+            success: false,
+            message: `A server authentication or timeout error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`
+        };
+    }
+    return { success: false, message: `An unexpected error occurred: ${errorMessage}` };
+};
+
+
 interface RequestToJoinActiveRydInput {
   activeRydId: string;
   passengerUserId: string;
@@ -133,17 +146,7 @@ export async function requestToJoinActiveRydAction(
     };
 
   } catch (error: any) {
-    console.error("[Action: requestToJoinActiveRydAction] Error processing request:", error);
-    if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED')) {
-       return {
-        success: false,
-        message: `A server authentication or timeout error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment. Details: ${error.message}`
-       };
-    }
-    return {
-        success: false,
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
-    };
+    return handleActionError(error, "requestToJoinActiveRydAction");
   }
 }
 
@@ -229,11 +232,7 @@ export async function managePassengerJoinRequestAction(
     return { success: true, message: resultMessage };
 
   } catch (error: any) {
-    console.error("[Action: managePassengerJoinRequestAction] Error processing request:", error);
-    return {
-        success: false,
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
-    };
+    return handleActionError(error, "managePassengerJoinRequestAction");
   }
 }
 
@@ -330,11 +329,7 @@ export async function cancelPassengerSpotAction(
     return { success: true, message: `Spot for ${result.passengerName} on the ryd has been successfully cancelled.` };
 
   } catch (error: any) {
-    console.error("[Action: cancelPassengerSpotAction] Error processing request:", error);
-    return {
-      success: false,
-      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
-    };
+    return handleActionError(error, "cancelPassengerSpotAction");
   }
 }
 
@@ -405,8 +400,8 @@ export async function updatePassengerPickupStatusAction(
     return { success: true, message: resultMessage };
 
   } catch (error: any) {
-    console.error("[Action: updatePassengerPickupStatusAction] Error:", error);
-    return { success: false, message: error.message || "An unexpected server error occurred." };
+    const { success, message } = handleActionError(error, "updatePassengerPickupStatusAction");
+    return { success, message: message || "An unexpected server error occurred." };
   }
 }
 
@@ -536,11 +531,8 @@ export async function fulfillRequestWithExistingRydAction(
     };
 
   } catch (error: any) {
-    console.error("[Action: fulfillRequestWithExistingRydAction] Error processing fulfillment:", error);
-    return {
-      success: false,
-      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`,
-    };
+    const { success, message } = handleActionError(error, "fulfillRequestWithExistingRydAction");
+    return { success, message };
   }
 }
 
@@ -607,11 +599,7 @@ export async function submitPassengerDetailsForActiveRydAction(
     return { success: true, message: "Your pickup details have been successfully submitted." };
 
   } catch (error: any) {
-    console.error("[Action: submitPassengerDetailsForActiveRydAction] Error processing request:", error);
-    return {
-        success: false,
-        message: `An unexpected error occurred: ${error.message || "Unknown server error"}`
-    };
+    return handleActionError(error, "submitPassengerDetailsForActiveRydAction");
   }
 }
 
@@ -659,11 +647,8 @@ export async function cancelRydRequestByUserAction(
     return { success: true, message: "Your ryd request has been successfully cancelled." };
 
   } catch (error: any) {
-    console.error("[Action: cancelRydRequestByUserAction] Error processing request:", error);
-    return {
-      success: false,
-      message: `An unexpected error occurred while cancelling: ${error.message || "Unknown server error"}`
-    };
+    const { success, message } = handleActionError(error, "cancelRydRequestByUserAction");
+    return { success, message: message || "An unexpected error occurred while cancelling." };
   }
 }
 
@@ -722,8 +707,8 @@ export async function revertPassengerPickupAction(
     return { success: true, message: resultMessage };
 
   } catch (error: any) {
-    console.error("[Action: revertPassengerPickupAction] Error:", error);
-    return { success: false, message: error.message || "An unexpected server error occurred." };
+    const { success, message } = handleActionError(error, "revertPassengerPickupAction");
+    return { success, message: message || "An unexpected server error occurred." };
   }
 }
     
