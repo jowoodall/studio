@@ -82,57 +82,59 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
     }
     console.log(`[DashboardAction] Next ryd identified: ${nextRyd.id}`);
 
-    // --- Robustly determine who this ryd is for ---
+    // --- New, more robust logic to determine who this ryd is for ---
     let rydFor: DashboardRydData['rydFor'] | null = null;
     let isDriver = false;
     let passengerStatus: PassengerManifestStatus | undefined = undefined;
     let earliestPickupTimestamp: Timestamp | undefined = undefined;
 
-    const familyMemberDrivingId = searchIds.find(id => id === nextRyd.driverId);
-
-    if (familyMemberDrivingId) {
-        isDriver = true;
-        // Check if the current user is the driver
-        if (familyMemberDrivingId === userId) {
-            rydFor = { name: 'You', relation: 'self', uid: userId };
-        } else {
-            // A managed student must be the driver
-            const studentProfileSnap = await db.collection('users').doc(familyMemberDrivingId).get();
+    // Check #1: Is the current user the driver?
+    if (nextRyd.driverId === userId) {
+      isDriver = true;
+      rydFor = { name: 'You', relation: 'self', uid: userId };
+    } 
+    // Check #2: Is a managed student the driver?
+    else if (userProfile.managedStudentIds?.includes(nextRyd.driverId)) {
+      isDriver = true;
+      const studentDriverId = nextRyd.driverId;
+      const studentProfileSnap = await db.collection('users').doc(studentDriverId).get();
+      if (studentProfileSnap.exists()) {
+        rydFor = {
+          name: studentProfileSnap.data()?.fullName || 'Your Student',
+          relation: 'student',
+          uid: studentDriverId
+        };
+      }
+    }
+    // If not a driver, check passenger manifest.
+    else {
+      isDriver = false;
+      // Check #3: Is the current user a passenger?
+      const userManifestItem = nextRyd.passengerManifest.find(p => p.userId === userId);
+      if (userManifestItem) {
+        rydFor = { name: 'You', relation: 'self', uid: userId };
+        passengerStatus = userManifestItem.status;
+        earliestPickupTimestamp = userManifestItem.earliestPickupTimestamp;
+      }
+      // Check #4: If not, is a managed student a passenger?
+      else {
+        for (const studentId of (userProfile.managedStudentIds || [])) {
+          const studentManifestItem = nextRyd.passengerManifest.find(p => p.userId === studentId);
+          if (studentManifestItem) {
+            const studentProfileSnap = await db.collection('users').doc(studentId).get();
             if (studentProfileSnap.exists()) {
-                rydFor = {
-                    name: studentProfileSnap.data()?.fullName || 'Your Student',
-                    relation: 'student',
-                    uid: familyMemberDrivingId
-                };
+              rydFor = {
+                name: studentProfileSnap.data()?.fullName || 'Your Student',
+                relation: 'student',
+                uid: studentId
+              };
+              passengerStatus = studentManifestItem.status;
+              earliestPickupTimestamp = studentManifestItem.earliestPickupTimestamp;
+              break; // Found the first student in the manifest, stop looking
             }
+          }
         }
-    } else {
-        // If no one in the family is driving, they must be a passenger.
-        // Loop through searchIds to find which family member is in the manifest.
-        for (const id of searchIds) {
-            const manifestItem = nextRyd.passengerManifest.find(p => p.userId === id);
-            if (manifestItem) {
-                // Found a family member in the manifest.
-                if (id === userId) {
-                    rydFor = { name: 'You', relation: 'self', uid: userId };
-                } else {
-                    const studentProfileSnap = await db.collection('users').doc(id).get();
-                     if (studentProfileSnap.exists()) {
-                        rydFor = { 
-                            name: studentProfileSnap.data()?.fullName || 'Your Student',
-                            relation: 'student',
-                            uid: id
-                        };
-                    }
-                }
-                // If we found a valid person, grab their details and stop searching.
-                if (rydFor) {
-                    passengerStatus = manifestItem.status;
-                    earliestPickupTimestamp = manifestItem.earliestPickupTimestamp;
-                    break;
-                }
-            }
-        }
+      }
     }
     
     if (!rydFor) {
@@ -140,10 +142,10 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
         return null;
     }
 
-    let driverProfile: UserProfileData | null = null;
+    let driverProfileData: UserProfileData | null = null;
     if (nextRyd.driverId) {
         const driverSnap = await db.collection('users').doc(nextRyd.driverId).get();
-        if(driverSnap.exists) driverProfile = driverSnap.data() as UserProfileData;
+        if(driverSnap.exists) driverProfileData = driverSnap.data() as UserProfileData;
     }
     
     let eventTimestamp: Timestamp | undefined = undefined;
@@ -166,7 +168,7 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
         eventTimestamp: eventTimestamp!,
         earliestPickupTimestamp: earliestPickupTimestamp,
         proposedDepartureTimestamp: nextRyd.proposedDepartureTime,
-        driverName: driverProfile?.fullName,
+        driverName: driverProfileData?.fullName,
         driverId: nextRyd.driverId,
         passengerCount: {
             confirmed: confirmedPassengers,
