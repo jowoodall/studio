@@ -154,6 +154,7 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
         if (eventSnap.exists) eventTimestamp = eventSnap.data()?.eventTimestamp;
     }
     if (!eventTimestamp) eventTimestamp = nextRyd.plannedArrivalTime; // Fallback to arrival time
+    if (!eventTimestamp) eventTimestamp = nextRyd.createdAt; // Final fallback to prevent crash
 
     const confirmedPassengers = nextRyd.passengerManifest.filter(p => p.status === 'confirmed_by_driver' || p.status === 'awaiting_pickup' || p.status === 'on_board').length;
     const pendingPassengers = nextRyd.passengerManifest.filter(p => p.status === 'pending_driver_approval').length;
@@ -165,7 +166,7 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
         eventName: nextRyd.eventName || "Unnamed Ryd",
         destination: nextRyd.finalDestinationAddress || "Destination TBD",
         rydStatus: nextRyd.status,
-        eventTimestamp: eventTimestamp!,
+        eventTimestamp: eventTimestamp,
         earliestPickupTimestamp: earliestPickupTimestamp,
         proposedDepartureTimestamp: nextRyd.proposedDepartureTime,
         driverName: driverProfileData?.fullName,
