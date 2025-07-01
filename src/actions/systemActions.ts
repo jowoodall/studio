@@ -87,32 +87,41 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
-    // UPDATED QUERY: Look for events that are not already completed or cancelled.
-    // This correctly finds events with status 'active' as well as older events
-    // that were created before the status field existed.
+    // Fetch all events that are older than 48 hours.
+    // We will filter by status in the code, as Firestore's `not-in`
+    // does not match documents where the field is missing.
     const staleEventsQuery = db.collection('events')
-      .where('eventTimestamp', '<', fortyEightHoursAgo)
-      .where('status', 'not-in', [EventStatus.COMPLETED, EventStatus.CANCELLED]);
+      .where('eventTimestamp', '<', fortyEightHoursAgo);
 
     const snapshot = await staleEventsQuery.get();
 
     if (snapshot.empty) {
-      const message = "No stale active events found to update.";
+      const message = "No potentially stale events found to check.";
       console.log(`[Action: updateStaleEventsAction] ${message}`);
       return { success: true, message, updatedCount: 0 };
     }
 
     const batch = db.batch();
+    let updatedCount = 0;
+
     snapshot.forEach(doc => {
-      console.log(`[Action: updateStaleEventsAction] Marking event ${doc.id} as completed.`);
-      batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
+      const event = doc.data() as EventData;
+      // Filter here: only update if status is not already completed or cancelled.
+      // This correctly handles events where `status` is undefined or 'active'.
+      if (event.status !== EventStatus.COMPLETED && event.status !== EventStatus.CANCELLED) {
+        console.log(`[Action: updateStaleEventsAction] Marking event ${doc.id} (Status: ${event.status || 'undefined'}) as completed.`);
+        batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
+        updatedCount++;
+      }
     });
 
-    await batch.commit();
+    if (updatedCount > 0) {
+      await batch.commit();
+    }
 
-    const successMessage = `Successfully processed stale events check. Updated ${snapshot.size} events to completed.`;
+    const successMessage = `Successfully processed stale events check. Found ${snapshot.size} candidates and updated ${updatedCount} events to completed.`;
     console.log(`[Action: updateStaleEventsAction] ${successMessage}`);
-    return { success: true, message: successMessage, updatedCount: snapshot.size };
+    return { success: true, message: successMessage, updatedCount };
 
   } catch (error: any) {
     console.error('[Action: updateStaleEventsAction] Error processing stale events:', error);
