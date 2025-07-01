@@ -86,6 +86,10 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
+  // Diagnostic logging to help debug timestamp issues
+  console.log(`[Action: updateStaleEventsAction] Server's current time (UTC): ${now.toDate().toISOString()}`);
+  console.log(`[Action: updateStaleEventsAction] Querying for events with timestamp < ${fortyEightHoursAgo.toDate().toISOString()}`);
+
   try {
     // Fetch all events that are older than 48 hours.
     // We will filter by status in the code, as Firestore's `not-in`
