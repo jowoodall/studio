@@ -102,6 +102,7 @@ export function SignupForm() {
           },
           managedStudentIds: [],
           associatedParentIds: [],
+          approvedDriverIds: [],
           joinedGroupIds: [], // Initialize joinedGroupIds as empty array
         };
         
@@ -124,7 +125,7 @@ export function SignupForm() {
         errorMessage = "This email address is already in use.";
       } else if (error.code === "auth/weak-password") {
         errorMessage = "The password is too weak. It must be at least 8 characters long.";
-      } else if (error.code === "permission-denied" || (error.message && error.message.toLowerCase().includes("permission denied")) || (error.message && error.message.toLowerCase().includes("missing or insufficient permissions"))) {
+      } else if (error.code === 'permission-denied' || (error.message && error.message.toLowerCase().includes('permission denied')) || (error.message && error.message.toLowerCase().includes('missing or insufficient permissions'))) {
         errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore security rules to ensure all fields being written are allowed and have correct types. Detailed error: " + error.message;
       } else if (error.code && error.code.startsWith('firestore/')) {
         errorMessage = `Firestore error: ${error.message}`;
@@ -231,4 +232,3 @@ export function SignupForm() {
     </Form>
   );
 }
-

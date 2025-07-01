@@ -64,6 +64,7 @@ export interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
+  approvedDriverIds?: string[];
   joinedGroupIds?: string[]; 
   createdAt?: Timestamp;
 }
