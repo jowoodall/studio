@@ -1,45 +1,45 @@
 
 'use client';
 
-import React, { useEffect } from 'react'; // Import React and useEffect
+import React, { useEffect } from 'react';
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { AuthProvider, useAuth } from "@/context/AuthContext"; // Import AuthProvider and useAuth
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Loader2 } from 'lucide-react';
 
-// Inner component to handle auth logic after AuthProvider is in context
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
+  // This effect runs on the client to handle redirection if the user is not authenticated.
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/login'); // Redirect to login if not authenticated
+      router.push('/login');
     }
   }, [user, loading, router]);
 
-  if (loading || (!loading && !user)) {
-    // Show loader while checking auth or if redirecting
-    // This covers the brief period where user might be null before redirect completes
-    return (
-        <div className="flex items-center justify-center min-h-screen bg-background">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-             <p className="ml-3 text-muted-foreground">Verifying authentication...</p>
-        </div>
-    );
-  }
-
-  // If user is authenticated, render the main app layout
+  // Always render the main application shell.
+  // The content inside the <main> tag will be conditional based on the loading state.
+  // This ensures the server-rendered HTML and initial client-rendered HTML have the same structure.
   return (
-    <SidebarProvider defaultOpen={true}> {/* Manage open state via cookie or prop */}
+    <SidebarProvider defaultOpen={true}>
       <AppSidebar />
       <SidebarInset>
         <div className="flex flex-col min-h-screen">
           <AppHeader />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
-            {children}
+            {loading || !user ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-muted-foreground">Loading...</p>
+                </div>
+              </div>
+            ) : (
+              children // Only render the page content once authentication is confirmed
+            )}
           </main>
         </div>
       </SidebarInset>
@@ -47,7 +47,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Main AppLayout component that wraps content with AuthProvider
+// The main AppLayout component wraps everything in the AuthProvider.
 export default function AppLayout({
   children,
 }: {
