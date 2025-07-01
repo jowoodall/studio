@@ -21,15 +21,17 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { navMenuItems, siteConfig, userAccountMenu } from "@/config/site";
+import { navMenuItems, siteConfig } from "@/config/site";
 import type { NavItem } from "@/types";
 import React from "react";
 import { ChevronDown, ChevronRight }
 from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { state: sidebarState, isMobile, setOpenMobile } = useSidebar();
+  const { userProfile } = useAuth();
 
   const [openSubMenus, setOpenSubMenus] = React.useState<Record<string, boolean>>({});
 
@@ -39,11 +41,17 @@ export function AppSidebar() {
 
   const renderNavItems = (items: NavItem[], isSubmenu = false) => {
     return items.map((item) => {
-      if (item.roles && !item.roles.includes(siteConfig.defaultUserRole as any)) { // Replace with actual role check
+      // Role-based visibility check
+      if (item.roles && (!userProfile || !item.roles.includes(userProfile.role))) {
+        return null;
+      }
+      
+      // Email-based visibility check
+      if (item.allowedEmails && (!userProfile || !item.allowedEmails.includes(userProfile.email))) {
         return null;
       }
 
-      const isActive = item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href || "___NEVER_MATCH_EMPTY_HREF___")); // Added check for item.href
+      const isActive = item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href || "___NEVER_MATCH_EMPTY_HREF___"));
       const 메뉴버튼Component = isSubmenu ? SidebarMenuSubButton : SidebarMenuButton;
       const 메뉴아이템Component = isSubmenu ? SidebarMenuItem : SidebarMenuItem; 
 
@@ -66,7 +74,7 @@ export function AppSidebar() {
                 className="justify-between w-full"
               >
                 <>
-                  <span className="flex items-center gap-2"> {/* Changed div to span */}
+                  <span className="flex items-center gap-2">
                     {item.icon && <item.icon className="shrink-0" />}
                     <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
                   </span>
@@ -90,7 +98,7 @@ export function AppSidebar() {
             isActive={isActive}
             tooltip={sidebarState === "collapsed" ? item.title : undefined}
           >
-            <Link href={item.href || "/"} onClick={handleItemClick}> {/* Added fallback for href */}
+            <Link href={item.href || "/"} onClick={handleItemClick}>
               <>
                 {item.icon && <item.icon className="shrink-0" />}
                 <span className={cn(sidebarState === "collapsed" && "hidden")}>{item.title}</span>
@@ -128,4 +136,3 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
-

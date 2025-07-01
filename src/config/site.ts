@@ -92,9 +92,10 @@ export const navMenuItems: NavItem[] = [
     icon: MessageSquare,
   },
   {
-    title: 'Test Logging', // New Item
+    title: 'Utilities',
     href: '/test-logging',
     icon: Terminal,
+    allowedEmails: ['joey.woodall@gmail.com'],
   }
 ];
 

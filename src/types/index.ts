@@ -23,6 +23,7 @@ export type NavItem = {
   disabled?: boolean;
   external?: boolean;
   roles?: UserRole[];
+  allowedEmails?: string[];
   items?: NavItem[]; 
   collapsible?: boolean;
 };
