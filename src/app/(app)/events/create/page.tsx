@@ -136,7 +136,7 @@ export default function CreateEventPage() {
         return;
       }
 
-      const newEventData: Omit<EventData, 'id' | 'createdAt'> & { createdAt: any } = {
+      const newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any } = {
         name: data.eventName,
         eventTimestamp: eventFirestoreTimestamp,
         location: finalLocation,
@@ -220,7 +220,6 @@ export default function CreateEventPage() {
                     onValueChange={(value) => {
                       const selectedLoc = savedLocations.find(loc => loc.id === value);
                       if (selectedLoc) {
-                        form.setValue("eventName", selectedLoc.name);
                         form.setValue("eventLocation", formatAddress(selectedLoc.address));
                       }
                     }}
@@ -238,7 +237,7 @@ export default function CreateEventPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription>Selecting a location will populate the fields above and below.</FormDescription>
+                  <FormDescription>Selecting a saved location will populate the event location/address field below.</FormDescription>
                 </FormItem>
               )}
               
