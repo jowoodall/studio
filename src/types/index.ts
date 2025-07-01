@@ -131,6 +131,8 @@ export enum ActiveRydStatus {
 }
 
 export enum PassengerManifestStatus {
+  PENDING_PARENT_APPROVAL = 'pending_parent_approval',
+  REJECTED_BY_PARENT = 'rejected_by_parent',
   PENDING_DRIVER_APPROVAL = 'pending_driver_approval',
   CONFIRMED_BY_DRIVER = 'confirmed_by_driver',
   REJECTED_BY_DRIVER = 'rejected_by_driver',
@@ -162,6 +164,7 @@ export interface ActiveRyd {
   id: string; 
   driverId: string; 
   passengerUids?: string[]; // Efficient array for querying
+  uidsPendingParentalApproval?: string[]; // For querying approvals
   vehicleDetails?: { 
     make?: string;
     model?: string;

@@ -4,12 +4,12 @@
 import admin from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole, RydData, RydStatus, EventData} from '@/types'; // Added RydData, RydStatus, EventData
-import { PassengerManifestStatus, ActiveRydStatus as ARStatus } from '@/types'; // Import ActiveRydStatus as a value with alias
+import { PassengerManifestStatus, ActiveRydStatus as ARStatus, UserRole as RoleEnum } from '@/types'; // Import ActiveRydStatus as a value with alias
 import * as z from 'zod';
 
 const db = admin.firestore(); // Get Firestore instance from the admin SDK
 
-// Helper function to get user profile
+// Helper function to get user profile (not transaction-aware)
 async function getUserProfile(userId: string): Promise<UserProfileData | null> {
   const userDocRef = db.collection('users').doc(userId);
   const userDocSnap = await userDocRef.get();
@@ -65,8 +65,9 @@ export async function requestToJoinActiveRydAction(
       return { success: false, message: "Passenger profile not found." };
     }
 
-    if (requesterProfile.uid !== passengerUserId) { // Requester is different from passenger (i.e., parent)
-      if (requesterProfile.role !== 'parent') {
+    // Authorization: Requester must be the passenger OR a parent managing that passenger
+    if (requesterProfile.uid !== passengerUserId) {
+      if (requesterProfile.role !== RoleEnum.PARENT) {
         return { success: false, message: "Only parents can request for other users." };
       }
       if (!requesterProfile.managedStudentIds?.includes(passengerUserId)) {
@@ -75,7 +76,7 @@ export async function requestToJoinActiveRydAction(
     }
 
     // --- Transactional Read-Modify-Write ---
-    await db.runTransaction(async (transaction) => {
+    const resultMessage = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
 
       if (!activeRydDocSnap.exists) {
@@ -83,7 +84,7 @@ export async function requestToJoinActiveRydAction(
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
 
-      // Validations for ActiveRyd
+      // Validations for ActiveRyd state
       const joinableRydStatuses: ARStatus[] = [ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS];
       if (!joinableRydStatuses.includes(activeRydData.status)) {
         throw new Error(`This ryd is no longer accepting new passengers (Status: ${activeRydData.status}).`);
@@ -93,6 +94,7 @@ export async function requestToJoinActiveRydAction(
       const activePassengersCount = activeRydData.passengerManifest.filter(p =>
           p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
           p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+          p.status !== PassengerManifestStatus.REJECTED_BY_PARENT &&
           p.status !== PassengerManifestStatus.MISSED_PICKUP
       ).length;
 
@@ -103,12 +105,35 @@ export async function requestToJoinActiveRydAction(
       const existingPassengerEntry = activeRydData.passengerManifest.find(
         p => p.userId === passengerUserId &&
              p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
-             p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
+             p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+             p.status !== PassengerManifestStatus.REJECTED_BY_PARENT
       );
       if (existingPassengerEntry) {
         throw new Error(`${passengerProfile.fullName} is already on this ryd or has a pending request.`);
       }
       
+      // --- Parent Approval Logic ---
+      let finalStatus = PassengerManifestStatus.PENDING_DRIVER_APPROVAL;
+      let approvalRequired = false;
+      let finalMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
+
+      if (passengerProfile.role === RoleEnum.STUDENT && passengerProfile.associatedParentIds && passengerProfile.associatedParentIds.length > 0) {
+        const parentId = passengerProfile.associatedParentIds[0];
+        const parentDocRef = db.collection('users').doc(parentId);
+        const parentDocSnap = await transaction.get(parentDocRef);
+
+        if (parentDocSnap.exists) {
+          const parentProfile = parentDocSnap.data() as UserProfileData;
+          const isDriverApproved = parentProfile.approvedDriverIds?.includes(activeRydData.driverId);
+          if (!isDriverApproved) {
+            finalStatus = PassengerManifestStatus.PENDING_PARENT_APPROVAL;
+            approvalRequired = true;
+            finalMessage = `The driver for this ryd has not been approved yet. A request has been sent to ${parentProfile.fullName} for approval.`;
+          }
+        }
+      }
+      // --- End Parent Approval Logic ---
+
       const passengerPickupStreet = passengerProfile.address?.street || "";
       const passengerPickupCity = passengerProfile.address?.city || "";
       const passengerPickupState = passengerProfile.address?.state || "";
@@ -123,25 +148,29 @@ export async function requestToJoinActiveRydAction(
         userId: passengerUserId,
         pickupAddress: fullPickupAddress,
         destinationAddress: activeRydData.finalDestinationAddress || "Event Destination",
-        status: PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+        status: finalStatus,
         requestedAt: Timestamp.now(),
       };
       
-      const newStatus = activeRydData.status === ARStatus.AWAITING_PASSENGERS ? ARStatus.PLANNING : activeRydData.status;
-
-      transaction.update(activeRydDocRef, {
+      const updatePayload: any = {
         passengerManifest: FieldValue.arrayUnion(newManifestItem),
-        passengerUids: FieldValue.arrayUnion(passengerUserId), // Update passengerUids
-        status: newStatus,
+        passengerUids: FieldValue.arrayUnion(passengerUserId),
+        status: activeRydData.status === ARStatus.AWAITING_PASSENGERS ? ARStatus.PLANNING : activeRydData.status,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      
+      if (approvalRequired) {
+        updatePayload.uidsPendingParentalApproval = FieldValue.arrayUnion(passengerUserId);
+      }
+
+      transaction.update(activeRydDocRef, updatePayload);
+      return finalMessage;
     });
 
-    const successMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
     console.log("[Action: requestToJoinActiveRydAction] Transaction successful for rydId:", activeRydId);
     return {
         success: true,
-        message: successMessage,
+        message: resultMessage,
         rydId: activeRydId,
     };
 
@@ -287,6 +316,7 @@ export async function cancelPassengerSpotAction(
 
       const cancellablePassengerStatuses = [
         PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+        PassengerManifestStatus.PENDING_PARENT_APPROVAL,
         PassengerManifestStatus.CONFIRMED_BY_DRIVER,
         PassengerManifestStatus.AWAITING_PICKUP,
       ];
@@ -308,14 +338,18 @@ export async function cancelPassengerSpotAction(
       const updatedManifest = [...activeRydData.passengerManifest];
       updatedManifest[passengerIndex].status = PassengerManifestStatus.CANCELLED_BY_PASSENGER;
       
-      const remainingActivePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.MISSED_PICKUP).length;
+      const remainingActivePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.REJECTED_BY_PARENT && p.status !== PassengerManifestStatus.MISSED_PICKUP).length;
       
-      const updatePayload: { passengerManifest: PassengerManifestItem[], updatedAt: FieldValue, status?: ARStatus, passengerUids?: FieldValue } = {
+      const updatePayload: { passengerManifest: PassengerManifestItem[], updatedAt: FieldValue, status?: ARStatus, passengerUids?: FieldValue, uidsPendingParentalApproval?: FieldValue } = {
         passengerManifest: updatedManifest,
         updatedAt: FieldValue.serverTimestamp(),
-        passengerUids: FieldValue.arrayRemove(passengerUserIdToCancel), // Remove from passengerUids
+        passengerUids: FieldValue.arrayRemove(passengerUserIdToCancel),
       };
       
+      if (passengerToUpdate.status === PassengerManifestStatus.PENDING_PARENT_APPROVAL) {
+        updatePayload.uidsPendingParentalApproval = FieldValue.arrayRemove(passengerUserIdToCancel);
+      }
+
       if (remainingActivePassengers === 0 && activeRydData.status === ARStatus.PLANNING) {
         updatePayload.status = ARStatus.AWAITING_PASSENGERS;
       }
@@ -377,7 +411,7 @@ export async function updatePassengerPickupStatusAction(
       updatedManifest[passengerIndex].status = PassengerManifestStatus.ON_BOARD;
       updatedManifest[passengerIndex].actualPickupTime = Timestamp.now();
       
-      const activePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.MISSED_PICKUP);
+      const activePassengers = updatedManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.REJECTED_BY_PARENT && p.status !== PassengerManifestStatus.MISSED_PICKUP);
       const allOnBoard = activePassengers.every(p => p.status === PassengerManifestStatus.ON_BOARD);
       
       const updatePayload: any = {
@@ -465,6 +499,7 @@ export async function fulfillRequestWithExistingRydAction(
     const currentPassengersInActiveRyd = activeRydData.passengerManifest.filter(p =>
         p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
         p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
+        p.status !== PassengerManifestStatus.REJECTED_BY_PARENT &&
         p.status !== PassengerManifestStatus.MISSED_PICKUP
     ).length;
 
