@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck, Edit
+  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck, Edit, ShieldCheck
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -52,6 +52,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
+  
+  const [eventManagers, setEventManagers] = useState<UserProfileData[]>([]);
 
   const [activeRydzList, setActiveRydzList] = useState<DisplayActiveRyd[]>([]);
   const [isLoadingActiveRydz, setIsLoadingActiveRydz] = useState<boolean>(true);
@@ -92,6 +94,18 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         const data = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
         setEventDetails(data);
         setCurrentAssociatedGroups(data.associatedGroupIds || []);
+        
+        if (data.managerIds && data.managerIds.length > 0) {
+            const managerPromises = data.managerIds.map(id => getDoc(doc(db, "users", id)));
+            const managerDocs = await Promise.all(managerPromises);
+            const managerProfiles = managerDocs
+              .filter(doc => doc.exists())
+              .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfileData));
+            setEventManagers(managerProfiles);
+        } else {
+            setEventManagers([]);
+        }
+
       } else {
         setEventError('Event with ID "' + eventId + '" not found.');
         setEventDetails(null);
@@ -491,6 +505,33 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           </div>
         }
       />
+
+      <Card className="mb-6 shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-primary" /> Event Managers</CardTitle>
+          <CardDescription>Contact these users for questions about the event.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {eventManagers.length > 0 ? (
+            <div className="flex flex-wrap gap-4">
+              {eventManagers.map(manager => (
+                <div key={manager.uid} className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={manager.avatarUrl} alt={manager.fullName} />
+                    <AvatarFallback>{manager.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <Link href={`/profile/view/${manager.uid}`} className="font-semibold hover:underline">{manager.fullName}</Link>
+                    <p className="text-xs text-muted-foreground">{manager.email}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No managers listed for this event.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="mb-6 shadow-lg">
         <CardHeader>
