@@ -23,29 +23,29 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
     return null;
   }
 
-  const userProfileSnap = await db.collection('users').doc(userId).get();
-  if (!userProfileSnap.exists) {
-    console.log(`[DashboardAction] User profile not found for user: ${userId}`);
-    return null;
-  }
-  const userProfile = userProfileSnap.data() as UserProfileData;
-
-  const searchIds = [userId];
-  if (userProfile.role === 'parent' && userProfile.managedStudentIds) {
-    searchIds.push(...userProfile.managedStudentIds);
-  }
-  console.log(`[DashboardAction] Searching for rydz involving user IDs:`, searchIds);
-
-
-  const rydzAsDriverQuery = db.collection('activeRydz')
-    .where('driverId', 'in', searchIds)
-    .where('status', 'in', upcomingActiveRydStatuses);
-
-  const rydzAsPassengerQuery = db.collection('activeRydz')
-    .where('passengerUids', 'array-contains-any', searchIds)
-    .where('status', 'in', upcomingActiveRydStatuses);
-  
   try {
+    const userProfileSnap = await db.collection('users').doc(userId).get();
+    if (!userProfileSnap.exists) {
+      console.log(`[DashboardAction] User profile not found for user: ${userId}`);
+      return null;
+    }
+    const userProfile = userProfileSnap.data() as UserProfileData;
+
+    const searchIds = [userId];
+    if (userProfile.role === 'parent' && userProfile.managedStudentIds) {
+      searchIds.push(...userProfile.managedStudentIds);
+    }
+    console.log(`[DashboardAction] Searching for rydz involving user IDs:`, searchIds);
+
+
+    const rydzAsDriverQuery = db.collection('activeRydz')
+      .where('driverId', 'in', searchIds)
+      .where('status', 'in', upcomingActiveRydStatuses);
+
+    const rydzAsPassengerQuery = db.collection('activeRydz')
+      .where('passengerUids', 'array-contains-any', searchIds)
+      .where('status', 'in', upcomingActiveRydStatuses);
+    
     const [driverSnaps, passengerSnaps] = await Promise.all([
       rydzAsDriverQuery.get(),
       rydzAsPassengerQuery.get(),
