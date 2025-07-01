@@ -181,8 +181,12 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
     console.log("[DashboardAction] Successfully built dashboard data object:", result);
     return result;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[DashboardAction] Error fetching rydz for user ${userId}:`, error);
+    // Check for specific Firestore index error
+    if (error.code === 'failed-precondition' || (error.message && error.message.toLowerCase().includes("index"))) {
+      console.error("[DashboardAction] Critical Error: A Firestore index is required for the dashboard query to function. The query failed. Please check the Firebase console for a link to create the required composite index.");
+    }
     return null;
   }
 }
