@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
+import { PlusCircle, CalendarDays, MapPin, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 const StatusBadge = ({ status }: { status?: EventStatus }) => {
-  const currentStatus = status || EventStatus.ACTIVE; // Default to ACTIVE if status is undefined
+  const currentStatus = status || EventStatus.ACTIVE;
   const statusText = currentStatus.replace(/_/g, ' ');
 
   const getStatusClasses = () => {
@@ -50,6 +50,8 @@ export default function EventsPage() {
     setIsLoadingEvents(true);
     setError(null);
     try {
+      await updateStaleEventsAction().catch(err => console.error("Background stale events check failed:", err.message));
+
       const eventsQuery = query(
         collection(db, "events"), 
         where("status", "==", EventStatus.ACTIVE), 
@@ -81,9 +83,7 @@ export default function EventsPage() {
 
   useEffect(() => {
     if (!authLoading) { 
-        updateStaleEventsAction()
-            .catch(err => console.error("Background stale events check failed:", err.message))
-            .finally(() => fetchEvents());
+      fetchEvents();
     }
   }, [authLoading, fetchEvents]);
 
@@ -138,11 +138,11 @@ export default function EventsPage() {
             <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">
                  <Image 
-                    src={"https://placehold.co/400x200.png?text=Event"} // Replace with event.imageUrl if available
+                    src={"https://placehold.co/400x200.png?text=Event"}
                     alt={event.name} 
                     fill 
                     className="rounded-t-lg object-cover" 
-                    data-ai-hint={"event image"} // Replace with event.dataAiHint if available
+                    data-ai-hint={"event image"}
                 />
                  <StatusBadge status={event.status} />
               </CardHeader>
