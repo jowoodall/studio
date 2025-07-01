@@ -242,7 +242,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
+          'X-Authorization-Id-Token': idToken,
         },
         body: JSON.stringify(payload),
       });

@@ -11,15 +11,15 @@ import { ActiveRydStatus, PassengerManifestStatus } from '@/types';
 export async function POST(request: NextRequest) {
   console.log('[API Route: /api/offer-drive] POST request received.');
   try {
-    const authorizationHeader = request.headers.get('Authorization');
-    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-      console.error('[API Route: /api/offer-drive] Missing or malformed Authorization header.');
+    const authorizationHeader = request.headers.get('X-Authorization-Id-Token');
+    if (!authorizationHeader) {
+      console.error('[API Route: /api/offer-drive] Missing X-Authorization-Id-Token header.');
       return NextResponse.json({ success: false, message: 'Unauthorized. No token provided.' }, { status: 401 });
     }
 
-    const idToken = authorizationHeader.split('Bearer ')[1];
+    const idToken = authorizationHeader;
     if (!idToken) {
-      console.error('[API Route: /api/offer-drive] ID token is empty after splitting Bearer.');
+      console.error('[API Route: /api/offer-drive] ID token is empty in X-Authorization-Id-Token header.');
       return NextResponse.json({ success: false, message: 'Unauthorized. Token is empty.' }, { status: 401 });
     }
 
