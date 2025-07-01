@@ -1,10 +1,10 @@
+
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, CalendarDays, Car } from "lucide-react";
+import { PlusCircle, Users, CalendarDays, Car, Loader2 } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
-import { MyNextRyd } from "@/components/dashboard/MyNextRyd";
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -29,7 +29,17 @@ export default function DashboardPage() {
       />
       
       <div className="mb-8">
-        <MyNextRyd />
+        <Card className="shadow-lg text-center py-8">
+            <CardHeader>
+                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-2" />
+                <CardTitle>Upcoming Rydz</CardTitle>
+                <CardDescription>Your next upcoming ryd will be displayed here.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground mt-2">Feature coming soon...</p>
+            </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
