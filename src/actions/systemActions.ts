@@ -8,6 +8,29 @@ import { ActiveRydStatus as ARStatus } from '@/types';
 
 const db = admin.firestore();
 
+// A robust, centralized error handler for server actions.
+const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
+    console.error(`[Action: ${actionName}] Error:`, error);
+    const errorMessage = error.message || "An unknown server error occurred.";
+    
+    // Handle Firestore index errors
+    if (error.code === 5 || error.code === 'failed-precondition' || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
+      return { success: false, message: `A Firestore index is required for the '${actionName}' query. Please check the browser's console for a link to create it.` };
+    }
+    
+    // Handle Authentication/Network errors
+    if (errorMessage.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED' || (typeof error.details === 'string' && error.details.includes('Could not refresh access token'))) {
+       return {
+        success: false,
+        message: `A server authentication or timeout error occurred during '${actionName}'. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
+       };
+    }
+
+    // Default fallback for any other unexpected errors
+    return { success: false, message: `An unexpected error occurred in ${actionName}: ${errorMessage}` };
+};
+
+
 // This action is designed to be called as a "lazy cron" from a high-traffic page.
 export async function updateStaleRydzAction(): Promise<{ success: boolean; message: string; updatedCount: number }> {
   console.log('[Action: updateStaleRydzAction] Running job to update stale rydz.');
@@ -64,24 +87,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     return { success: true, message: successMessage, updatedCount };
 
   } catch (error: any) {
-    console.error('[Action: updateStaleRydzAction] Error processing stale rydz:', error);
-    // Updated condition to check for error code 5 (NOT_FOUND) which often indicates a missing index.
-    if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
-      const detailedError = "A Firestore index is required for the stale rydz query. Please check the browser's console for a link to create it.";
-      return { success: false, message: detailedError, updatedCount: 0 };
-    }
-    if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED' || (typeof error.details === 'string' && error.details.includes('Could not refresh access token')))) {
-       return {
-        success: false,
-        message: `A server authentication or timeout error occurred while checking for stale rydz. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
-        updatedCount: 0,
-       };
-    }
-    return {
-      success: false,
-      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`,
-      updatedCount: 0,
-    };
+    const { message } = handleActionError(error, "updateStaleRydzAction");
+    return { success: false, message, updatedCount: 0 };
   }
 }
 
@@ -92,9 +99,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
-    // Fetch all events that are older than 48 hours.
-    // We will filter by status in the code, as Firestore's `not-in`
-    // does not match documents where the field is missing.
     const staleEventsQuery = db.collection('events')
       .where('eventTimestamp', '<', fortyEightHoursAgo);
 
@@ -110,8 +114,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
 
     snapshot.forEach(doc => {
       const event = doc.data() as EventData;
-      // Filter here: only update if status is not already completed or cancelled.
-      // This correctly handles events where `status` is undefined or 'active'.
       if (event.status !== EventStatus.COMPLETED && event.status !== EventStatus.CANCELLED) {
         batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
         updatedCount++;
@@ -126,23 +128,7 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
     return { success: true, message: successMessage, updatedCount };
 
   } catch (error: any) {
-    console.error('[Action: updateStaleEventsAction] Error processing stale events:', error);
-    // Updated condition to check for error code 5 (NOT_FOUND) which often indicates a missing index.
-    if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
-      const detailedError = "A Firestore index is required for the stale events query. Please check the browser's console for a link to create it.";
-      return { success: false, message: detailedError, updatedCount: 0 };
-    }
-     if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED' || (typeof error.details === 'string' && error.details.includes('Could not refresh access token')))) {
-       return {
-        success: false,
-        message: `A server authentication or timeout error occurred while checking for stale events. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
-        updatedCount: 0,
-       };
-    }
-    return {
-      success: false,
-      message: `An unexpected error occurred: ${error.message || "Unknown server error"}`,
-      updatedCount: 0,
-    };
+    const { message } = handleActionError(error, "updateStaleEventsAction");
+    return { success: false, message, updatedCount: 0 };
   }
 }
