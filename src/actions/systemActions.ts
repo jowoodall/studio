@@ -68,7 +68,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
 
   } catch (error: any) {
     console.error('[Action: updateStaleRydzAction] Error processing stale rydz:', error);
-    if (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index"))) {
+    // Updated condition to check for error code 5 (NOT_FOUND) which often indicates a missing index.
+    if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
       const detailedError = "A Firestore index is required for the stale rydz query. Please check the browser's console for a link to create it.";
       return { success: false, message: detailedError, updatedCount: 0 };
     }
@@ -136,7 +137,8 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
 
   } catch (error: any) {
     console.error('[Action: updateStaleEventsAction] Error processing stale events:', error);
-    if (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index"))) {
+    // Updated condition to check for error code 5 (NOT_FOUND) which often indicates a missing index.
+    if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
       const detailedError = "A Firestore index is required for the stale events query. Please check the browser's console for a link to create it.";
       return { success: false, message: detailedError, updatedCount: 0 };
     }
