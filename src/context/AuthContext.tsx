@@ -54,18 +54,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  const isLoading = loading || isLoadingProfile;
-
   return (
     <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile }}>
-      {isLoading ? (
-        <div className="flex items-center justify-center min-h-screen bg-background">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="ml-3 text-muted-foreground">Loading authentication & profile...</p>
-        </div>
-      ) : (
-        children
-      )}
+      {children}
     </AuthContext.Provider>
   );
 };
