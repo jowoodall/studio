@@ -72,6 +72,13 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
       const detailedError = "A Firestore index is required for the stale rydz query. Please check the browser's console for a link to create it.";
       return { success: false, message: detailedError, updatedCount: 0 };
     }
+    if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED' || (typeof error.details === 'string' && error.details.includes('Could not refresh access token')))) {
+       return {
+        success: false,
+        message: `A server authentication or timeout error occurred while checking for stale rydz. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
+        updatedCount: 0,
+       };
+    }
     return {
       success: false,
       message: `An unexpected error occurred: ${error.message || "Unknown server error"}`,
@@ -132,6 +139,13 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
     if (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index"))) {
       const detailedError = "A Firestore index is required for the stale events query. Please check the browser's console for a link to create it.";
       return { success: false, message: detailedError, updatedCount: 0 };
+    }
+     if (error.message && (error.message.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED' || (typeof error.details === 'string' && error.details.includes('Could not refresh access token')))) {
+       return {
+        success: false,
+        message: `A server authentication or timeout error occurred while checking for stale events. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
+        updatedCount: 0,
+       };
     }
     return {
       success: false,
