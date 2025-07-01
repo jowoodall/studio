@@ -4,19 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PlusCircle, Users, CalendarDays, Car } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
+import { MyNextRyd } from "@/components/dashboard/MyNextRyd";
 
 export const metadata: Metadata = {
   title: 'Dashboard',
+  description: 'Your personal hub for managing rydz, groups, and events.'
 };
 
 export default function DashboardPage() {
-  // This would be dynamic based on user role and data
-  const stats = [
-    { title: "Upcoming Rydz", value: "3", icon: Car, color: "text-blue-500", href: "/rydz/upcoming" },
-    { title: "Active Groups", value: "5", icon: Users, color: "text-green-500", href: "/groups" },
-    { title: "Pending Approvals", value: "2", icon: CalendarDays, color: "text-yellow-500", href: "/parent/approvals" }, // Example for parent
-  ];
-
   const redirectUrl = "/dashboard";
 
   return (
@@ -32,22 +27,9 @@ export default function DashboardPage() {
           </Button>
         }
       />
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
-        {stats.map((stat) => (
-          <Card key={stat.title} className="shadow-lg hover:shadow-xl transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className={`h-5 w-5 ${stat.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <Link href={stat.href} className="text-xs text-muted-foreground hover:text-primary">
-                View Details
-              </Link>
-            </CardContent>
-          </Card>
-        ))}
+      
+      <div className="mb-8">
+        <MyNextRyd />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
