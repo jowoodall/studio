@@ -8,7 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { simpleLogTestAction } from "@/actions/testLogActions";
-import { Loader2, Terminal } from "lucide-react";
+import { Loader2, Terminal, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+
 
 // Test Imports
 import * as z from 'zod';
@@ -120,6 +122,22 @@ export default function TestLoggingPage() {
               <li>If those logs appear, server-side logging is working. If not, there's an issue with your environment's log visibility.</li>
             </ol>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="w-full max-w-md mx-auto mt-6">
+        <CardHeader>
+        <CardTitle className="text-destructive flex items-center gap-2"><AlertTriangle /> Admin Utilities</CardTitle>
+        <CardDescription>
+            Access special developer and data management tools.
+        </CardDescription>
+        </CardHeader>
+        <CardContent>
+        <Button asChild className="w-full">
+            <Link href="/admin/purge-data">
+            Go to Data Purge Utility
+            </Link>
+        </Button>
         </CardContent>
       </Card>
     </>
