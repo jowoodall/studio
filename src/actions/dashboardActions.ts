@@ -82,49 +82,62 @@ export async function getMyNextRydAction(userId: string): Promise<DashboardRydDa
     }
     console.log(`[DashboardAction] Next ryd identified: ${nextRyd.id}`);
 
-    // Determine who this ryd is for
+    // --- Robustly determine who this ryd is for ---
     let rydFor: DashboardRydData['rydFor'] | null = null;
     let isDriver = false;
     let passengerStatus: PassengerManifestStatus | undefined = undefined;
     let earliestPickupTimestamp: Timestamp | undefined = undefined;
 
-    if (searchIds.includes(nextRyd.driverId)) {
-      isDriver = true;
-      const driverId = nextRyd.driverId;
-      if (driverId === userId) {
-        rydFor = { name: 'You', relation: 'self', uid: userId };
-      } else {
-        const studentProfileSnap = await db.collection('users').doc(driverId).get();
-        rydFor = {
-          name: studentProfileSnap.data()?.fullName || 'Your Student',
-          relation: 'student',
-          uid: driverId
-        };
-      }
+    const familyMemberDrivingId = searchIds.find(id => id === nextRyd.driverId);
+
+    if (familyMemberDrivingId) {
+        isDriver = true;
+        // Check if the current user is the driver
+        if (familyMemberDrivingId === userId) {
+            rydFor = { name: 'You', relation: 'self', uid: userId };
+        } else {
+            // A managed student must be the driver
+            const studentProfileSnap = await db.collection('users').doc(familyMemberDrivingId).get();
+            if (studentProfileSnap.exists()) {
+                rydFor = {
+                    name: studentProfileSnap.data()?.fullName || 'Your Student',
+                    relation: 'student',
+                    uid: familyMemberDrivingId
+                };
+            }
+        }
     } else {
+        // If no one in the family is driving, they must be a passenger.
+        // Loop through searchIds to find which family member is in the manifest.
         for (const id of searchIds) {
             const manifestItem = nextRyd.passengerManifest.find(p => p.userId === id);
             if (manifestItem) {
+                // Found a family member in the manifest.
                 if (id === userId) {
                     rydFor = { name: 'You', relation: 'self', uid: userId };
                 } else {
                     const studentProfileSnap = await db.collection('users').doc(id).get();
-                    rydFor = { 
-                        name: studentProfileSnap.data()?.fullName || 'Your Student',
-                        relation: 'student',
-                        uid: id
-                    };
+                     if (studentProfileSnap.exists()) {
+                        rydFor = { 
+                            name: studentProfileSnap.data()?.fullName || 'Your Student',
+                            relation: 'student',
+                            uid: id
+                        };
+                    }
                 }
-                passengerStatus = manifestItem.status;
-                earliestPickupTimestamp = manifestItem.earliestPickupTimestamp;
-                break; 
+                // If we found a valid person, grab their details and stop searching.
+                if (rydFor) {
+                    passengerStatus = manifestItem.status;
+                    earliestPickupTimestamp = manifestItem.earliestPickupTimestamp;
+                    break;
+                }
             }
         }
     }
     
     if (!rydFor) {
-        console.error(`[DashboardAction] Could not determine 'rydFor' for ryd ${nextRyd.id}. This is an inconsistent state.`);
-        return null; // Or handle error appropriately
+        console.error(`[DashboardAction] Could not determine 'rydFor' for ryd ${nextRyd.id}. This can happen if a user is in 'passengerUids' but not the manifest, or if a linked student profile was deleted.`);
+        return null;
     }
 
     let driverProfile: UserProfileData | null = null;
