@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, CalendarDays, MapPin, Users, ExternalLink, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
+import { ArrowLeft, CalendarDays, MapPin, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { db } from '@/lib/firebase';
@@ -13,12 +13,11 @@ import { collection, getDocs, query, where, orderBy, Timestamp } from 'firebase/
 import { EventData, EventStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { updateStaleEventsAction } from '@/actions/systemActions';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 const StatusBadge = ({ status }: { status?: EventStatus }) => {
-  const currentStatus = status || EventStatus.ACTIVE; // Default to ACTIVE if status is undefined
+  const currentStatus = status || EventStatus.ACTIVE;
   const statusText = currentStatus.replace(/_/g, ' ');
 
   const getStatusClasses = () => {
@@ -37,21 +36,21 @@ const StatusBadge = ({ status }: { status?: EventStatus }) => {
 };
 
 
-export default function EventsPage() {
+export default function ArchivedEventsPage() {
   const { toast } = useToast();
   
   const [events, setEvents] = useState<EventData[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchArchivedEvents = useCallback(async () => {
     setIsLoadingEvents(true);
     setError(null);
     try {
       const eventsQuery = query(
         collection(db, "events"), 
-        where("status", "==", EventStatus.ACTIVE), 
-        orderBy("eventTimestamp", "asc")
+        where("status", "in", [EventStatus.COMPLETED, EventStatus.CANCELLED]),
+        orderBy("eventTimestamp", "desc")
       );
       const querySnapshot = await getDocs(eventsQuery);
       const fetchedEvents: EventData[] = [];
@@ -60,10 +59,10 @@ export default function EventsPage() {
       });
       setEvents(fetchedEvents);
     } catch (e: any) {
-      console.error("Error fetching events:", e);
-      let detailedError = "Failed to load active events. Please try again.";
+      console.error("Error fetching archived events:", e);
+       let detailedError = "Failed to load archived events. Please try again.";
       if (e.code === 5 || (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
-        detailedError = "A Firestore index is required to load active events. Please check the browser's console for a link to create it.";
+        detailedError = "A Firestore index is required to load archived events. Please check the browser's console for a link to create it.";
       }
       setError(detailedError);
       toast({
@@ -78,16 +77,14 @@ export default function EventsPage() {
   }, [toast]);
 
   useEffect(() => {
-    updateStaleEventsAction()
-        .catch(err => console.error("Background stale events check failed:", err.message))
-        .finally(() => fetchEvents());
-  }, [fetchEvents]);
+    fetchArchivedEvents();
+  }, [fetchArchivedEvents]);
 
   if (isLoadingEvents) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Loading active events...</p>
+        <p className="text-muted-foreground">Loading archived events...</p>
       </div>
     );
   }
@@ -96,9 +93,9 @@ export default function EventsPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Error Loading Events</h2>
+        <h2 className="text-xl font-semibold mb-2">Error Loading Archive</h2>
         <p className="text-muted-foreground px-4">{error}</p>
-        <Button onClick={fetchEvents} className="mt-4">Try Again</Button>
+        <Button onClick={fetchArchivedEvents} className="mt-4">Try Again</Button>
       </div>
     );
   }
@@ -106,21 +103,14 @@ export default function EventsPage() {
   return (
     <>
       <PageHeader
-        title="Active Events"
-        description="View upcoming events or create new ones for carpooling."
+        title="Archived Events"
+        description="View completed and cancelled events."
         actions={
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/events/archive">
-                <Archive className="mr-2 h-4 w-4" /> View Archived Events
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/events/create">
-                <PlusCircle className="mr-2 h-4 w-4" /> Create New Event
-              </Link>
-            </Button>
-          </div>
+          <Button variant="outline" asChild>
+            <Link href="/events">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Active Events
+            </Link>
+          </Button>
         }
       />
 
@@ -129,14 +119,14 @@ export default function EventsPage() {
           {events.map((event) => {
             const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
             return (
-            <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
+            <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow opacity-80 hover:opacity-100">
                <CardHeader className="relative h-40">
                  <Image 
-                    src={"https://placehold.co/400x200.png?text=Event"} // Replace with event.imageUrl if available
+                    src={"https://placehold.co/400x200.png?text=Event+Archive"}
                     alt={event.name} 
                     fill 
                     className="rounded-t-lg object-cover" 
-                    data-ai-hint={"event image"} // Replace with event.dataAiHint if available
+                    data-ai-hint={"archive document"}
                 />
                  <StatusBadge status={event.status} />
               </CardHeader>
@@ -152,9 +142,9 @@ export default function EventsPage() {
                 <Badge variant="outline" className="text-xs capitalize">{event.eventType}</Badge>
               </CardContent>
               <CardFooter className="border-t pt-4">
-                <Button variant="default" className="w-full" asChild>
+                <Button variant="secondary" className="w-full" asChild>
                   <Link href={`/events/${event.id}/rydz`}>
-                    <Car className="mr-2 h-4 w-4" /> View/Request Rydz
+                    <Car className="mr-2 h-4 w-4" /> View Rydz
                   </Link>
                 </Button>
               </CardFooter>
@@ -164,16 +154,16 @@ export default function EventsPage() {
       ) : (
         <Card className="text-center py-12 shadow-md">
            <CardHeader>
-            <CalendarDays className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Active Events Found</CardTitle>
+            <Archive className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <CardTitle className="font-headline text-2xl">No Archived Events Found</CardTitle>
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are no active events listed currently. Try creating one!
+              There are no completed or cancelled events yet.
             </CardDescription>
-            <Button asChild>
-              <Link href="/events/create">
-                <PlusCircle className="mr-2 h-4 w-4" /> Create an Event
+            <Button variant="outline" asChild>
+              <Link href="/events">
+                <ArrowLeft className="mr-2 h-4 w-4" /> View Active Events
               </Link>
             </Button>
           </CardContent>
