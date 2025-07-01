@@ -5,12 +5,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, CalendarDays, MapPin, Car, Loader2, AlertTriangle } from "lucide-react";
+import { PlusCircle, CalendarDays, MapPin, Car, Loader2, AlertTriangle, Archive } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { EventData, EventStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -39,7 +38,6 @@ const StatusBadge = ({ status }: { status?: EventStatus }) => {
 
 
 export default function EventsPage() {
-  const { user: authUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
   
   const [events, setEvents] = useState<EventData[]>([]);
@@ -50,11 +48,12 @@ export default function EventsPage() {
     setIsLoadingEvents(true);
     setError(null);
     try {
-      await updateStaleEventsAction().catch(err => console.error("Background stale events check failed:", err.message));
+      // Run the cleanup job in the background. We don't need to wait for it.
+      updateStaleEventsAction().catch(err => console.error("Background stale events check failed:", err.message));
 
-      // Reverted: Query now fetches all events, ordered by date
       const eventsQuery = query(
         collection(db, "events"), 
+        where("status", "==", EventStatus.ACTIVE), 
         orderBy("eventTimestamp", "asc")
       );
       const querySnapshot = await getDocs(eventsQuery);
@@ -65,9 +64,9 @@ export default function EventsPage() {
       setEvents(fetchedEvents);
     } catch (e: any) {
       console.error("Error fetching events:", e);
-      let detailedError = "Failed to load events. Please try again.";
+      let detailedError = "Failed to load active events. Please try again.";
       if (e.code === 5 || (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
-        detailedError = "A Firestore index is required to load events. Please check the browser's console for a link to create it.";
+        detailedError = "A Firestore index is required to load active events. Please check the browser's console for a link to create it.";
       }
       setError(detailedError);
       toast({
@@ -82,18 +81,14 @@ export default function EventsPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (!authLoading) { 
-      fetchEvents();
-    }
-  }, [authLoading, fetchEvents]);
+    fetchEvents();
+  }, [fetchEvents]);
 
-  const isLoading = authLoading || isLoadingEvents;
-
-  if (isLoading) {
+  if (isLoadingEvents) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Loading events...</p>
+        <p className="text-muted-foreground">Loading active events...</p>
       </div>
     );
   }
@@ -112,14 +107,21 @@ export default function EventsPage() {
   return (
     <>
       <PageHeader
-        title="Events"
-        description="View all upcoming and past events, or create new ones."
+        title="Active Events"
+        description="View upcoming events or create new ones for carpooling."
         actions={
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/events/archive">
+                <Archive className="mr-2 h-4 w-4" /> View Archived Events
+              </Link>
+            </Button>
             <Button asChild>
               <Link href="/events/create">
                 <PlusCircle className="mr-2 h-4 w-4" /> Create New Event
               </Link>
             </Button>
+          </div>
         }
       />
 
@@ -127,9 +129,8 @@ export default function EventsPage() {
          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => {
             const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
-            const isPastEvent = eventDate < new Date() && event.status !== EventStatus.ACTIVE;
             return (
-            <Card key={event.id} className={cn("flex flex-col shadow-lg hover:shadow-xl transition-shadow", isPastEvent && "opacity-60")}>
+            <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">
                  <Image 
                     src={"https://placehold.co/400x200.png?text=Event"}
@@ -165,11 +166,11 @@ export default function EventsPage() {
         <Card className="text-center py-12 shadow-md">
            <CardHeader>
             <CalendarDays className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Events Found</CardTitle>
+            <CardTitle className="font-headline text-2xl">No Active Events Found</CardTitle>
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are no events listed currently. Try creating one!
+              There are no active events listed currently. Try creating one!
             </CardDescription>
             <Button asChild>
               <Link href="/events/create">

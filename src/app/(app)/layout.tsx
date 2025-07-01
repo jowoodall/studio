@@ -9,55 +9,54 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Loader2 } from 'lucide-react';
 
-function AppLayoutContent({ children }: { children: React.ReactNode }) {
+function ProtectedContent({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // This effect runs on the client to handle redirection if the user is not authenticated.
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
   }, [user, loading, router]);
 
-  // While loading or if no user (and about to redirect), show a full-page loader.
-  // This prevents flashing content before the redirect happens.
   if (loading || !user) {
+    // This loader is inside the main content area, not replacing the whole page.
+    // This maintains the overall HTML structure and prevents hydration errors.
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
+      <div className="flex h-full w-full items-center justify-center p-8 min-h-[calc(100vh-200px)]">
         <div className="flex flex-col items-center gap-2">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">Loading User Data...</p>
         </div>
       </div>
     );
   }
 
-  // Once authenticated, render the full application shell and content.
-  return (
-    <SidebarProvider defaultOpen={true}>
-      <AppSidebar />
-      <SidebarInset>
-        <div className="flex flex-col min-h-screen">
-          <AppHeader />
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
-            {children}
-          </main>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
+  return <>{children}</>;
 }
 
-// The main AppLayout component wraps everything in the AuthProvider.
+
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // This structure is now STATIC. It always renders, on server and client.
   return (
     <AuthProvider>
-      <AppLayoutContent>{children}</AppLayoutContent>
+      <SidebarProvider defaultOpen={true}>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col min-h-screen">
+            <AppHeader />
+            <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
+              <ProtectedContent>
+                {children}
+              </ProtectedContent>
+            </main>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     </AuthProvider>
   );
 }
