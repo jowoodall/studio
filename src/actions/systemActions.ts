@@ -30,7 +30,6 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
 
     if (snapshot.empty) {
       const message = "No stale rydz found to update.";
-      console.log(`[Action: updateStaleRydzAction] ${message}`);
       return { success: true, message, updatedCount: 0 };
     }
 
@@ -52,7 +51,6 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
       }
 
       if (newStatus) {
-        console.log(`[Action: updateStaleRydzAction] Updating ryd ${doc.id} from ${ryd.status} to ${newStatus}`);
         batch.update(rydRef, { status: newStatus, updatedAt: FieldValue.serverTimestamp() });
         updatedCount++;
       }
@@ -63,7 +61,6 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     }
 
     const successMessage = `Successfully processed stale rydz check. Updated ${updatedCount} rydz.`;
-    console.log(`[Action: updateStaleRydzAction] ${successMessage}`);
     return { success: true, message: successMessage, updatedCount };
 
   } catch (error: any) {
@@ -94,10 +91,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
-  // Diagnostic logging to help debug timestamp issues
-  console.log(`[Action: updateStaleEventsAction] Server's current time (UTC): ${now.toDate().toISOString()}`);
-  console.log(`[Action: updateStaleEventsAction] Querying for events with timestamp < ${fortyEightHoursAgo.toDate().toISOString()}`);
-
   try {
     // Fetch all events that are older than 48 hours.
     // We will filter by status in the code, as Firestore's `not-in`
@@ -109,7 +102,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
 
     if (snapshot.empty) {
       const message = "No potentially stale events found to check.";
-      console.log(`[Action: updateStaleEventsAction] ${message}`);
       return { success: true, message, updatedCount: 0 };
     }
 
@@ -121,7 +113,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
       // Filter here: only update if status is not already completed or cancelled.
       // This correctly handles events where `status` is undefined or 'active'.
       if (event.status !== EventStatus.COMPLETED && event.status !== EventStatus.CANCELLED) {
-        console.log(`[Action: updateStaleEventsAction] Marking event ${doc.id} (Status: ${event.status || 'undefined'}) as completed.`);
         batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
         updatedCount++;
       }
@@ -132,7 +123,6 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
     }
 
     const successMessage = `Successfully processed stale events check. Found ${snapshot.size} candidates and updated ${updatedCount} events to completed.`;
-    console.log(`[Action: updateStaleEventsAction] ${successMessage}`);
     return { success: true, message: successMessage, updatedCount };
 
   } catch (error: any) {
