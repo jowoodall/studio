@@ -6,16 +6,17 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan } from "lucide-react";
+import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan, PlusCircle } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { type UserProfileData, type ActiveRyd, UserRole, PassengerManifestStatus } from '@/types';
-import { manageDriverApprovalAction, type ManageDriverApprovalInput, updateDriverListAction } from '@/actions/parentActions';
+import { manageDriverApprovalAction, type ManageDriverApprovalInput, updateDriverListAction, addApprovedDriverByEmailAction } from '@/actions/parentActions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 
 interface ApprovalRequest {
   activeRydId: string;
@@ -44,6 +45,9 @@ export default function ParentApprovalsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
+
+  const [addDriverEmail, setAddDriverEmail] = useState("");
+  const [isAddingDriver, setIsAddingDriver] = useState(false);
 
   const fetchAllData = useCallback(async () => {
     if (!authUser || !userProfile || userProfile.role !== UserRole.PARENT) {
@@ -173,6 +177,32 @@ export default function ParentApprovalsPage() {
         setIsProcessing(prev => ({ ...prev, [key]: false }));
     }
   };
+
+  const handleAddApprovedDriver = async () => {
+    if (!authUser || !addDriverEmail.trim()) {
+        toast({ title: "Error", description: "Email is required.", variant: "destructive" });
+        return;
+    }
+    setIsAddingDriver(true);
+    try {
+        const result = await addApprovedDriverByEmailAction({
+            parentUserId: authUser.uid,
+            driverEmail: addDriverEmail
+        });
+        if (result.success) {
+            toast({ title: "Driver Added", description: result.message });
+            setAddDriverEmail("");
+            fetchAllData();
+        } else {
+            toast({ title: "Failed to Add Driver", description: result.message, variant: "destructive" });
+        }
+    } catch (e: any) {
+        toast({ title: "Error", description: `An unexpected error occurred: ${e.message}`, variant: "destructive" });
+    } finally {
+        setIsAddingDriver(false);
+    }
+  };
+
 
   const renderDriverList = (drivers: UserDisplayInfo[], listType: 'approved' | 'declined') => {
     const EmptyStateIcon = listType === 'approved' ? ShieldCheck : ShieldBan;
@@ -318,6 +348,31 @@ export default function ParentApprovalsPage() {
 
       <Separator className="my-8" />
       <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Driver Lists</h2>
+
+      <Card className="shadow-lg mb-6">
+        <CardHeader>
+          <CardTitle>Add an Approved Driver</CardTitle>
+          <CardDescription>
+            Proactively approve a driver you trust by entering their email address. They will be added to your approved list.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-2 items-start">
+              <Input
+                type="email"
+                placeholder="driver@example.com"
+                value={addDriverEmail}
+                onChange={(e) => setAddDriverEmail(e.target.value)}
+                className="flex-grow"
+                disabled={isAddingDriver}
+              />
+              <Button onClick={handleAddApprovedDriver} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
+                {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                Add Approved Driver
+              </Button>
+          </div>
+        </CardContent>
+      </Card>
       
        <Tabs defaultValue="approved" className="w-full">
         <TabsList className="grid w-full grid-cols-2">

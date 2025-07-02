@@ -153,3 +153,52 @@ export async function updateDriverListAction(
         return handleActionError(error, 'updateDriverListAction');
     }
 }
+
+interface AddApprovedDriverByEmailInput {
+    parentUserId: string;
+    driverEmail: string;
+}
+
+export async function addApprovedDriverByEmailAction(
+    input: AddApprovedDriverByEmailInput
+): Promise<{ success: boolean; message: string }> {
+    const { parentUserId, driverEmail } = input;
+
+    if (!parentUserId || !driverEmail) {
+        return { success: false, message: "Parent ID and driver email are required." };
+    }
+    
+    try {
+        const usersRef = db.collection('users');
+        const q = usersRef.where("email", "==", driverEmail.trim().toLowerCase());
+        const querySnapshot = await q.get();
+
+        if (querySnapshot.empty) {
+            return { success: false, message: `No user found with the email: ${driverEmail}` };
+        }
+
+        const driverDoc = querySnapshot.docs[0];
+        const driverId = driverDoc.id;
+        const driverData = driverDoc.data() as UserProfileData;
+
+        if (driverId === parentUserId) {
+            return { success: false, message: "You cannot add yourself as an approved driver." };
+        }
+
+        const parentDocRef = db.collection('users').doc(parentUserId);
+
+        const batch = db.batch();
+        
+        batch.update(parentDocRef, {
+            approvedDriverIds: FieldValue.arrayUnion(driverId),
+            declinedDriverIds: FieldValue.arrayRemove(driverId)
+        });
+        
+        await batch.commit();
+
+        return { success: true, message: `${driverData.fullName || 'Driver'} has been added to your approved drivers list.` };
+
+    } catch (error: any) {
+        return handleActionError(error, 'addApprovedDriverByEmailAction');
+    }
+}
