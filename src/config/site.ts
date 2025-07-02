@@ -119,12 +119,6 @@ export const userAccountMenu: NavItem[] = [
     roles: ['parent'],
   },
   {
-    title: 'Manage Drivers',
-    href: '/parent/manage-drivers',
-    icon: UserCog,
-    roles: ['parent'],
-  },
-  {
     title: 'My Locations',
     href: '/profile/locations',
     icon: Home, // Using Home icon for locations, MapPin is also a good choice
