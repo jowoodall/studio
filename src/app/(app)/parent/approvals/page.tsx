@@ -24,7 +24,7 @@ interface ApprovalRequest {
   rydDetails: { eventName: string; destination: string; };
 }
 
-interface DriverInfo {
+interface UserDisplayInfo {
   uid: string;
   fullName: string;
   avatarUrl?: string;
@@ -37,8 +37,9 @@ export default function ParentApprovalsPage() {
   const { toast } = useToast();
 
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [approvedDrivers, setApprovedDrivers] = useState<DriverInfo[]>([]);
-  const [declinedDrivers, setDeclinedDrivers] = useState<DriverInfo[]>([]);
+  const [approvedDrivers, setApprovedDrivers] = useState<UserDisplayInfo[]>([]);
+  const [declinedDrivers, setDeclinedDrivers] = useState<UserDisplayInfo[]>([]);
+  const [managedStudents, setManagedStudents] = useState<UserDisplayInfo[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,9 +86,9 @@ export default function ParentApprovalsPage() {
       }
       setPendingApprovals(fetchedApprovals);
 
-      // Fetch Driver Lists
-      const { approvedDriverIds = [], declinedDriverIds = [] } = userProfile;
-      const fetchProfiles = async (ids: string[]): Promise<DriverInfo[]> => {
+      // Fetch Driver and Student Lists
+      const { approvedDriverIds = [], declinedDriverIds = [], managedStudentIds = [] } = userProfile;
+      const fetchProfiles = async (ids: string[]): Promise<UserDisplayInfo[]> => {
         if (ids.length === 0) return [];
         const profilePromises = ids.map(async (id) => {
           try {
@@ -99,11 +100,16 @@ export default function ParentApprovalsPage() {
             } return null;
           } catch (e) { console.error(`Failed to fetch profile for ID ${id}`, e); return null; }
         });
-        return (await Promise.all(profilePromises)).filter(Boolean) as DriverInfo[];
+        return (await Promise.all(profilePromises)).filter(Boolean) as UserDisplayInfo[];
       };
-      const [approvedList, declinedList] = await Promise.all([fetchProfiles(approvedDriverIds), fetchProfiles(declinedDriverIds)]);
+      const [approvedList, declinedList, studentList] = await Promise.all([
+        fetchProfiles(approvedDriverIds), 
+        fetchProfiles(declinedDriverIds),
+        fetchProfiles(managedStudentIds)
+      ]);
       setApprovedDrivers(approvedList);
       setDeclinedDrivers(declinedList);
+      setManagedStudents(studentList);
 
     } catch (e: any) {
       console.error("Error fetching approvals/lists:", e);
@@ -168,7 +174,7 @@ export default function ParentApprovalsPage() {
     }
   };
 
-  const renderDriverList = (drivers: DriverInfo[], listType: 'approved' | 'declined') => {
+  const renderDriverList = (drivers: UserDisplayInfo[], listType: 'approved' | 'declined') => {
     const EmptyStateIcon = listType === 'approved' ? ShieldCheck : ShieldBan;
     const emptyTitle = listType === 'approved' ? "No Approved Drivers" : "No Declined Drivers";
     const emptyDescription = listType === 'approved' 
@@ -190,7 +196,8 @@ export default function ParentApprovalsPage() {
               const key = `${listType}-${driver.uid}`;
               const isLoadingAction = isProcessing[key];
               return (
-                  <div key={driver.uid} className="flex items-center justify-between p-3 border rounded-lg shadow-sm">
+                  <div key={driver.uid} className="p-3 border rounded-lg shadow-sm">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                           <Avatar className="h-12 w-12">
                               <AvatarImage src={driver.avatarUrl} alt={driver.fullName} data-ai-hint={driver.dataAiHint} />
@@ -204,6 +211,20 @@ export default function ParentApprovalsPage() {
                       <Button variant="destructive" size="sm" onClick={() => handleRemoveFromList(driver.uid, listType)} disabled={isLoadingAction}>
                           {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Remove
                       </Button>
+                    </div>
+                     {listType === 'approved' && managedStudents.length > 0 && (
+                        <div className="mt-3 pt-3 border-t">
+                            <h5 className="text-xs font-semibold text-muted-foreground">Approved for all managed students:</h5>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                                {managedStudents.map(student => (
+                                    <div key={student.uid} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <UserCircle className="h-3 w-3" />
+                                        <span>{student.fullName}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                   </div>
               );
           })}
