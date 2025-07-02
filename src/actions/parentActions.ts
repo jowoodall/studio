@@ -75,7 +75,11 @@ export async function manageDriverApprovalAction(
       switch (decision) {
         case 'reject':
           newStatus = PassengerManifestStatus.REJECTED_BY_PARENT;
-          message = `You have rejected this driver for this ryd.`;
+          transaction.update(parentDocRef, {
+            declinedDriverIds: FieldValue.arrayUnion(driverId),
+            approvedDriverIds: FieldValue.arrayRemove(driverId) // Also remove from approved if they were there
+          });
+          message = `You have rejected this driver for this ryd and added them to your declined list.`;
           break;
         case 'approve_once':
           newStatus = PassengerManifestStatus.PENDING_DRIVER_APPROVAL; // Now goes to driver
@@ -83,9 +87,9 @@ export async function manageDriverApprovalAction(
           break;
         case 'approve_permanently':
           newStatus = PassengerManifestStatus.PENDING_DRIVER_APPROVAL;
-          // Add driver to parent's approved list
           transaction.update(parentDocRef, {
-            approvedDriverIds: FieldValue.arrayUnion(driverId)
+            approvedDriverIds: FieldValue.arrayUnion(driverId),
+            declinedDriverIds: FieldValue.arrayRemove(driverId) // Remove from declined if they were there
           });
           message = `Driver approved for this ryd and added to your permanent approved list.`;
           break;
@@ -111,4 +115,41 @@ export async function manageDriverApprovalAction(
   } catch (error: any) {
     return handleActionError(error, "manageDriverApprovalAction");
   }
+}
+
+
+interface UpdateDriverListInput {
+    parentUserId: string;
+    driverId: string;
+    list: 'approved' | 'declined';
+    action: 'add' | 'remove';
+}
+
+export async function updateDriverListAction(
+    input: UpdateDriverListInput
+): Promise<{ success: boolean; message: string }> {
+    const { parentUserId, driverId, list, action } = input;
+
+    if (!parentUserId || !driverId || !list || !action) {
+        return { success: false, message: "Missing required parameters." };
+    }
+
+    const parentDocRef = db.collection('users').doc(parentUserId);
+
+    try {
+        const fieldToUpdate = list === 'approved' ? 'approvedDriverIds' : 'declinedDriverIds';
+        const operation = action === 'add' ? FieldValue.arrayUnion(driverId) : FieldValue.arrayRemove(driverId);
+        
+        await parentDocRef.update({
+            [fieldToUpdate]: operation
+        });
+        
+        const actionVerb = action === 'add' ? 'added to' : 'removed from';
+        const listName = list === 'approved' ? 'approved' : 'declined';
+
+        return { success: true, message: `Driver successfully ${actionVerb} the ${listName} list.` };
+
+    } catch (error: any) {
+        return handleActionError(error, 'updateDriverListAction');
+    }
 }

@@ -17,6 +17,7 @@ import {
   ClipboardList, 
   Home, // Added for My Locations
   Terminal, // Added for Test Logging
+  UserCog, // For Manage Drivers
 } from 'lucide-react';
 import type { NavItem } from '@/types';
 
@@ -115,6 +116,12 @@ export const userAccountMenu: NavItem[] = [
     title: 'Driver Approvals',
     href: '/parent/approvals',
     icon: ShieldCheck,
+    roles: ['parent'],
+  },
+  {
+    title: 'Manage Drivers',
+    href: '/parent/manage-drivers',
+    icon: UserCog,
     roles: ['parent'],
   },
   {

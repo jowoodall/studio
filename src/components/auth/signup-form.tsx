@@ -103,6 +103,7 @@ export function SignupForm() {
           managedStudentIds: [],
           associatedParentIds: [],
           approvedDriverIds: [],
+          declinedDriverIds: [], // Initialize new field
           joinedGroupIds: [], // Initialize joinedGroupIds as empty array
         };
         

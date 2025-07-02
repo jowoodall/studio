@@ -65,6 +65,7 @@ export interface UserProfileData {
   managedStudentIds?: string[];
   associatedParentIds?: string[];
   approvedDriverIds?: string[];
+  declinedDriverIds?: string[]; // New field
   joinedGroupIds?: string[]; 
   createdAt?: Timestamp;
 }
