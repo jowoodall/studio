@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 import { updateStaleRydzAction } from '@/actions/systemActions';
+import { Separator } from '@/components/ui/separator';
 
 interface DisplayRydData extends Partial<RydData> {
   id: string;
@@ -53,7 +54,8 @@ export default function UpcomingRydzPage() {
   const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const { toast } = useToast();
 
-  const [upcomingRydz, setUpcomingRydz] = useState<DisplayRydData[]>([]);
+  const [drivingRydz, setDrivingRydz] = useState<DisplayRydData[]>([]);
+  const [passengerRydz, setPassengerRydz] = useState<DisplayRydData[]>([]);
   const [isLoadingRydz, setIsLoadingRydz] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({});
@@ -62,7 +64,8 @@ export default function UpcomingRydzPage() {
     if (!authUser || !authUserProfile) {
       if (!authLoading && !isLoadingProfile) {
         setIsLoadingRydz(false);
-        setUpcomingRydz([]);
+        setDrivingRydz([]);
+        setPassengerRydz([]);
       }
       return;
     }
@@ -100,7 +103,7 @@ export default function UpcomingRydzPage() {
         getDocs(activeRydzAsDriverQuery)
       ]);
 
-      // --- Process Ryd Requests ---
+      // --- Process Ryd Requests (Passenger) ---
       const rydzMap = new Map<string, RydData>();
       requestsByUserSnap.forEach((doc) => {
         rydzMap.set(doc.id, { id: doc.id, ...doc.data() } as RydData);
@@ -109,7 +112,7 @@ export default function UpcomingRydzPage() {
         rydzMap.set(doc.id, { id: doc.id, ...doc.data() } as RydData);
       });
 
-      const fetchedRydzPromises = Array.from(rydzMap.values()).map(async (ryd): Promise<DisplayRydData | null> => {
+      const fetchedPassengerRydzPromises = Array.from(rydzMap.values()).map(async (ryd): Promise<DisplayRydData | null> => {
         let driverProfile: UserProfileData | undefined = undefined;
         if (ryd.driverId) {
           try {
@@ -125,12 +128,11 @@ export default function UpcomingRydzPage() {
         return { ...ryd, driverProfile, isDriver: false };
       });
       
-      const resolvedRydRequests = (await Promise.all(fetchedRydzPromises)).filter(Boolean) as DisplayRydData[];
+      const resolvedPassengerRydz = (await Promise.all(fetchedPassengerRydzPromises)).filter(Boolean) as DisplayRydData[];
 
-      // --- Process Active Rydz (as Driver) ---
+      // --- Process Active Rydz (Driver) ---
       const activeRydzAsDriver = activeRydzAsDriverSnap.docs.map(docSnap => {
         const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        // Map ActiveRyd to DisplayRydData shape
         return {
             id: activeRyd.id,
             rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
@@ -144,15 +146,20 @@ export default function UpcomingRydzPage() {
         } as DisplayRydData;
       });
 
-      // --- Combine and Sort ---
-      const combinedRydz = [...resolvedRydRequests, ...activeRydzAsDriver];
-      combinedRydz.sort((a, b) => {
+      // --- Sort and Set State ---
+      resolvedPassengerRydz.sort((a, b) => {
+        const dateA = a.rydTimestamp ? (a.rydTimestamp as Timestamp).toDate() : new Date(0);
+        const dateB = b.rydTimestamp ? (b.rydTimestamp as Timestamp).toDate() : new Date(0);
+        return dateA.getTime() - dateB.getTime();
+      });
+      activeRydzAsDriver.sort((a, b) => {
         const dateA = a.rydTimestamp ? (a.rydTimestamp as Timestamp).toDate() : new Date(0);
         const dateB = b.rydTimestamp ? (b.rydTimestamp as Timestamp).toDate() : new Date(0);
         return dateA.getTime() - dateB.getTime();
       });
 
-      setUpcomingRydz(combinedRydz);
+      setPassengerRydz(resolvedPassengerRydz);
+      setDrivingRydz(activeRydzAsDriver);
 
     } catch (e: any) {
       console.error("Error fetching upcoming rydz:", e);
@@ -171,8 +178,6 @@ export default function UpcomingRydzPage() {
 
   useEffect(() => {
     if (!authLoading && !isLoadingProfile) {
-      // Run the cleanup job. We don't need to await it.
-      // The subsequent fetch will get the latest data.
       updateStaleRydzAction().catch(error => {
         console.error("Background stale rydz check failed:", error);
       });
@@ -193,7 +198,7 @@ export default function UpcomingRydzPage() {
       });
       if (result.success) {
         toast({ title: "Ryd Request Cancelled", description: result.message });
-        fetchUpcomingRydz(); // Re-fetch the list
+        fetchUpcomingRydz();
       } else {
         toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
       }
@@ -205,7 +210,6 @@ export default function UpcomingRydzPage() {
   };
 
   const isLoadingInitial = authLoading || isLoadingProfile;
-
 
   if (isLoadingInitial) {
     return (
@@ -247,6 +251,75 @@ export default function UpcomingRydzPage() {
     );
   }
 
+  const renderRydCard = (ryd: DisplayRydData) => {
+    const rydDate = (ryd.rydTimestamp as Timestamp)?.toDate() || new Date();
+    const driverName = ryd.driverProfile?.fullName || "Pending";
+    const trackable = !!ryd.assignedActiveRydId;
+    const isDriver = !!ryd.isDriver;
+    const canCancelRequest = !isDriver && (ryd.status === 'requested' || ryd.status === 'searching_driver') && ryd.requestedBy === authUser?.uid;
+    const isCancellingThisRyd = isCancellingRyd[ryd.id];
+
+    return (
+      <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
+        <CardHeader className="relative h-40">
+          <Image
+            src={"https://placehold.co/400x200.png?text=Ryd"}
+            alt={ryd.eventName || ryd.destination}
+            fill
+            className="rounded-t-lg object-cover"
+            data-ai-hint={"map car journey"}
+          />
+          <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm capitalize">
+              {ryd.status.replace(/_/g, ' ')}
+          </div>
+        </CardHeader>
+        <CardContent className="flex-grow pt-4">
+          <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
+          <div className="text-sm text-muted-foreground space-y-1 mb-2">
+            <div className="flex items-center">
+              <CalendarDays className="mr-1.5 h-4 w-4" /> {rydDate ? format(rydDate, "PPP 'at' p") : "Date TBD"}
+            </div>
+            <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> To: {ryd.destination}</div>
+            <div className="flex items-center">
+              <User className="mr-1.5 h-4 w-4" />
+              Driver: {isDriver ? (
+                <span className="ml-1 font-medium text-primary">You</span>
+              ) : ryd.driverProfile ? (
+                <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
+              ) : (
+                <span className="ml-1">{driverName}</span>
+              )}
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="border-t pt-4 flex flex-col gap-2">
+          <Button variant="default" className="w-full" asChild={trackable} disabled={!trackable}>
+            {trackable ? (
+              <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
+                <Eye className="mr-2 h-4 w-4" />
+                {isDriver ? 'Manage My Ryd' : 'View Details / Track'}
+              </Link>
+            ) : (
+              <span>
+                  <Eye className="mr-2 h-4 w-4" /> Awaiting Driver / Details
+              </span>
+            )}
+          </Button>
+          {canCancelRequest && (
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => handleCancelRydRequest(ryd.id)}
+              disabled={isCancellingThisRyd}
+            >
+              {isCancellingThisRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+              Cancel My Request
+            </Button>
+          )}
+        </CardFooter>
+      </Card>
+    );
+  }
 
   return (
     <>
@@ -254,97 +327,45 @@ export default function UpcomingRydzPage() {
         title="Upcoming Rydz"
         description="Here are your scheduled and requested rydz."
       />
+      
+      <section>
+        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Rydz I'm Driving</h2>
+        {drivingRydz.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {drivingRydz.map(renderRydCard)}
+          </div>
+        ) : (
+          <Card className="text-center py-12 shadow-md">
+            <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
+            <CardContent>
+              <CardTitle className="font-headline text-xl">No Driving Commitments</CardTitle>
+              <CardDescription className="mt-2">You are not scheduled to drive for any upcoming rydz.</CardDescription>
+            </CardContent>
+          </Card>
+        )}
+      </section>
 
-      {upcomingRydz.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {upcomingRydz.map((ryd) => {
-            const rydDate = (ryd.rydTimestamp as Timestamp)?.toDate() || new Date();
-            const driverName = ryd.driverProfile?.fullName || "Pending";
-            const trackable = !!ryd.assignedActiveRydId;
-            const isDriver = !!ryd.isDriver;
-            
-            const canCancelRequest = !isDriver && (ryd.status === 'requested' || ryd.status === 'searching_driver') && ryd.requestedBy === authUser?.uid;
-            const isCancellingThisRyd = isCancellingRyd[ryd.id];
-
-            return (
-            <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-              <CardHeader className="relative h-40">
-                <Image
-                  src={"https://placehold.co/400x200.png?text=Ryd"}
-                  alt={ryd.eventName || ryd.destination}
-                  fill
-                  className="rounded-t-lg object-cover"
-                  data-ai-hint={"map car journey"}
-                />
-                 <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm capitalize">
-                    {ryd.status.replace(/_/g, ' ')}
-                 </div>
-              </CardHeader>
-              <CardContent className="flex-grow pt-4">
-                <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
-                <div className="text-sm text-muted-foreground space-y-1 mb-2">
-                  <div className="flex items-center">
-                    <CalendarDays className="mr-1.5 h-4 w-4" /> {rydDate ? format(rydDate, "PPP 'at' p") : "Date TBD"}
-                  </div>
-                  <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> To: {ryd.destination}</div>
-                  <div className="flex items-center">
-                    <User className="mr-1.5 h-4 w-4" />
-                    Driver: {isDriver ? (
-                      <span className="ml-1 font-medium text-primary">You</span>
-                    ) : ryd.driverProfile ? (
-                      <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
-                    ) : (
-                      <span className="ml-1">{driverName}</span>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-              <CardFooter className="border-t pt-4 flex flex-col gap-2">
-                <Button variant="default" className="w-full" asChild={trackable} disabled={!trackable}>
-                  {trackable ? (
-                    <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
-                      <Eye className="mr-2 h-4 w-4" />
-                      {isDriver ? 'Manage My Ryd' : 'View Details / Track'}
-                    </Link>
-                  ) : (
-                    <span>
-                       <Eye className="mr-2 h-4 w-4" /> Awaiting Driver / Details
-                    </span>
-                  )}
-                </Button>
-                {canCancelRequest && (
-                  <Button
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => handleCancelRydRequest(ryd.id)}
-                    disabled={isCancellingThisRyd}
-                  >
-                    {isCancellingThisRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
-                    Cancel My Request
-                  </Button>
-                )}
-              </CardFooter>
-            </Card>
-          )})}
-        </div>
-      ) : (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Upcoming Rydz</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              You have no rydz scheduled or actively requested. Request one to get started!
-            </CardDescription>
-            <Button asChild>
-              <Link href="/rydz/request">
-                Request a Ryd
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      <Separator className="my-8" />
+      
+      <section>
+        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Upcoming Rydz (as Passenger)</h2>
+        {passengerRydz.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {passengerRydz.map(renderRydCard)}
+          </div>
+        ) : (
+          <Card className="text-center py-12 shadow-md">
+            <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
+            <CardContent>
+              <CardTitle className="font-headline text-xl">No Upcoming Rydz</CardTitle>
+              <CardDescription className="mt-2 mb-6">You are not a passenger in any upcoming rydz.</CardDescription>
+              <Button asChild>
+                <Link href="/rydz/request">Request a Ryd</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </>
   );
 }
