@@ -118,13 +118,14 @@ export async function requestToJoinActiveRydAction(
       let finalMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
 
       if (passengerProfile.role === RoleEnum.STUDENT && passengerProfile.associatedParentIds && passengerProfile.associatedParentIds.length > 0) {
-        const parentId = passengerProfile.associatedParentIds[0];
+        const parentId = passengerProfile.associatedParentIds[0]; // Assuming one parent for now
         const parentDocRef = db.collection('users').doc(parentId);
         const parentDocSnap = await transaction.get(parentDocRef);
 
         if (parentDocSnap.exists) {
           const parentProfile = parentDocSnap.data() as UserProfileData;
-          const isDriverApproved = parentProfile.approvedDriverIds?.includes(activeRydData.driverId);
+          const isDriverApproved = parentProfile.approvedDrivers?.[activeRydData.driverId]?.includes(passengerUserId) ?? false;
+          
           if (!isDriverApproved) {
             finalStatus = PassengerManifestStatus.PENDING_PARENT_APPROVAL;
             approvalRequired = true;
@@ -746,4 +747,3 @@ export async function revertPassengerPickupAction(
     return { success, message: message || "An unexpected server error occurred." };
   }
 }
-    

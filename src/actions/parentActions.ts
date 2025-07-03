@@ -71,14 +71,14 @@ export async function manageDriverApprovalAction(
       const updatedManifest = [...activeRydData.passengerManifest];
       let newStatus: PassengerManifestStatus;
       let message = "";
+      let parentUpdatePayload: any = {};
 
       switch (decision) {
         case 'reject':
           newStatus = PassengerManifestStatus.REJECTED_BY_PARENT;
-          transaction.update(parentDocRef, {
-            declinedDriverIds: FieldValue.arrayUnion(driverId),
-            approvedDriverIds: FieldValue.arrayRemove(driverId) // Also remove from approved if they were there
-          });
+          parentUpdatePayload.declinedDriverIds = FieldValue.arrayUnion(driverId);
+          // Also remove from approved map if they were there
+          parentUpdatePayload[`approvedDrivers.${driverId}`] = FieldValue.delete();
           message = `You have rejected this driver for this ryd and added them to your declined list.`;
           break;
         case 'approve_once':
@@ -87,25 +87,28 @@ export async function manageDriverApprovalAction(
           break;
         case 'approve_permanently':
           newStatus = PassengerManifestStatus.PENDING_DRIVER_APPROVAL;
-          transaction.update(parentDocRef, {
-            approvedDriverIds: FieldValue.arrayUnion(driverId),
-            declinedDriverIds: FieldValue.arrayRemove(driverId) // Remove from declined if they were there
-          });
-          message = `Driver approved for this ryd and added to your permanent approved list.`;
+          // Add student to the driver's approval list within the map
+          parentUpdatePayload[`approvedDrivers.${driverId}`] = FieldValue.arrayUnion(studentUserId);
+          parentUpdatePayload.declinedDriverIds = FieldValue.arrayRemove(driverId);
+          message = `Driver approved for this ryd and added to your approved list for this student.`;
           break;
         default:
           throw new Error("Invalid approval decision.");
       }
       
+      if (Object.keys(parentUpdatePayload).length > 0) {
+        transaction.update(parentDocRef, parentUpdatePayload);
+      }
+      
       updatedManifest[passengerIndex].status = newStatus;
       
-      const updatePayload: any = {
+      const rydUpdatePayload: any = {
         passengerManifest: updatedManifest,
-        uidsPendingParentalApproval: FieldValue.arrayRemove(studentUserId), // Remove from pending list
+        uidsPendingParentalApproval: FieldValue.arrayRemove(studentUserId),
         updatedAt: FieldValue.serverTimestamp(),
       };
       
-      transaction.update(activeRydDocRef, updatePayload);
+      transaction.update(activeRydDocRef, rydUpdatePayload);
 
       return message;
     });
@@ -122,7 +125,7 @@ interface UpdateDriverListInput {
     parentUserId: string;
     driverId: string;
     list: 'approved' | 'declined';
-    action: 'add' | 'remove';
+    action: 'remove'; // Only remove is supported now for simplicity
 }
 
 export async function updateDriverListAction(
@@ -130,24 +133,24 @@ export async function updateDriverListAction(
 ): Promise<{ success: boolean; message: string }> {
     const { parentUserId, driverId, list, action } = input;
 
-    if (!parentUserId || !driverId || !list || !action) {
-        return { success: false, message: "Missing required parameters." };
+    if (!parentUserId || !driverId || !list || action !== 'remove') {
+        return { success: false, message: "Missing required parameters or invalid action." };
     }
 
     const parentDocRef = db.collection('users').doc(parentUserId);
 
     try {
-        const fieldToUpdate = list === 'approved' ? 'approvedDriverIds' : 'declinedDriverIds';
-        const operation = action === 'add' ? FieldValue.arrayUnion(driverId) : FieldValue.arrayRemove(driverId);
+        let updatePayload = {};
+        if (list === 'approved') {
+            updatePayload = { [`approvedDrivers.${driverId}`]: FieldValue.delete() };
+        } else { // declined
+            updatePayload = { declinedDriverIds: FieldValue.arrayRemove(driverId) };
+        }
         
-        await parentDocRef.update({
-            [fieldToUpdate]: operation
-        });
+        await parentDocRef.update(updatePayload);
         
-        const actionVerb = action === 'add' ? 'added to' : 'removed from';
         const listName = list === 'approved' ? 'approved' : 'declined';
-
-        return { success: true, message: `Driver successfully ${actionVerb} the ${listName} list.` };
+        return { success: true, message: `Driver successfully removed from the ${listName} list.` };
 
     } catch (error: any) {
         return handleActionError(error, 'updateDriverListAction');
@@ -157,15 +160,16 @@ export async function updateDriverListAction(
 interface AddApprovedDriverByEmailInput {
     parentUserId: string;
     driverEmail: string;
+    studentIds: string[]; // Added studentIds
 }
 
 export async function addApprovedDriverByEmailAction(
     input: AddApprovedDriverByEmailInput
-): Promise<{ success: boolean; message: string }> {
-    const { parentUserId, driverEmail } = input;
+): Promise<{ success: boolean; message: string; driverId?: string; driverName?: string; }> {
+    const { parentUserId, driverEmail, studentIds } = input;
 
-    if (!parentUserId || !driverEmail) {
-        return { success: false, message: "Parent ID and driver email are required." };
+    if (!parentUserId || !driverEmail || !studentIds || studentIds.length === 0) {
+        return { success: false, message: "Parent ID, driver email, and at least one student selection are required." };
     }
     
     try {
@@ -186,17 +190,19 @@ export async function addApprovedDriverByEmailAction(
         }
 
         const parentDocRef = db.collection('users').doc(parentUserId);
-
-        const batch = db.batch();
         
-        batch.update(parentDocRef, {
-            approvedDriverIds: FieldValue.arrayUnion(driverId),
+        // This will set or overwrite the list of approved students for this driver.
+        await parentDocRef.update({
+            [`approvedDrivers.${driverId}`]: studentIds,
             declinedDriverIds: FieldValue.arrayRemove(driverId)
         });
         
-        await batch.commit();
-
-        return { success: true, message: `${driverData.fullName || 'Driver'} has been added to your approved drivers list.` };
+        return { 
+            success: true, 
+            message: `${driverData.fullName || 'Driver'} has been approved for the selected student(s).`,
+            driverId: driverId,
+            driverName: driverData.fullName,
+        };
 
     } catch (error: any) {
         return handleActionError(error, 'addApprovedDriverByEmailAction');

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan, PlusCircle } from "lucide-react";
+import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan, PlusCircle, Check } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -17,6 +17,9 @@ import { manageDriverApprovalAction, type ManageDriverApprovalInput, updateDrive
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface ApprovalRequest {
   activeRydId: string;
@@ -48,6 +51,12 @@ export default function ParentApprovalsPage() {
 
   const [addDriverEmail, setAddDriverEmail] = useState("");
   const [isAddingDriver, setIsAddingDriver] = useState(false);
+
+  // State for the student selection dialog
+  const [isStudentSelectDialogOpen, setIsStudentSelectDialogOpen] = useState(false);
+  const [driverToAdd, setDriverToAdd] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [selectedStudentsForApproval, setSelectedStudentsForApproval] = useState<Record<string, boolean>>({});
+
 
   const fetchAllData = useCallback(async () => {
     if (!authUser || !userProfile || userProfile.role !== UserRole.PARENT) {
@@ -91,7 +100,6 @@ export default function ParentApprovalsPage() {
       setPendingApprovals(fetchedApprovals);
 
       // Fetch Driver and Student Lists
-      const { approvedDriverIds = [], declinedDriverIds = [], managedStudentIds = [] } = userProfile;
       const fetchProfiles = async (ids: string[]): Promise<UserDisplayInfo[]> => {
         if (ids.length === 0) return [];
         const profilePromises = ids.map(async (id) => {
@@ -106,10 +114,12 @@ export default function ParentApprovalsPage() {
         });
         return (await Promise.all(profilePromises)).filter(Boolean) as UserDisplayInfo[];
       };
+      
+      const approvedDriverIds = Object.keys(userProfile.approvedDrivers || {});
       const [approvedList, declinedList, studentList] = await Promise.all([
         fetchProfiles(approvedDriverIds), 
-        fetchProfiles(declinedDriverIds),
-        fetchProfiles(managedStudentIds)
+        fetchProfiles(userProfile.declinedDriverIds || []),
+        fetchProfiles(userProfile.managedStudentIds || [])
       ]);
       setApprovedDrivers(approvedList);
       setDeclinedDrivers(declinedList);
@@ -178,29 +188,74 @@ export default function ParentApprovalsPage() {
     }
   };
 
-  const handleAddApprovedDriver = async () => {
-    if (!authUser || !addDriverEmail.trim()) {
-        toast({ title: "Error", description: "Email is required.", variant: "destructive" });
+  const handleFindDriverByEmail = async () => {
+    if (!addDriverEmail.trim()) {
+      toast({ title: "Email required", description: "Please enter a driver's email.", variant: "destructive"});
+      return;
+    }
+    setIsAddingDriver(true);
+    try {
+      const q = query(collection(db, "users"), where("email", "==", addDriverEmail.trim().toLowerCase()));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) {
+        toast({ title: "Not Found", description: `No user with email ${addDriverEmail} found.`, variant: "destructive"});
+        return;
+      }
+      const driverDoc = querySnapshot.docs[0];
+      const driverData = driverDoc.data() as UserProfileData;
+      
+      setDriverToAdd({ id: driverDoc.id, email: driverData.email, name: driverData.fullName });
+      // Pre-select students the driver is already approved for
+      const alreadyApprovedFor = userProfile?.approvedDrivers?.[driverDoc.id] || [];
+      const initialSelection: Record<string, boolean> = {};
+      managedStudents.forEach(student => {
+        initialSelection[student.uid] = alreadyApprovedFor.includes(student.uid);
+      });
+      setSelectedStudentsForApproval(initialSelection);
+      setIsStudentSelectDialogOpen(true);
+    } catch(e:any) {
+      toast({ title: "Error", description: e.message || "Failed to find driver.", variant: "destructive"});
+    } finally {
+      setIsAddingDriver(false);
+    }
+  };
+  
+  const handleConfirmAddDriver = async () => {
+    if (!authUser || !driverToAdd) return;
+    
+    const selectedIds = Object.entries(selectedStudentsForApproval)
+      .filter(([, isSelected]) => isSelected)
+      .map(([studentId]) => studentId);
+      
+    if (selectedIds.length === 0) {
+        toast({ title: "No Students Selected", description: "Please select at least one student to approve this driver for.", variant: "destructive"});
         return;
     }
     setIsAddingDriver(true);
     try {
         const result = await addApprovedDriverByEmailAction({
             parentUserId: authUser.uid,
-            driverEmail: addDriverEmail
+            driverEmail: driverToAdd.email,
+            studentIds: selectedIds,
         });
         if (result.success) {
-            toast({ title: "Driver Added", description: result.message });
+            toast({ title: "Driver Approved", description: result.message });
             setAddDriverEmail("");
+            setIsStudentSelectDialogOpen(false);
+            setDriverToAdd(null);
             fetchAllData();
         } else {
             toast({ title: "Failed to Add Driver", description: result.message, variant: "destructive" });
         }
-    } catch (e: any) {
-        toast({ title: "Error", description: `An unexpected error occurred: ${e.message}`, variant: "destructive" });
+    } catch(e: any) {
+        toast({ title: "Error", description: e.message || "An unexpected error occurred.", variant: "destructive" });
     } finally {
         setIsAddingDriver(false);
     }
+  };
+
+  const handleStudentCheckboxChange = (studentId: string, checked: boolean) => {
+    setSelectedStudentsForApproval(prev => ({ ...prev, [studentId]: checked }));
   };
 
 
@@ -225,6 +280,9 @@ export default function ParentApprovalsPage() {
           {drivers.map(driver => {
               const key = `${listType}-${driver.uid}`;
               const isLoadingAction = isProcessing[key];
+              const approvedForStudentIds = userProfile?.approvedDrivers?.[driver.uid] || [];
+              const approvedForStudents = managedStudents.filter(s => approvedForStudentIds.includes(s.uid));
+
               return (
                   <div key={driver.uid} className="p-3 border rounded-lg shadow-sm">
                     <div className="flex items-center justify-between">
@@ -238,20 +296,27 @@ export default function ParentApprovalsPage() {
                               <p className="text-xs text-muted-foreground">{driver.email}</p>
                           </div>
                       </div>
-                      <Button variant="destructive" size="sm" onClick={() => handleRemoveFromList(driver.uid, listType)} disabled={isLoadingAction}>
-                          {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Remove
-                      </Button>
+                      <div className="flex items-center gap-1">
+                          {listType === 'approved' && (
+                            <Button variant="ghost" size="sm" onClick={handleFindDriverByEmail}>
+                                <UserCog className="mr-2 h-4 w-4" /> Edit
+                            </Button>
+                          )}
+                          <Button variant="destructive" size="sm" onClick={() => handleRemoveFromList(driver.uid, listType)} disabled={isLoadingAction}>
+                            {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Remove
+                          </Button>
+                      </div>
                     </div>
-                     {listType === 'approved' && managedStudents.length > 0 && (
+                     {listType === 'approved' && (
                         <div className="mt-3 pt-3 border-t">
-                            <h5 className="text-xs font-semibold text-muted-foreground">Approved for all managed students:</h5>
+                            <h5 className="text-xs font-semibold text-muted-foreground">Approved for:</h5>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                                {managedStudents.map(student => (
+                                {approvedForStudents.length > 0 ? approvedForStudents.map(student => (
                                     <div key={student.uid} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                         <UserCircle className="h-3 w-3" />
                                         <span>{student.fullName}</span>
                                     </div>
-                                ))}
+                                )) : <p className="text-xs text-muted-foreground">No students currently selected.</p>}
                             </div>
                         </div>
                     )}
@@ -351,9 +416,9 @@ export default function ParentApprovalsPage() {
 
       <Card className="shadow-lg mb-6">
         <CardHeader>
-          <CardTitle>Add an Approved Driver</CardTitle>
+          <CardTitle>Add or Edit an Approved Driver</CardTitle>
           <CardDescription>
-            Proactively approve a driver you trust by entering their email address. They will be added to your approved list.
+            Proactively approve a driver you trust by entering their email address. You can select which of your students they are approved to drive.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -366,32 +431,68 @@ export default function ParentApprovalsPage() {
                 className="flex-grow"
                 disabled={isAddingDriver}
               />
-              <Button onClick={handleAddApprovedDriver} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
+              <Button onClick={handleFindDriverByEmail} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
                 {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                Add Approved Driver
+                Add / Edit Driver
               </Button>
           </div>
         </CardContent>
       </Card>
       
-       <Tabs defaultValue="approved" className="w-full">
+      <Tabs defaultValue="approved" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="approved"><ShieldCheck className="mr-2 h-4 w-4"/>Approved Drivers ({approvedDrivers.length})</TabsTrigger>
           <TabsTrigger value="declined"><ShieldBan className="mr-2 h-4 w-4"/>Declined Drivers ({declinedDrivers.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="approved">
           <Card>
-            <CardHeader><CardTitle>Approved Driver List</CardTitle><CardDescription>These drivers are automatically approved for any ryd requests involving your students.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Approved Driver List</CardTitle><CardDescription>These drivers are approved for the students listed below.</CardDescription></CardHeader>
             <CardContent>{renderDriverList(approvedDrivers, 'approved')}</CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="declined">
           <Card>
-            <CardHeader><CardTitle>Declined Driver List</CardTitle><CardDescription>These drivers are blocked from driving your students. You will not receive approval requests for them unless you remove them from this list.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Declined Driver List</CardTitle><CardDescription>These drivers are blocked from driving your students.</CardDescription></CardHeader>
             <CardContent>{renderDriverList(declinedDrivers, 'declined')}</CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={isStudentSelectDialogOpen} onOpenChange={setIsStudentSelectDialogOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Approve Driver for Students</DialogTitle>
+                <DialogDescription>
+                    Select which of your students you want to approve <span className="font-bold">{driverToAdd?.name}</span> to drive.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+                {managedStudents.length > 0 ? managedStudents.map(student => (
+                    <div key={student.uid} className="flex items-center space-x-2">
+                        <Checkbox
+                            id={`student-${student.uid}`}
+                            checked={selectedStudentsForApproval[student.uid] || false}
+                            onCheckedChange={(checked) => handleStudentCheckboxChange(student.uid, !!checked)}
+                        />
+                        <Label htmlFor={`student-${student.uid}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            {student.fullName}
+                        </Label>
+                    </div>
+                )) : (
+                    <p className="text-sm text-muted-foreground">You have no students to select.</p>
+                )}
+            </div>
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleConfirmAddDriver} disabled={isAddingDriver}>
+                    {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                    Save Approvals
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

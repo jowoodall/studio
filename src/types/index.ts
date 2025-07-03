@@ -64,8 +64,8 @@ export interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
-  approvedDriverIds?: string[];
-  declinedDriverIds?: string[]; // New field
+  approvedDrivers?: { [driverId: string]: string[] }; // Changed from approvedDriverIds
+  declinedDriverIds?: string[];
   joinedGroupIds?: string[]; 
   createdAt?: Timestamp;
 }
@@ -146,9 +146,9 @@ export enum PassengerManifestStatus {
 
 export interface PassengerManifestItem {
   userId: string; 
-  originalRydRequestId?: string; // Made optional
-  pickupAddress?: string; // Made optional, might be set on confirmation
-  destinationAddress: string; // Should be set from ActiveRyd.finalDestinationAddress
+  originalRydRequestId?: string; 
+  pickupAddress?: string; 
+  destinationAddress: string; 
   status: PassengerManifestStatus; 
   pickupOrder?: number; 
   dropoffOrder?: number; 
@@ -157,15 +157,15 @@ export interface PassengerManifestItem {
   estimatedDropoffTime?: Timestamp; 
   actualDropoffTime?: Timestamp; 
   notes?: string; 
-  requestedAt: Timestamp; // Added to track when the request to join was made
-  earliestPickupTimestamp?: Timestamp; // Added for passenger-specific timing
+  requestedAt: Timestamp; 
+  earliestPickupTimestamp?: Timestamp; 
 }
 
 export interface ActiveRyd {
   id: string; 
   driverId: string; 
-  passengerUids?: string[]; // Efficient array for querying
-  uidsPendingParentalApproval?: string[]; // For querying approvals
+  passengerUids?: string[]; 
+  uidsPendingParentalApproval?: string[]; 
   vehicleDetails?: { 
     make?: string;
     model?: string;
@@ -185,7 +185,7 @@ export interface ActiveRyd {
   passengerManifest: PassengerManifestItem[];
   associatedEventId?: string; 
   notes?: string;
-  eventName?: string; // Denormalized from event
+  eventName?: string; 
 }
 
 export interface DashboardRydData {
@@ -194,12 +194,12 @@ export interface DashboardRydData {
   isDriver: boolean;
   eventName: string;
   destination: string;
-  rydStatus: ActiveRydStatus; // The overall status of the ActiveRyd
-  eventTimestamp: Timestamp; // The time the event itself starts
-  earliestPickupTimestamp?: Timestamp; // For passengers, their requested pickup window start
-  proposedDepartureTimestamp?: Timestamp; // For drivers, their planned departure time
+  rydStatus: ActiveRydStatus; 
+  eventTimestamp: Timestamp; 
+  earliestPickupTimestamp?: Timestamp; 
+  proposedDepartureTimestamp?: Timestamp; 
   driverName?: string;
   driverId?: string;
   passengerCount?: { confirmed: number; pending: number; totalInManifest: number; };
-  passengerStatus?: PassengerManifestStatus; // The status of the specific person this ryd is for
+  passengerStatus?: PassengerManifestStatus; 
 }

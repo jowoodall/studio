@@ -102,9 +102,9 @@ export function SignupForm() {
           },
           managedStudentIds: [],
           associatedParentIds: [],
-          approvedDriverIds: [],
-          declinedDriverIds: [], // Initialize new field
-          joinedGroupIds: [], // Initialize joinedGroupIds as empty array
+          approvedDrivers: {}, // Changed from approvedDriverIds
+          declinedDriverIds: [],
+          joinedGroupIds: [], 
         };
         
         console.log("Attempting to set user profile data:", userProfileData);
