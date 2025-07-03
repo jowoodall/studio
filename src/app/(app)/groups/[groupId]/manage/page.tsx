@@ -141,44 +141,50 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
   const handleRemoveMember = async (memberIdToRemove: string) => {
     if (!group || !authUser) return;
-    if (!group.adminIds.includes(authUser.uid) && authUser.uid !== memberIdToRemove) { 
-        toast({ title: "Permission Denied", description: "Only group admins can remove other members.", variant: "destructive"});
-        return;
+    if (!group.adminIds.includes(authUser.uid) && authUser.uid !== memberIdToRemove) {
+      toast({ title: "Permission Denied", description: "Only group admins can remove other members.", variant: "destructive" });
+      return;
     }
-    
+
     const memberName = members.find(m => m.id === memberIdToRemove)?.name || 'Member';
     const batch = writeBatch(db);
     try {
+      // Remove member from the group's lists
       const groupDocRef = doc(db, "groups", groupId);
       batch.update(groupDocRef, {
         memberIds: arrayRemove(memberIdToRemove),
-        adminIds: arrayRemove(memberIdToRemove) 
+        adminIds: arrayRemove(memberIdToRemove)
       });
 
-      // User's joinedGroupIds is NOT updated here by admin, user must accept/leave themselves
-      // OR the system could clean up via a cloud function if member is removed entirely.
+      // Also remove the group from the member's list of joined groups
+      const userDocRef = doc(db, "users", memberIdToRemove);
+      batch.update(userDocRef, {
+        joinedGroupIds: arrayRemove(groupId)
+      });
 
       await batch.commit();
 
+      // Update local state to reflect removal
       setMembers(prevMembers => prevMembers.filter(member => member.id !== memberIdToRemove));
-      setGroup(prev => prev ? ({...prev, 
+      setGroup(prev => prev ? ({
+        ...prev,
         memberIds: prev.memberIds.filter(id => id !== memberIdToRemove),
         adminIds: prev.adminIds.filter(id => id !== memberIdToRemove),
       }) : null);
 
       toast({
         title: "Member Removed",
-        description: `${memberName} has been removed from the group's member list.`,
+        description: `${memberName} has been removed from the group and their group list has been updated.`,
       });
     } catch (e: any) {
       console.error("Error removing member:", e);
       let description = "Could not remove member. Please check console for details.";
-       if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-            description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members from the group document.`;
+      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
+        description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members from the group document.`;
       } else if (e.message) {
-            description = e.message;
+        description = e.message;
       }
-      toast({ title: "Removal Failed", description, variant: "destructive", duration: 9000});
+      toast({ title: "Removal Failed", description, variant: "destructive", duration: 9000 });
     }
   };
   
@@ -414,4 +420,6 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
+    
+
     

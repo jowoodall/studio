@@ -5,13 +5,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Edit, Trash2, Archive, Loader2, AlertTriangle, LogIn, CheckCircle } from "lucide-react"; // Added LogIn, CheckCircle
+import { PlusCircle, Users, Edit, Trash2, Archive, Loader2, AlertTriangle, LogIn, CheckCircle, XCircle } from "lucide-react"; // Added XCircle
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, arrayUnion } from 'firebase/firestore'; // Added doc, updateDoc, arrayUnion
+import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; // Added arrayRemove
 import type { GroupData, UserProfileData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
@@ -25,6 +25,7 @@ export default function GroupsPage() {
   const [isLoadingGroups, setIsLoadingGroups] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAccepting, setIsAccepting] = useState<Record<string, boolean>>({});
+  const [isDeclining, setIsDeclining] = useState<Record<string, boolean>>({});
 
 
   const fetchGroupsAndInvitations = useCallback(async () => {
@@ -148,20 +149,47 @@ export default function GroupsPage() {
       });
 
       // Optimistically update UI or refetch
-      setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToAccept));
       const acceptedGroup = pendingInvitations.find(g => g.id === groupIdToAccept);
       if (acceptedGroup) {
-        setJoinedGroupsList(prev => [acceptedGroup, ...prev]);
+          setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToAccept));
+          setJoinedGroupsList(prev => [acceptedGroup, ...prev]);
       }
-      // Ideally, also update the userProfile in AuthContext if it's used elsewhere immediately for joinedGroupIds
-      // For now, a page refresh or re-fetch on next navigation would pick it up.
-      // Or we can manually update it here if AuthContext provides a setter for userProfile.
-
     } catch (error) {
       console.error("Error accepting invitation:", error);
       toast({ title: "Acceptance Failed", description: "Could not join the group. Please try again.", variant: "destructive" });
     } finally {
       setIsAccepting(prev => ({ ...prev, [groupIdToAccept]: false }));
+    }
+  };
+  
+  const handleDeclineInvitation = async (groupIdToDecline: string, groupName: string) => {
+    if (!authUser) {
+      toast({ title: "Error", description: "You must be logged in to decline invitations.", variant: "destructive" });
+      return;
+    }
+    setIsDeclining(prev => ({ ...prev, [groupIdToDecline]: true }));
+    try {
+      // To decline, we just remove the user's ID from the group's memberIds array.
+      // The user doesn't have the groupId in their own joinedGroupIds yet, so we don't need to touch their document.
+      const groupDocRef = doc(db, "groups", groupIdToDecline);
+      await updateDoc(groupDocRef, {
+        memberIds: arrayRemove(authUser.uid)
+      });
+
+      toast({
+        title: "Invitation Declined",
+        description: `You have declined the invitation to join: ${groupName}.`,
+        variant: "default",
+      });
+
+      // Update UI
+      setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToDecline));
+
+    } catch (error) {
+      console.error("Error declining invitation:", error);
+      toast({ title: "Decline Failed", description: "Could not decline the invitation. Please try again.", variant: "destructive" });
+    } finally {
+      setIsDeclining(prev => ({ ...prev, [groupIdToDecline]: false }));
     }
   };
 
@@ -271,14 +299,23 @@ export default function GroupsPage() {
                   </div>
                   <CardDescription className="text-sm h-10 overflow-hidden text-ellipsis">{group.description}</CardDescription>
                 </CardContent>
-                <CardFooter className="border-t pt-4">
+                <CardFooter className="border-t pt-4 flex gap-2">
+                  <Button 
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handleDeclineInvitation(group.id, group.name)}
+                      disabled={isDeclining[group.id] || isAccepting[group.id]}
+                  >
+                      {isDeclining[group.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                      Decline
+                  </Button>
                   <Button 
                     className="w-full bg-green-600 hover:bg-green-700" 
                     onClick={() => handleAcceptInvitation(group.id, group.name)}
-                    disabled={isAccepting[group.id]}
+                    disabled={isAccepting[group.id] || isDeclining[group.id]}
                   >
                     {isAccepting[group.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                    Accept Invitation
+                    Accept
                   </Button>
                 </CardFooter>
               </Card>
@@ -379,3 +416,5 @@ export default function GroupsPage() {
   );
 }
 
+
+    
