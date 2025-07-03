@@ -3,9 +3,10 @@
 
 import admin from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole, RydData, RydStatus, EventData} from '@/types'; // Added RydData, RydStatus, EventData
-import { PassengerManifestStatus, ActiveRydStatus as ARStatus, UserRole as RoleEnum } from '@/types'; // Import ActiveRydStatus as a value with alias
+import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole, RydData, RydStatus, EventData, RydMessage} from '@/types';
+import { PassengerManifestStatus, ActiveRydStatus as ARStatus, UserRole as RoleEnum } from '@/types';
 import * as z from 'zod';
+import { nanoid } from 'nanoid';
 
 const db = admin.firestore(); // Get Firestore instance from the admin SDK
 
@@ -745,5 +746,74 @@ export async function revertPassengerPickupAction(
   } catch (error: any) {
     const { success, message } = handleActionError(error, "revertPassengerPickupAction");
     return { success, message: message || "An unexpected server error occurred." };
+  }
+}
+
+interface SendRydMessageInput {
+  activeRydId: string;
+  text: string;
+  senderUserId: string;
+}
+
+export async function sendRydMessageAction(
+  input: SendRydMessageInput
+): Promise<{ success: boolean; message: string }> {
+  const { activeRydId, text, senderUserId } = input;
+
+  if (!activeRydId || !text.trim() || !senderUserId) {
+    return { success: false, message: "Missing required parameters." };
+  }
+
+  const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+  
+  try {
+    const senderProfile = await getUserProfile(senderUserId);
+    if (!senderProfile) {
+      return { success: false, message: "Sender profile not found." };
+    }
+    
+    await db.runTransaction(async (transaction) => {
+      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      if (!activeRydDocSnap.exists) {
+        throw new Error("Ryd not found.");
+      }
+      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+
+      // Authorization: Check if sender is driver or confirmed passenger
+      const isDriver = activeRydData.driverId === senderUserId;
+      
+      const confirmedPassengerStatuses: PassengerManifestStatus[] = [
+        PassengerManifestStatus.CONFIRMED_BY_DRIVER,
+        PassengerManifestStatus.AWAITING_PICKUP,
+        PassengerManifestStatus.ON_BOARD,
+        PassengerManifestStatus.DROPPED_OFF,
+      ];
+      const isConfirmedPassenger = activeRydData.passengerManifest.some(p => 
+        p.userId === senderUserId && confirmedPassengerStatuses.includes(p.status)
+      );
+      
+      if (!isDriver && !isConfirmedPassenger) {
+        throw new Error("You are not authorized to send messages on this ryd.");
+      }
+      
+      const newMessage: RydMessage = {
+        id: nanoid(),
+        senderId: senderUserId,
+        senderName: senderProfile.fullName,
+        senderAvatar: senderProfile.avatarUrl || '',
+        text: text.trim(),
+        timestamp: Timestamp.now(),
+      };
+      
+      transaction.update(activeRydDocRef, {
+        messages: FieldValue.arrayUnion(newMessage),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { success: true, message: "Message sent." };
+
+  } catch (error: any) {
+    return handleActionError(error, "sendRydMessageAction");
   }
 }

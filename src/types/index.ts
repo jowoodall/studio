@@ -1,4 +1,5 @@
 
+
 import type React from 'react';
 import type { Timestamp } from 'firebase/firestore'; 
 
@@ -64,7 +65,7 @@ export interface UserProfileData {
   };
   managedStudentIds?: string[];
   associatedParentIds?: string[];
-  approvedDrivers?: { [driverId: string]: string[] }; // Changed from approvedDriverIds
+  approvedDrivers?: { [driverId: string]: string[] };
   declinedDriverIds?: string[];
   joinedGroupIds?: string[]; 
   createdAt?: Timestamp;
@@ -161,6 +162,15 @@ export interface PassengerManifestItem {
   earliestPickupTimestamp?: Timestamp; 
 }
 
+export interface RydMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  text: string;
+  timestamp: Timestamp;
+}
+
 export interface ActiveRyd {
   id: string; 
   driverId: string; 
@@ -186,6 +196,7 @@ export interface ActiveRyd {
   associatedEventId?: string; 
   notes?: string;
   eventName?: string; 
+  messages?: RydMessage[];
 }
 
 export interface DashboardRydData {

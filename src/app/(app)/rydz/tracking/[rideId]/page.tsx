@@ -1,25 +1,27 @@
 
 "use client";
 
-import React, { useState, useEffect, use, useCallback } from 'react';
+import React, { useState, useEffect, use, useCallback, useRef } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { InteractiveMap } from "@/components/map/interactive-map";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map, Undo2, Ban } from "lucide-react";
+import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map, Undo2, Ban, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus } from '@/types';
+import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus, type RydMessage } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, isAfter, subHours } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
-import { managePassengerJoinRequestAction, cancelPassengerSpotAction, updatePassengerPickupStatusAction, revertPassengerPickupAction } from '@/actions/activeRydActions';
+import { managePassengerJoinRequestAction, cancelPassengerSpotAction, updatePassengerPickupStatusAction, revertPassengerPickupAction, sendRydMessageAction } from '@/actions/activeRydActions';
 import { confirmRydPlanAction, cancelRydByDriverAction, startRydAction, completeRydAction, revertToPlanningAction, revertToRydPlannedAction } from '@/actions/driverActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 
 interface RydDetailsPageParams { rideId: string; }
 
@@ -74,6 +76,10 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isRevertingToPlanning, setIsRevertingToPlanning] = useState(false);
   const [isRevertingToRydPlanned, setIsRevertingToRydPlanned] = useState(false);
   const [isRevertingPickup, setIsRevertingPickup] = useState<Record<string, boolean>>({});
+  
+  const [newMessage, setNewMessage] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
 
   const fetchRydDetails = useCallback(async (currentRydId: string) => {
@@ -144,6 +150,11 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   }, [rideId, fetchRydDetails]);
 
   useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [rydDetails?.messages]);
+
+
+  useEffect(() => {
     if (rydDetails) {
       document.title = `Track Ryd: ${rydDetails.eventName || rydDetails.finalDestinationAddress || rideId} | MyRydz`;
     } else if (rydError) {
@@ -154,6 +165,35 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
        document.title = `Track Ryd | MyRydz`;
     }
   }, [rydDetails, rydError, rideId]);
+  
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUser || !rideId || !newMessage.trim()) return;
+
+    setIsSendingMessage(true);
+    try {
+        const result = await sendRydMessageAction({
+            activeRydId: rideId,
+            text: newMessage.trim(),
+            senderUserId: authUser.uid,
+        });
+
+        if (result.success) {
+            setNewMessage(""); // Clear input on success
+            fetchRydDetails(rideId); // Refetch to get new message
+        } else {
+            toast({
+                title: "Failed to Send",
+                description: result.message,
+                variant: "destructive",
+            });
+        }
+    } catch (error: any) {
+        toast({ title: "Error", description: `Client error: ${error.message}`, variant: "destructive" });
+    } finally {
+        setIsSendingMessage(false);
+    }
+  };
 
   const handleUpdatePassengerPickup = async (passengerUserId: string) => {
     if (!authUser || !rideId) return;
@@ -476,7 +516,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                     <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5" /> Driver Controls</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    {/* Status: PLANNING or AWAITING_PASSENGERS */}
                     {(rydDetails.status === ARStatus.PLANNING || rydDetails.status === ARStatus.AWAITING_PASSENGERS) && (
                         <div>
                             <Button onClick={handleConfirmRyd} disabled={isConfirmingRyd} className="w-full">
@@ -486,8 +525,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                             <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
                         </div>
                     )}
-
-                    {/* Status: RYD_PLANNED */}
                     {rydDetails.status === ARStatus.RYD_PLANNED && (
                       <div className="flex flex-col gap-2">
                         <Button onClick={handleStartRyd} disabled={isStartingRyd || !canStartRyd} className="w-full bg-blue-600 hover:bg-blue-700" title={!canStartRyd ? "Can be started up to 2 hours before departure" : "Start Ryd"}>
@@ -500,16 +537,12 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                         </Button>
                       </div>
                     )}
-
-                    {/* Status: IN_PROGRESS_PICKUP */}
                     {rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && (
                       <Button onClick={handleRevertToRydPlanned} disabled={isRevertingToRydPlanned} variant="outline" className="w-full">
                           {isRevertingToRydPlanned ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
                           Pause Ryd & Return to Plan
                       </Button>
                     )}
-
-                    {/* Status: IN_PROGRESS_ROUTE */}
                     {rydDetails.status === ARStatus.IN_PROGRESS_ROUTE && (
                         <div>
                             <Button onClick={handleCompleteRyd} disabled={isCompletingRyd} className="w-full bg-green-600 hover:bg-green-700">
@@ -532,7 +565,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                         <p className="text-xs text-muted-foreground mt-1.5">This will cancel the ryd for all passengers.</p>
                       </div>
                     )}
-                    
                     {pendingJoinRequests.length > 0 && (
                        <div>
                             <h4 className="text-sm font-medium mb-2">Pending Join Requests ({pendingJoinRequests.length})</h4>
@@ -740,15 +772,66 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
                   </div>
               )}
 
-              <Button variant="outline" className="w-full" asChild>
-                <Link href={`/messages/new?activeRydId=${rideId}&context=rydParticipants`}>
-                  <MessageSquare className="mr-2 h-4 w-4" /> Message Ryd Participants
-                </Link>
-              </Button>
-               <div className="text-xs text-muted-foreground pt-4 border-t">
+              <Separator />
+               <div className="text-xs text-muted-foreground pt-1">
                 Map and ETA are estimates. Live driver location is a future feature.
               </div>
             </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg">
+            <CardHeader>
+                <CardTitle className="flex items-center"><MessageSquare className="mr-2 h-5 w-5" /> Ryd Chat</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <ScrollArea className="h-64 pr-4 border rounded-md p-2 flex flex-col">
+                    {(rydDetails.messages && rydDetails.messages.length > 0) ? (
+                        rydDetails.messages.map(msg => {
+                            const isMyMessage = msg.senderId === authUser?.uid;
+                            const senderAvatar = msg.senderAvatar || `https://placehold.co/40x40.png?text=${msg.senderName.split(" ").map(n=>n[0]).join("")}`;
+                            return (
+                                <div key={msg.id} className={cn("flex items-end gap-2 mb-3", isMyMessage && "justify-end")}>
+                                    {!isMyMessage && (
+                                        <Avatar className="h-8 w-8">
+                                            <AvatarImage src={senderAvatar} alt={msg.senderName} />
+                                            <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                        </Avatar>
+                                    )}
+                                    <div className={cn("max-w-xs rounded-lg px-3 py-2", isMyMessage ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                        {!isMyMessage && <p className="text-xs font-semibold mb-0.5">{msg.senderName}</p>}
+                                        <p className="text-sm">{msg.text}</p>
+                                        <p className="text-xs text-right mt-1 opacity-70">{format(msg.timestamp.toDate(), 'p')}</p>
+                                    </div>
+                                    {isMyMessage && (
+                                        <Avatar className="h-8 w-8">
+                                            <AvatarImage src={authUserProfile?.avatarUrl || ''} alt={msg.senderName} />
+                                            <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                        </Avatar>
+                                    )}
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                            No messages yet. Start the conversation!
+                        </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </ScrollArea>
+            </CardContent>
+            <CardFooter>
+                <form onSubmit={handleSendMessage} className="flex w-full items-center gap-2">
+                    <Input 
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        disabled={isSendingMessage}
+                    />
+                    <Button type="submit" size="icon" disabled={isSendingMessage || !newMessage.trim()}>
+                        {isSendingMessage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                </form>
+            </CardFooter>
           </Card>
         </div>
       </div>
