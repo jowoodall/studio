@@ -59,16 +59,28 @@ export default function ParentApprovalsPage() {
 
 
   const fetchAllData = useCallback(async () => {
-    if (!authUser || !userProfile || userProfile.role !== UserRole.PARENT) {
+    if (!authUser) {
       setIsLoading(false);
-      if (userProfile && userProfile.role !== UserRole.PARENT) setError("This page is for parents only.");
+      if (!authLoading) setError("Please log in to manage approvals.");
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
+      // --- FIX: Fetch the parent's profile directly to get the latest data ---
+      const parentDocRef = doc(db, "users", authUser.uid);
+      const parentDocSnap = await getDoc(parentDocRef);
+      if (!parentDocSnap.exists() || parentDocSnap.data().role !== UserRole.PARENT) {
+        setError("This page is for parents only.");
+        setIsLoading(false);
+        return;
+      }
+      const freshUserProfile = parentDocSnap.data() as UserProfileData;
+      // --- END FIX ---
+
+
       // Fetch Pending Approvals
-      const studentIds = userProfile.managedStudentIds || [];
+      const studentIds = freshUserProfile.managedStudentIds || [];
       let fetchedApprovals: ApprovalRequest[] = [];
       if (studentIds.length > 0) {
         const activeRydzRef = collection(db, "activeRydz");
@@ -115,11 +127,11 @@ export default function ParentApprovalsPage() {
         return (await Promise.all(profilePromises)).filter(Boolean) as UserDisplayInfo[];
       };
       
-      const approvedDriverIds = Object.keys(userProfile.approvedDrivers || {});
+      const approvedDriverIds = Object.keys(freshUserProfile.approvedDrivers || {});
       const [approvedList, declinedList, studentList] = await Promise.all([
         fetchProfiles(approvedDriverIds), 
-        fetchProfiles(userProfile.declinedDriverIds || []),
-        fetchProfiles(userProfile.managedStudentIds || [])
+        fetchProfiles(freshUserProfile.declinedDriverIds || []),
+        fetchProfiles(freshUserProfile.managedStudentIds || [])
       ]);
       setApprovedDrivers(approvedList);
       setDeclinedDrivers(declinedList);
@@ -136,7 +148,7 @@ export default function ParentApprovalsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [authUser, userProfile, toast]);
+  }, [authUser, toast, authLoading]);
 
   useEffect(() => {
     if (!authLoading) {
@@ -205,8 +217,11 @@ export default function ParentApprovalsPage() {
       const driverData = driverDoc.data() as UserProfileData;
       
       setDriverToAdd({ id: driverDoc.id, email: driverData.email, name: driverData.fullName });
-      // Pre-select students the driver is already approved for
-      const alreadyApprovedFor = userProfile?.approvedDrivers?.[driverDoc.id] || [];
+      
+      const parentUserDoc = await getDoc(doc(db, "users", authUser!.uid));
+      const parentData = parentUserDoc.data() as UserProfileData;
+
+      const alreadyApprovedFor = parentData?.approvedDrivers?.[driverDoc.id] || [];
       const initialSelection: Record<string, boolean> = {};
       managedStudents.forEach(student => {
         initialSelection[student.uid] = alreadyApprovedFor.includes(student.uid);
@@ -298,7 +313,7 @@ export default function ParentApprovalsPage() {
                       </div>
                       <div className="flex items-center gap-1">
                           {listType === 'approved' && (
-                            <Button variant="ghost" size="sm" onClick={handleFindDriverByEmail}>
+                            <Button variant="ghost" size="sm" onClick={() => handleFindDriverByEmail()}>
                                 <UserCog className="mr-2 h-4 w-4" /> Edit
                             </Button>
                           )}
@@ -496,3 +511,4 @@ export default function ParentApprovalsPage() {
     </>
   );
 }
+
