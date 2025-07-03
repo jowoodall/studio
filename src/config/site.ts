@@ -61,12 +61,6 @@ export const navMenuItems: NavItem[] = [
     icon: CalendarDays,
   },
   {
-    title: 'Parental Controls',
-    href: '/parent/approvals', // Example specific to parents
-    icon: ShieldCheck,
-    roles: ['parent'], // Example role-based visibility
-  },
-  {
     title: 'Driver Portal',
     href: '/driver/dashboard', // Example specific to drivers
     icon: DollarSign, // Using DollarSign as a placeholder for driver earnings/management
@@ -91,6 +85,12 @@ export const navMenuItems: NavItem[] = [
     title: 'Messages',
     href: '/messages',
     icon: MessageSquare,
+  },
+  {
+    title: 'Parental Controls',
+    href: '/parent/approvals', // Example specific to parents
+    icon: ShieldCheck,
+    roles: ['parent'], // Example role-based visibility
   },
   {
     title: 'Utilities',
