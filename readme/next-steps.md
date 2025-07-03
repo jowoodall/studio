@@ -25,3 +25,9 @@ The messaging UI is currently static. The next steps are to make it functional.
 Improve the main dashboard and make the tracking page dynamic.
 - **"My Next Ryd" Logic:** Implement the logic for the dashboard card to find and display the user's most imminent ryd, whether they are the driver or a passenger.
 - **Live Driver Location:** On the `/rydz/tracking/[rideId]` page, replace the static map with one that can show a driver's live location. This will require a mechanism for the driver's app to periodically send their coordinates.
+
+### 5. Implement a Notification System
+The current notifications page is static. It needs to be made dynamic and integrated throughout the app.
+- **Centralized Notification Feed:** Build the `/notifications` page to display a real-time feed of events relevant to the user (e.g., ryd requests, approvals, group invites, event reminders).
+- **Unread Indicators:** Add a badge or indicator to the main navigation to show when a user has unread notifications.
+- **Email/Push Notifications (Future):** Lay the groundwork for sending out-of-app notifications for critical events, like a ryd starting soon or a last-minute cancellation.
