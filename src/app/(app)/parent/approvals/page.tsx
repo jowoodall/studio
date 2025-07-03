@@ -200,17 +200,19 @@ export default function ParentApprovalsPage() {
     }
   };
 
-  const handleFindDriverByEmail = async () => {
-    if (!addDriverEmail.trim()) {
+  const handleFindDriverByEmail = async (emailToFind?: string) => {
+    const targetEmail = emailToFind || addDriverEmail;
+    if (!targetEmail.trim()) {
       toast({ title: "Email required", description: "Please enter a driver's email.", variant: "destructive"});
       return;
     }
     setIsAddingDriver(true);
     try {
-      const q = query(collection(db, "users"), where("email", "==", addDriverEmail.trim().toLowerCase()));
+      const q = query(collection(db, "users"), where("email", "==", targetEmail.trim().toLowerCase()));
       const querySnapshot = await getDocs(q);
       if (querySnapshot.empty) {
-        toast({ title: "Not Found", description: `No user with email ${addDriverEmail} found.`, variant: "destructive"});
+        toast({ title: "Not Found", description: `No user with email ${targetEmail} found.`, variant: "destructive"});
+        setIsAddingDriver(false);
         return;
       }
       const driverDoc = querySnapshot.docs[0];
@@ -313,7 +315,7 @@ export default function ParentApprovalsPage() {
                       </div>
                       <div className="flex items-center gap-1">
                           {listType === 'approved' && (
-                            <Button variant="ghost" size="sm" onClick={() => handleFindDriverByEmail()}>
+                            <Button variant="ghost" size="sm" onClick={() => handleFindDriverByEmail(driver.email)}>
                                 <UserCog className="mr-2 h-4 w-4" /> Edit
                             </Button>
                           )}
@@ -446,7 +448,7 @@ export default function ParentApprovalsPage() {
                 className="flex-grow"
                 disabled={isAddingDriver}
               />
-              <Button onClick={handleFindDriverByEmail} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
+              <Button onClick={() => handleFindDriverByEmail()} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
                 {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
                 Add / Edit Driver
               </Button>
@@ -511,4 +513,3 @@ export default function ParentApprovalsPage() {
     </>
   );
 }
-
