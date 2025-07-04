@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { RydData, RydStatus, UserProfileData, ActiveRyd } from '@/types';
-import { ActiveRydStatus as ARStatus } from '@/types';
+import { ActiveRydStatus as ARStatus, UserRole } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
@@ -80,12 +80,19 @@ export default function UpcomingRydzPage() {
         where("requestedBy", "==", authUser.uid),
         where("status", "in", upcomingRequestStatuses)
       );
-      // 2. Rydz requested for the user (as passenger)
+      
+      // 2. Rydz requested for the user OR their students (as passenger)
+      const passengerIdsToQuery = [authUser.uid];
+      if (authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds) {
+          passengerIdsToQuery.push(...authUserProfile.managedStudentIds);
+      }
+
       const requestsForUserQuery = query(
         collection(db, "rydz"),
-        where("passengerIds", "array-contains", authUser.uid),
+        where("passengerIds", "array-contains-any", passengerIdsToQuery),
         where("status", "in", upcomingRequestStatuses)
       );
+      
       // 3. Active Rydz where the user is the driver
       const activeRydzAsDriverQuery = query(
         collection(db, "activeRydz"),
