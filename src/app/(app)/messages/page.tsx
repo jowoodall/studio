@@ -1,131 +1,153 @@
+"use client";
 
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Send, Edit3, PlusCircle, Search } from "lucide-react";
+import { MessageSquare, PlusCircle, Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Messages',
-};
-
-const mockConversations = [
-  { id: "convo1", name: "Alex Johnson", lastMessage: "Sounds good, see you then!", timestamp: "10:30 AM", unread: 2, avatar: "https://placehold.co/100x100.png?text=AJ", dataAiHint: "man portrait" },
-  { id: "convo2", name: "Maria Garcia", lastMessage: "Can you pick up an extra stop?", timestamp: "Yesterday", unread: 0, avatar: "https://placehold.co/100x100.png?text=MG", dataAiHint: "woman smiling" },
-  { id: "convo3", name: "Northwood High Carpool Group", lastMessage: "Reminder: Early dismissal on Friday.", timestamp: "3 days ago", unread: 0, avatar: "https://placehold.co/100x100.png?text=NH", dataAiHint: "school building" },
-];
-
-const mockActiveConversationMessages = [
-    { id: "msg1", sender: "Alex Johnson", text: "Hey! Are we still on for the game tomorrow?", timestamp: "10:25 AM", isCurrentUser: false },
-    { id: "msg2", sender: "You", text: "Yep! I'll be there around 2 PM.", timestamp: "10:28 AM", isCurrentUser: true },
-    { id: "msg3", sender: "Alex Johnson", text: "Sounds good, see you then!", timestamp: "10:30 AM", isCurrentUser: false },
-];
-
-// In a real app, this would be dynamic based on the selected conversation
-const activeConversationName = "Alex Johnson";
+import { useAuth } from '@/context/AuthContext';
+import { getConversationsAction } from '@/actions/messageActions';
+import type { ConversationListItem } from '@/types';
+import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 export default function MessagesPage() {
-  return (
-    <>
-      <PageHeader
-        title="Messages"
-        description="View and manage your conversations."
-        actions={
-            <Button asChild>
-                <Link href="/messages/new">
-                    <PlusCircle className="mr-2 h-4 w-4" /> New Message
-                </Link>
-            </Button>
+    const { user, loading: authLoading } = useAuth();
+    const { toast } = useToast();
+    const [conversations, setConversations] = useState<ConversationListItem[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!user) {
+            if (!authLoading) {
+                setIsLoading(false);
+            }
+            return;
         }
-      />
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]"> {/* Adjust height as needed */}
-        {/* Conversation List */}
-        <Card className="md:col-span-1 lg:col-span-1 flex flex-col shadow-lg">
-          <CardHeader className="pb-2">
-            <div className="flex justify-between items-center">
-                <CardTitle className="text-lg font-semibold">Chats</CardTitle>
-                <Button variant="ghost" size="icon" className="text-muted-foreground">
-                    <Edit3 className="h-4 w-4" />
-                </Button>
-            </div>
-            <div className="relative mt-2">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search conversations..." className="pl-8" />
-            </div>
-          </CardHeader>
-          <ScrollArea className="flex-grow">
-            <CardContent className="pt-0">
-              <div className="space-y-1">
-                {mockConversations.map((convo) => (
-                  <Link key={convo.id} href={`/messages/${convo.id}`} passHref>
-                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer transition-colors">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={convo.avatar} alt={convo.name} data-ai-hint={convo.dataAiHint} />
-                        <AvatarFallback>{convo.name.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{convo.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{convo.lastMessage}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">{convo.timestamp}</p>
-                        {convo.unread > 0 && (
-                          <span className="mt-1 inline-block bg-primary text-primary-foreground text-xs font-bold px-1.5 py-0.5 rounded-full">
-                            {convo.unread}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </ScrollArea>
-        </Card>
 
-        {/* Active Conversation View */}
-        <Card className="md:col-span-2 lg:col-span-3 flex flex-col shadow-xl">
-          <CardHeader className="border-b">
-            <div className="flex items-center gap-3">
-                <Avatar className="h-10 w-10">
-                    <AvatarImage src={mockConversations[0].avatar} alt={activeConversationName} data-ai-hint={mockConversations[0].dataAiHint} />
-                    <AvatarFallback>{activeConversationName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                </Avatar>
-                <div>
-                    <CardTitle className="text-lg font-semibold">{activeConversationName}</CardTitle>
-                    <CardDescription className="text-xs">Online</CardDescription> {/* Or last seen */}
+        const fetchConversations = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const result = await getConversationsAction(user.uid);
+                if (result.success && result.conversations) {
+                    setConversations(result.conversations);
+                } else {
+                    throw new Error(result.message || "Failed to load conversations.");
+                }
+            } catch (err: any) {
+                setError(err.message || "An unknown error occurred.");
+                toast({
+                    title: "Error Loading Messages",
+                    description: err.message,
+                    variant: "destructive",
+                });
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchConversations();
+    }, [user, authLoading, toast]);
+
+    const renderContent = () => {
+        if (isLoading || authLoading) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full py-12">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="mt-4 text-muted-foreground">Loading your conversations...</p>
                 </div>
-            </div>
-          </CardHeader>
-          <ScrollArea className="flex-grow bg-muted/30 p-4">
+            );
+        }
+
+        if (error) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full py-12 text-center">
+                    <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+                    <h3 className="text-xl font-semibold">Error Loading Messages</h3>
+                    <p className="text-muted-foreground mt-2">{error}</p>
+                </div>
+            );
+        }
+        
+        if (conversations.length === 0) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full py-12 text-center">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-xl font-semibold">No Conversations Yet</h3>
+                    <p className="text-muted-foreground mt-2">
+                        When you join or drive a ryd with a chat, it will appear here.
+                    </p>
+                </div>
+            );
+        }
+
+        return (
             <div className="space-y-4">
-              {mockActiveConversationMessages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.isCurrentUser ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.isCurrentUser ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card text-card-foreground border rounded-bl-none'}`}>
-                    {!msg.isCurrentUser && <p className="text-xs font-medium mb-0.5">{msg.sender}</p>}
-                    <p className="text-sm">{msg.text}</p>
-                    <p className={`text-xs mt-1 ${msg.isCurrentUser ? 'text-primary-foreground/70' : 'text-muted-foreground'} text-right`}>{msg.timestamp}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-          <CardContent className="border-t p-4">
-            <form className="flex items-center gap-2">
-              <Input placeholder="Type a message..." className="flex-1" />
-              <Button type="submit" size="icon">
-                <Send className="h-5 w-5" />
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </>
-  );
-}
+                {conversations.map(convo => {
+                    const participant = convo.otherParticipants[0];
+                    const moreParticipantsCount = convo.otherParticipants.length - 1;
+                    const conversationTitle = participant ? `${participant.name}${moreParticipantsCount > 0 ? ` & ${moreParticipantsCount} other(s)` : ''}` : 'Ryd Chat';
 
-    
+                    return (
+                        <Link key={convo.rydId} href={`/rydz/tracking/${convo.rydId}`} passHref>
+                            <Card className="hover:shadow-md hover:border-primary/50 transition-all cursor-pointer">
+                                <CardContent className="p-4 flex items-center gap-4">
+                                    <Avatar className="h-12 w-12">
+                                        <AvatarImage src={participant?.avatarUrl || ''} alt={conversationTitle} data-ai-hint={participant?.dataAiHint || 'person avatar'} />
+                                        <AvatarFallback>{conversationTitle.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold truncate">{convo.rydName}</p>
+                                        <p className="text-sm text-muted-foreground truncate">
+                                            Chat with: {conversationTitle}
+                                        </p>
+                                        {convo.lastMessage && (
+                                            <p className="text-xs text-muted-foreground truncate mt-1">
+                                                <span className="font-medium">{convo.lastMessage.senderName}:</span> {convo.lastMessage.text}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {convo.lastMessage && (
+                                        <p className="text-xs text-muted-foreground self-start">
+                                            {format(convo.lastMessage.timestamp.toDate(), 'p')}
+                                        </p>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Link>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <PageHeader
+                title="Conversations"
+                description="View messages from all your rydz."
+                actions={
+                    <Button asChild>
+                        <Link href="/rydz/request">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Request a Ryd
+                        </Link>
+                    </Button>
+                }
+            />
+            <Card className="shadow-xl">
+                <CardHeader>
+                    <CardTitle>Ryd Chats</CardTitle>
+                    <CardDescription>Select a conversation to view the full chat history and send messages.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {renderContent()}
+                </CardContent>
+            </Card>
+        </>
+    );
+}

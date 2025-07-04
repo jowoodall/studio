@@ -214,3 +214,37 @@ export interface DashboardRydData {
   passengerCount?: { confirmed: number; pending: number; totalInManifest: number; };
   passengerStatus?: PassengerManifestStatus; 
 }
+
+export interface RydData {
+    id: string;
+    requestedBy: string;
+    passengerIds: string[];
+    eventId?: string;
+    eventName?: string;
+    rydTimestamp: Timestamp;
+    earliestPickupTimestamp?: Timestamp;
+    pickupLocation: string;
+    destination: string;
+    notes?: string;
+    status: RydStatus;
+    driverId?: string;
+    assignedActiveRydId?: string;
+    createdAt: Timestamp;
+    updatedAt?: Timestamp;
+}
+
+export interface ConversationListItem {
+  rydId: string;
+  rydName: string;
+  lastMessage?: {
+    text: string;
+    timestamp: Timestamp;
+    senderName: string;
+  };
+  otherParticipants: {
+    name: string;
+    avatarUrl?: string;
+    dataAiHint?: string;
+  }[];
+  isUnread?: boolean; // For future use
+}
