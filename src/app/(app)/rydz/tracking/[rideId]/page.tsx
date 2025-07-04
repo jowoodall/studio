@@ -10,7 +10,7 @@ import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, Ma
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { db } from '@/lib/firebase';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, Timestamp, onSnapshot } from 'firebase/firestore';
 import { type RydData, type UserProfileData, type ActiveRyd, type EventData, PassengerManifestStatus, UserRole, ActiveRydStatus as ARStatus, type RydMessage } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, isAfter, subHours } from 'date-fns';
@@ -81,30 +81,29 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-
-  const fetchRydDetails = useCallback(async (currentRydId: string) => {
-    if (!currentRydId) {
+  useEffect(() => {
+    if (!rideId) {
       setRydError("Ryd ID is missing.");
       setIsLoadingRyd(false);
       return;
     }
+
     setIsLoadingRyd(true);
     setRydError(null);
-    try {
-      const rydDocRef = doc(db, "activeRydz", currentRydId); 
-      const rydDocSnap = await getDoc(rydDocRef);
 
+    const rydDocRef = doc(db, "activeRydz", rideId);
+    
+    const unsubscribe = onSnapshot(rydDocRef, async (rydDocSnap) => {
       if (rydDocSnap.exists()) {
         let data = { id: rydDocSnap.id, ...rydDocSnap.data() } as DisplayActiveRydData;
 
+        // Fetch related data
         if (data.driverId) {
-          const driverDocRef = doc(db, "users", data.driverId);
-          const driverDocSnap = await getDoc(driverDocRef);
-          if (driverDocSnap.exists()) {
-            data.driverProfile = driverDocSnap.data() as UserProfileData;
-          } else {
-            console.warn(`Driver profile not found for ID: ${data.driverId}`);
-          }
+          try {
+            const driverDocRef = doc(db, "users", data.driverId);
+            const driverDocSnap = await getDoc(driverDocRef);
+            if (driverDocSnap.exists()) data.driverProfile = driverDocSnap.data() as UserProfileData;
+          } catch (e) { console.warn(`Driver profile not found for ID: ${data.driverId}`); }
         }
 
         if (data.passengerManifest && data.passengerManifest.length > 0) {
@@ -113,41 +112,36 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
               const userDocRef = doc(db, "users", item.userId);
               const userDocSnap = await getDoc(userDocRef);
               return userDocSnap.exists() ? userDocSnap.data() as UserProfileData : null;
-            } catch (passengerError) {
-              console.error(`Error fetching passenger profile for ID ${item.userId}:`, passengerError);
-              return null;
-            }
+            } catch (e) { return null; }
           });
           data.passengerProfiles = (await Promise.all(passengerProfilePromises)).filter(Boolean) as UserProfileData[];
         }
 
         if (data.associatedEventId) {
-          const eventDocRef = doc(db, "events", data.associatedEventId);
-          const eventDocSnap = await getDoc(eventDocRef);
-          if (eventDocSnap.exists()) {
-            data.eventName = (eventDocSnap.data() as EventData).name;
-          }
+          try {
+            const eventDocRef = doc(db, "events", data.associatedEventId);
+            const eventDocSnap = await getDoc(eventDocRef);
+            if (eventDocSnap.exists()) data.eventName = (eventDocSnap.data() as EventData).name;
+          } catch (e) { console.warn(`Event not found for ID: ${data.associatedEventId}`); }
         }
         
         setRydDetails(data);
       } else {
-        setRydError(`Ryd with ID "${currentRydId}" not found.`);
+        setRydError(`Ryd with ID "${rideId}" not found.`);
         setRydDetails(null);
       }
-    } catch (e) {
-      console.error("Error fetching ryd details:", e);
-      setRydError("Failed to load ryd details. Please try again.");
-      toast({ title: "Error", description: "Could not load ryd information.", variant: "destructive" });
-    } finally {
       setIsLoadingRyd(false);
-    }
-  }, [toast]);
+    }, (error) => {
+      console.error("Error listening to ryd details:", error);
+      setRydError("Failed to listen for ryd updates. Please try again.");
+      setIsLoadingRyd(false);
+      toast({ title: "Error", description: "Could not get live ryd updates.", variant: "destructive" });
+    });
 
-  useEffect(() => {
-    if (rideId) {
-      fetchRydDetails(rideId);
-    }
-  }, [rideId, fetchRydDetails]);
+    // Cleanup subscription on component unmount
+    return () => unsubscribe();
+  }, [rideId, toast]);
+
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -180,7 +174,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
 
         if (result.success) {
             setNewMessage(""); // Clear input on success
-            fetchRydDetails(rideId); // Refetch to get new message
         } else {
             toast({
                 title: "Failed to Send",
@@ -206,7 +199,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       });
       if (result.success) {
         toast({ title: "Status Updated", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Update Failed", description: result.message, variant: "destructive" });
       }
@@ -234,7 +226,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
 
       if (result.success) {
         toast({ title: "Request Updated", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Update Failed", description: result.message, variant: "destructive" });
       }
@@ -260,7 +251,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
 
       if (result.success) {
         toast({ title: "Spot Cancelled", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
       }
@@ -278,7 +268,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const result = await confirmRydPlanAction({ activeRydId: rideId, driverUserId: authUser.uid });
       if (result.success) {
         toast({ title: "Ryd Confirmed!", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Confirmation Failed", description: result.message, variant: "destructive" });
       }
@@ -296,7 +285,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const result = await cancelRydByDriverAction({ activeRydId: rideId, driverUserId: authUser.uid });
       if (result.success) {
         toast({ title: "Ryd Cancelled", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
       }
@@ -314,7 +302,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
         const result = await startRydAction({ activeRydId: rideId, driverUserId: authUser.uid });
         if (result.success) {
             toast({ title: "Ryd Started!", description: result.message });
-            fetchRydDetails(rideId);
         } else {
             toast({ title: "Start Failed", description: result.message, variant: "destructive" });
         }
@@ -332,7 +319,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
         const result = await completeRydAction({ activeRydId: rideId, driverUserId: authUser.uid });
         if (result.success) {
             toast({ title: "Ryd Completed!", description: result.message });
-            fetchRydDetails(rideId);
         } else {
             toast({ title: "Completion Failed", description: result.message, variant: "destructive" });
         }
@@ -350,7 +336,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const result = await revertToPlanningAction({ activeRydId: rideId, driverUserId: authUser.uid });
       if (result.success) {
         toast({ title: "Status Reverted", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Revert Failed", description: result.message, variant: "destructive" });
       }
@@ -368,7 +353,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const result = await revertToRydPlannedAction({ activeRydId: rideId, driverUserId: authUser.uid });
       if (result.success) {
         toast({ title: "Status Reverted", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Revert Failed", description: result.message, variant: "destructive" });
       }
@@ -386,7 +370,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
       const result = await revertPassengerPickupAction({ activeRydId: rideId, passengerUserId, actingUserId: authUser.uid });
       if (result.success) {
         toast({ title: "Pickup Undone", description: result.message });
-        fetchRydDetails(rideId);
       } else {
         toast({ title: "Undo Failed", description: result.message, variant: "destructive" });
       }
