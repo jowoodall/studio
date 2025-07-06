@@ -5,25 +5,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, Clock } from "lucide-react";
+import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, Clock, Users } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { RydData, RydStatus, UserProfileData, ActiveRyd } from '@/types';
-import { ActiveRydStatus as ARStatus, UserRole } from '@/types';
+import { ActiveRydStatus as ARStatus, UserRole, PassengerManifestStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 import { updateStaleRydzAction } from '@/actions/systemActions';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 
 interface DisplayRydData extends Partial<RydData> {
   id: string;
   isDriver?: boolean;
   driverProfile?: UserProfileData;
-  // Make fields from RydData optional to accommodate ActiveRyd shape
+  passengerProfiles?: UserProfileData[];
   rydTimestamp: Timestamp;
   eventName?: string;
   destination: string;
@@ -104,6 +105,18 @@ export default function UpcomingRydzPage() {
       // --- Process Driving Rydz ---
       const drivingRydzPromises = drivingSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
         const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+        
+        let passengerProfiles: UserProfileData[] = [];
+        if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
+            const profilePromises = activeRyd.passengerManifest
+                .filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER)
+                .map(item => getDoc(doc(db, "users", item.userId)));
+            const profileSnaps = await Promise.all(profilePromises);
+            passengerProfiles = profileSnaps
+                .filter(snap => snap.exists())
+                .map(snap => snap.data() as UserProfileData);
+        }
+
         return {
             id: activeRyd.id,
             rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
@@ -111,6 +124,7 @@ export default function UpcomingRydzPage() {
             eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
             status: activeRyd.status,
             driverProfile: authUserProfile,
+            passengerProfiles,
             assignedActiveRydId: activeRyd.id,
             isDriver: true,
             requestedBy: activeRyd.driverId,
@@ -131,6 +145,17 @@ export default function UpcomingRydzPage() {
             if (driverDocSnap.exists()) driverProfile = driverDocSnap.data() as UserProfileData;
           } catch (e) { console.warn(`Failed to fetch driver profile for ${activeRyd.driverId}`, e); }
         }
+
+        let passengerProfiles: UserProfileData[] = [];
+        if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
+            const profilePromises = activeRyd.passengerManifest
+                .filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER)
+                .map(item => getDoc(doc(db, "users", item.userId)));
+            const profileSnaps = await Promise.all(profilePromises);
+            passengerProfiles = profileSnaps
+                .filter(snap => snap.exists())
+                .map(snap => snap.data() as UserProfileData);
+        }
         
         return {
             id: activeRyd.id,
@@ -139,6 +164,7 @@ export default function UpcomingRydzPage() {
             eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
             status: activeRyd.status,
             driverProfile: driverProfile,
+            passengerProfiles,
             assignedActiveRydId: activeRyd.id,
             isDriver: false,
         };
@@ -296,6 +322,21 @@ export default function UpcomingRydzPage() {
               )}
             </div>
           </div>
+          {ryd.passengerProfiles && ryd.passengerProfiles.length > 0 && (
+            <div className="mt-3 pt-3 border-t">
+              <h4 className="text-xs font-semibold text-muted-foreground flex items-center mb-2">
+                <Users className="mr-2 h-4 w-4" />
+                Passengers ({ryd.passengerProfiles.length})
+              </h4>
+              <div className="flex flex-wrap gap-1">
+                {ryd.passengerProfiles.map(p => (
+                  <Badge key={p.uid} variant="secondary" className="font-normal">
+                    {p.fullName}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="border-t pt-4 flex flex-col gap-2">
           {trackable && (
