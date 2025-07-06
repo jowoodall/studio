@@ -45,6 +45,7 @@ const upcomingActiveRydStatuses: ARStatus[] = [
 const pendingRequestStatuses: RydStatus[] = [
   'requested',
   'searching_driver',
+  'driver_assigned', // Added status to catch requests that have a driver but are not yet fully active
 ];
 
 
@@ -171,10 +172,43 @@ export default function UpcomingRydzPage() {
       });
 
       // --- Process Pending Requests ---
-      const pendingRequestsData = pendingRequestsSnap.docs.map(docSnap => {
-        const rydData = docSnap.data() as RydData;
-        return { ...rydData, isDriver: false, id: docSnap.id };
+      const pendingRequestsPromises = pendingRequestsSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+          const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
+
+          let driverProfile: UserProfileData | undefined = undefined;
+          if (rydData.driverId) {
+              try {
+                  const driverDocRef = doc(db, "users", rydData.driverId);
+                  const driverDocSnap = await getDoc(driverDocRef);
+                  if (driverDocSnap.exists()) {
+                      driverProfile = driverDocSnap.data() as UserProfileData;
+                  }
+              } catch (e) { console.warn(`Failed to fetch driver profile for pending request: ${rydData.driverId}`, e); }
+          }
+
+          let passengerProfiles: UserProfileData[] = [];
+          if (rydData.passengerIds && rydData.passengerIds.length > 0) {
+              const profilePromises = rydData.passengerIds.map(item => getDoc(doc(db, "users", item)));
+              const profileSnaps = await Promise.all(profilePromises);
+              passengerProfiles = profileSnaps
+                  .filter(snap => snap.exists())
+                  .map(snap => snap.data() as UserProfileData);
+          }
+          
+          return {
+              id: rydData.id,
+              rydTimestamp: rydData.rydTimestamp,
+              destination: rydData.destination,
+              eventName: rydData.eventName || rydData.destination,
+              status: rydData.status,
+              isDriver: false,
+              driverProfile: driverProfile,
+              passengerProfiles: passengerProfiles,
+              assignedActiveRydId: rydData.assignedActiveRydId,
+              requestedBy: rydData.requestedBy,
+          };
       });
+      const pendingRequestsData = await Promise.all(pendingRequestsPromises);
       
       const [resolvedDrivingRydz, resolvedPassengerRydz] = await Promise.all([
           Promise.all(drivingRydzPromises),
