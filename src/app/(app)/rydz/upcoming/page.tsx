@@ -89,17 +89,17 @@ export default function UpcomingRydzPage() {
         where("status", "in", upcomingActiveRydStatuses)
       );
       
-      // Query 3: Pending Ryd Requests made by the user
+      // Query 3: Pending Ryd Requests made by or for the user or their students
       const pendingRequestsQuery = query(
         collection(db, "rydz"),
-        where("requestedBy", "==", authUser.uid),
+        where("passengerIds", "array-contains-any", passengerIdsForQuery),
         where("status", "in", pendingRequestStatuses)
       );
 
       const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
         getDocs(drivingQuery),
         getDocs(passengerQuery),
-        getDocs(pendingRequestsQuery),
+        getDocs(pendingRequestsSnap),
       ]);
 
       // --- Process Driving Rydz ---
