@@ -99,7 +99,7 @@ export default function UpcomingRydzPage() {
       const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
         getDocs(drivingQuery),
         getDocs(passengerQuery),
-        getDocs(pendingRequestsSnap),
+        getDocs(pendingRequestsQuery),
       ]);
 
       // --- Process Driving Rydz ---
