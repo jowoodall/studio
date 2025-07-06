@@ -42,10 +42,10 @@ const upcomingActiveRydStatuses: ARStatus[] = [
   ARStatus.IN_PROGRESS_ROUTE,
 ];
 
+// Refined: A request is only "pending" if it has not yet been assigned a driver.
 const pendingRequestStatuses: RydStatus[] = [
   'requested',
   'searching_driver',
-  'driver_assigned', // Added status to catch requests that have a driver but are not yet fully active
 ];
 
 
