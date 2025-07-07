@@ -32,14 +32,15 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
 
 
 // This action is designed to be called as a "lazy cron" from a high-traffic page.
-export async function updateStaleRydzAction(): Promise<{ success: boolean; message: string; updatedCount: number }> {
-  console.log('[Action: updateStaleRydzAction] Running job to update stale rydz.');
+export async function updateStaleRydzAction(): Promise<{ success: boolean; message: string; updatedRydz: number }> {
+  console.log('[Action: updateStaleRydzAction] Running job to update stale rydz not linked to events.');
 
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
     const staleRydzQuery = db.collection('activeRydz')
+      .where('associatedEventId', '==', null) // Only handle rydz without an event
       .where('plannedArrivalTime', '<', fortyEightHoursAgo)
       .where('status', 'in', [
         ARStatus.PLANNING,
@@ -52,8 +53,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     const snapshot = await staleRydzQuery.get();
 
     if (snapshot.empty) {
-      const message = "No stale rydz found to update.";
-      return { success: true, message, updatedCount: 0 };
+      const message = "No stale non-event rydz found to update.";
+      return { success: true, message, updatedRydz: 0 };
     }
 
     const batch = db.batch();
@@ -83,52 +84,87 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
         await batch.commit();
     }
 
-    const successMessage = `Successfully processed stale rydz check. Updated ${updatedCount} rydz.`;
-    return { success: true, message: successMessage, updatedCount };
+    const successMessage = `Successfully processed stale rydz check. Updated ${updatedCount} non-event rydz.`;
+    return { success: true, message: successMessage, updatedRydz: updatedCount };
 
   } catch (error: any) {
     const { message } = handleActionError(error, "updateStaleRydzAction");
-    return { success: false, message, updatedCount: 0 };
+    return { success: false, message, updatedRydz: 0 };
   }
 }
 
-export async function updateStaleEventsAction(): Promise<{ success: boolean; message: string; updatedCount: number }> {
-  console.log('[Action: updateStaleEventsAction] Running job to update stale events.');
+export async function updateStaleEventsAction(): Promise<{ success: boolean; message: string; updatedEvents: number; updatedRydz: number; }> {
+  console.log('[Action: updateStaleEventsAction] Running job to update stale events and their associated rydz.');
 
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
     const staleEventsQuery = db.collection('events')
-      .where('eventTimestamp', '<', fortyEightHoursAgo);
+      .where('eventTimestamp', '<', fortyEightHoursAgo)
+      .where('status', '==', EventStatus.ACTIVE); // Only find active events to update
 
-    const snapshot = await staleEventsQuery.get();
+    const eventsSnapshot = await staleEventsQuery.get();
 
-    if (snapshot.empty) {
-      const message = "No potentially stale events found to check.";
-      return { success: true, message, updatedCount: 0 };
+    if (eventsSnapshot.empty) {
+      return { success: true, message: "No stale active events found to update.", updatedEvents: 0, updatedRydz: 0 };
     }
 
+    let updatedEventsCount = 0;
+    let updatedRydzCount = 0;
     const batch = db.batch();
-    let updatedCount = 0;
+    const activeRydzCollectionRef = db.collection('activeRydz');
+    const unresolvedRydStatuses = [
+        ARStatus.PLANNING,
+        ARStatus.AWAITING_PASSENGERS,
+        ARStatus.RYD_PLANNED,
+        ARStatus.IN_PROGRESS_PICKUP,
+        ARStatus.IN_PROGRESS_ROUTE,
+    ];
 
-    snapshot.forEach(doc => {
-      const event = doc.data() as EventData;
-      if (event.status !== EventStatus.COMPLETED && event.status !== EventStatus.CANCELLED) {
-        batch.update(doc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
-        updatedCount++;
-      }
-    });
+    for (const eventDoc of eventsSnapshot.docs) {
+      const eventId = eventDoc.id;
+      
+      // Mark the event as completed
+      batch.update(eventDoc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
+      updatedEventsCount++;
 
-    if (updatedCount > 0) {
+      // Find and update associated rydz
+      const associatedRydzQuery = activeRydzCollectionRef
+        .where('associatedEventId', '==', eventId)
+        .where('status', 'in', unresolvedRydStatuses);
+        
+      const rydzSnapshot = await associatedRydzQuery.get();
+      
+      rydzSnapshot.forEach(rydDoc => {
+        const ryd = rydDoc.data() as ActiveRyd;
+        let newStatus: ARStatus | null = null;
+        
+        const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE];
+        const planningStatuses = [ARStatus.AWAITING_PASSENGERS, ARStatus.PLANNING, ARStatus.RYD_PLANNED];
+        
+        if (inProgressStatuses.includes(ryd.status)) {
+            newStatus = ARStatus.COMPLETED;
+        } else if (planningStatuses.includes(ryd.status)) {
+            newStatus = ARStatus.CANCELLED_BY_SYSTEM;
+        }
+
+        if (newStatus) {
+            batch.update(rydDoc.ref, { status: newStatus, updatedAt: FieldValue.serverTimestamp() });
+            updatedRydzCount++;
+        }
+      });
+    }
+
+    if (updatedEventsCount > 0 || updatedRydzCount > 0) {
       await batch.commit();
     }
 
-    const successMessage = `Successfully processed stale events check. Found ${snapshot.size} candidates and updated ${updatedCount} events to completed.`;
-    return { success: true, message: successMessage, updatedCount };
+    const successMessage = `Successfully processed stale events check. Updated ${updatedEventsCount} event(s) and ${updatedRydzCount} associated rydz.`;
+    return { success: true, message: successMessage, updatedEvents: updatedEventsCount, updatedRydz: updatedRydzCount };
 
   } catch (error: any) {
     const { message } = handleActionError(error, "updateStaleEventsAction");
-    return { success: false, message, updatedCount: 0 };
+    return { success: false, message, updatedEvents: 0, updatedRydz: 0 };
   }
 }
