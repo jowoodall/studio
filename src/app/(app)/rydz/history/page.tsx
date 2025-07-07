@@ -4,16 +4,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Star, Car, User, AlertTriangle, Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Star, Car, User, AlertTriangle, Loader2, Eye, CalendarDays } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { type DisplayRydData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { getRydHistoryAction } from '@/actions/rydActions';
 import { format } from 'date-fns';
 import { updateStaleEventsAction, updateStaleRydzAction } from '@/actions/systemActions';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const statusText = status.replace(/_/g, ' ');
+  let statusClasses = "bg-muted text-muted-foreground";
+
+  if (status.includes("completed")) {
+    statusClasses = "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
+  } else if (status.includes("cancelled") || status.includes("no_driver") || status.includes("rejected")) {
+    statusClasses = "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+  } else if (status.includes("assigned") || status.includes("confirmed")) {
+      statusClasses = 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
+  }
+
+  return <Badge className={cn('border-transparent capitalize', statusClasses)}>{statusText}</Badge>;
+};
+
 
 export default function RydHistoryPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -100,84 +118,89 @@ export default function RydHistoryPage() {
     <>
       <PageHeader
         title="Ryd History"
-        description="Review your past rydz and ratings."
+        description="A complete log of your past and cancelled rydz."
       />
 
-      {rydHistory.length > 0 ? (
-        <div className="space-y-6">
-          {rydHistory.map((ryd) => {
-            const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp) : null;
-            const driverName = ryd.driverProfile?.fullName || "N/A";
-
-            return (
-              <Card key={ryd.id} className="shadow-lg">
-                <CardHeader className="flex flex-row items-start gap-4">
-                  <Image 
-                    src={"https://placehold.co/400x200.png?text=Past+Ryd"} 
-                    alt={ryd.eventName || "Past ryd"} 
-                    width={150} 
-                    height={84} 
-                    className="rounded-md object-cover aspect-video"
-                    data-ai-hint={"map car journey"}
-                  />
-                  <div className="flex-1">
-                    <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
-                    <div className="text-sm text-muted-foreground space-y-0.5">
-                      <div className="flex items-center"><CalendarDays className="mr-1.5 h-4 w-4" /> {rydDate ? format(rydDate, "PPP 'at' p") : "Date unknown"}</div>
-                      <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> {ryd.destination}</div>
-                      <div className="flex items-center">
-                        <User className="mr-1.5 h-4 w-4" /> 
-                        Driver: {ryd.driverProfile ? <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="ml-1 text-primary hover:underline">{driverName}</Link> : <span className="ml-1">{driverName}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className={`text-sm font-semibold px-3 py-1 rounded-full capitalize
-                    ${ryd.status === "completed" ? "bg-green-100 text-green-700" : 
-                      (ryd.status.toString().includes("cancelled") || ryd.status.toString().includes("no_driver")) ? "bg-red-100 text-red-700" :
-                      "bg-muted text-muted-foreground"}`}>
-                    {ryd.status.toString().replace(/_/g, ' ')}
-                  </div>
-                </CardHeader>
-                <CardFooter className="border-t pt-4 flex justify-between items-center">
-                  <div className="text-sm text-muted-foreground">
-                    {ryd.status === "completed" && ryd.driverProfile && (
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/drivers/${ryd.driverProfile.uid}/rate?rideId=${ryd.id}`}>
-                          <Star className="mr-2 h-4 w-4" /> Rate Driver
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
-                  {ryd.assignedActiveRydId && (
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
-                        View Ryd Details
-                      </Link>
+      <Card>
+        <CardContent className="p-0">
+            {rydHistory.length > 0 ? (
+                <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Event / Destination</TableHead>
+                    <TableHead>Your Role</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {rydHistory.map((ryd) => {
+                        const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp) : null;
+                        const driverName = ryd.driverProfile?.fullName || "N/A";
+                        const isDriver = !!ryd.isDriver;
+                        
+                        return (
+                            <TableRow key={ryd.id}>
+                                <TableCell>
+                                    <div className="font-medium">{rydDate ? format(rydDate, "MMM d, yyyy") : "N/A"}</div>
+                                    <div className="text-xs text-muted-foreground">{rydDate ? format(rydDate, "p") : ""}</div>
+                                </TableCell>
+                                <TableCell className="font-medium">{ryd.eventName || ryd.destination}</TableCell>
+                                <TableCell>
+                                    <Badge variant={isDriver ? "default" : "secondary"}>
+                                        {isDriver ? "Driver" : "Passenger"}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell>
+                                    {ryd.driverProfile ? (
+                                        <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="hover:underline flex items-center gap-2">
+                                            <User className="h-4 w-4 text-muted-foreground" />
+                                            {driverName}
+                                        </Link>
+                                    ) : (
+                                        <span>{driverName}</span>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                    <StatusBadge status={String(ryd.status)} />
+                                </TableCell>
+                                <TableCell className="text-right space-x-2">
+                                    {ryd.status === "completed" && !isDriver && ryd.driverProfile && (
+                                        <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/drivers/${ryd.driverProfile.uid}/rate?rideId=${ryd.id}`}>
+                                                <Star className="mr-2 h-4 w-4" /> Rate
+                                            </Link>
+                                        </Button>
+                                    )}
+                                    {ryd.assignedActiveRydId && (
+                                        <Button variant="ghost" size="sm" asChild>
+                                            <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
+                                                <Eye className="mr-2 h-4 w-4" /> Details
+                                            </Link>
+                                        </Button>
+                                    )}
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+                </Table>
+            ) : (
+                <div className="text-center py-12">
+                    <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="font-headline text-xl">No Ryd History</h3>
+                    <p className="text-sm text-muted-foreground mt-2">
+                        You have no past rydz recorded.
+                    </p>
+                    <Button asChild className="mt-4">
+                        <Link href="/rydz/request">Request a Ryd</Link>
                     </Button>
-                  )}
-                </CardFooter>
-              </Card>
-            )
-          })}
-        </div>
-      ) : (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Ryd History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              You have no past rydz recorded.
-            </CardDescription>
-            <Button asChild>
-              <Link href="/rydz/request">
-                Request a Ryd
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+                </div>
+            )}
+        </CardContent>
+      </Card>
     </>
   );
 }
