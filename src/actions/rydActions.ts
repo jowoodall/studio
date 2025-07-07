@@ -230,3 +230,95 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     return { success: false, message: `An unexpected server error occurred: ${error.message}` };
   }
 }
+
+export async function getRydHistoryAction({ idToken }: { idToken: string }): Promise<{
+    success: boolean;
+    history?: DisplayRydData[];
+    message?: string;
+}> {
+    console.log('[Action: getRydHistoryAction] Fetching ryd history using proxy model.');
+    if (!idToken) {
+        return { success: false, message: "Authentication token is required." };
+    }
+
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
+        if (!userProfileSnap.exists) {
+            return { success: false, message: "User profile not found." };
+        }
+        const userProfile = userProfileSnap.data() as UserProfileData;
+
+        const uidsToQuery = [userId];
+        if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
+            uidsToQuery.push(...userProfile.managedStudentIds);
+        }
+        
+        const historicalStatuses: (ActiveRydStatus | RydStatus)[] = [
+            ActiveRydStatus.COMPLETED,
+            ActiveRydStatus.CANCELLED_BY_DRIVER,
+            ActiveRydStatus.CANCELLED_BY_SYSTEM,
+            'cancelled_by_user',
+        ];
+
+        // Fetch from activeRydz
+        const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
+        const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+        
+        // Fetch from rydz (requests)
+        const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+
+        const [drivingResults, passengerResults, requestsResults] = await Promise.all([
+            runFirestoreQuery(drivingQuery, idToken),
+            runFirestoreQuery(passengerQuery, idToken),
+            runFirestoreQuery(requestsQuery, idToken),
+        ]);
+        
+        const allRydz = [...drivingResults, ...passengerResults];
+        const uniqueRydz = allRydz.reduce((acc, current) => {
+            if (!acc.find(item => item.id === current.id)) {
+                acc.push(current);
+            }
+            return acc;
+        }, [] as any[]);
+
+        const historicalActiveRydz = uniqueRydz.filter(ryd => historicalStatuses.includes(ryd.status));
+        const historicalRequests = requestsResults.filter(req => historicalStatuses.includes(req.status));
+
+        const activeRydzPromises = historicalActiveRydz.map(async (ryd): Promise<DisplayRydData> => {
+            const driverProfile = await getClientSideUserProfile(ryd.driverId, idToken);
+            const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+            return {
+              ...ryd,
+              isDriver: ryd.driverId === userId,
+              passengerProfiles,
+              driverProfile: driverProfile || undefined,
+              assignedActiveRydId: ryd.id,
+              rydTimestamp: ryd.updatedAt || ryd.createdAt, 
+            };
+        });
+        
+        const requestPromises = historicalRequests.map(async (req): Promise<DisplayRydData> => {
+            const passengerProfiles = (await Promise.all((req.passengerIds || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+            return {
+              ...req,
+              isDriver: false,
+              driverProfile: undefined,
+              passengerProfiles,
+              rydTimestamp: req.updatedAt || req.createdAt,
+            };
+        });
+
+        const allHistoryItems = await Promise.all([...activeRydzPromises, ...requestPromises]);
+
+        allHistoryItems.sort((a, b) => new Date(b.rydTimestamp).getTime() - new Date(a.rydTimestamp).getTime());
+
+        return { success: true, history: allHistoryItems };
+        
+    } catch (error: any) {
+        console.error(`[Action: getRydHistoryAction] Error:`, error);
+        return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+    }
+}
