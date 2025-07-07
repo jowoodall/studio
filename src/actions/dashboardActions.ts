@@ -40,15 +40,13 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
     }
     const userProfile = userProfileSnap.data() as UserProfileData;
     
-    const allRelatedUserIds = [userId, ...(userProfile.managedStudentIds || [])];
+    // Simplification: ONLY consider the logged-in user, not managed students.
     
-    // Build all queries to run
+    // Build queries for rydz where user is driver OR passenger
     const queries = [
-        db.collection('activeRydz').where('driverId', '==', userId)
+        db.collection('activeRydz').where('driverId', '==', userId),
+        db.collection('activeRydz').where('passengerUids', 'array-contains', userId)
     ];
-    allRelatedUserIds.forEach(id => {
-        queries.push(db.collection('activeRydz').where('passengerUids', 'array-contains', id));
-    });
 
     const querySnapshots = await Promise.all(queries.map(q => q.get()));
     
@@ -72,7 +70,7 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
     
     const upcomingRydz = allUserRydz
         .filter(ryd => upcomingStatuses.includes(ryd.status))
-        .filter(ryd => (ryd.plannedArrivalTime as Timestamp)?.toMillis() >= now.toMillis())
+        .filter(ryd => ryd.plannedArrivalTime && (ryd.plannedArrivalTime as Timestamp)?.toMillis() >= now.toMillis())
         .sort((a, b) => (a.plannedArrivalTime as Timestamp).toMillis() - (b.plannedArrivalTime as Timestamp).toMillis());
 
 
@@ -83,25 +81,8 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
     const nextRyd = upcomingRydz[0];
     const isDriver = nextRyd.driverId === userId;
     
-    let rydFor = { name: userProfile.fullName, relation: 'self' as const, uid: userId };
-    
-    if (!isDriver) {
-        const passengerIdInRyd = allRelatedUserIds.find(id => nextRyd.passengerUids?.includes(id));
-
-        if (passengerIdInRyd && passengerIdInRyd !== userId) {
-            // It's for a student. We need the student's name.
-            const studentProfileSnap = await db.collection('users').doc(passengerIdInRyd).get();
-            if (studentProfileSnap.exists()) {
-                 rydFor = { name: studentProfileSnap.data()!.fullName, relation: 'student', uid: passengerIdInRyd };
-            } else {
-                 // Fallback if student profile is missing
-                 rydFor = { name: `Student (${passengerIdInRyd.substring(0,5)})`, relation: 'student', uid: passengerIdInRyd };
-            }
-        } else {
-            // It's for the parent themselves
-            rydFor = { name: userProfile.fullName, relation: 'self', uid: userId };
-        }
-    }
+    // Simplification: rydFor is always the current user now.
+    const rydFor = { name: userProfile.fullName, relation: 'self' as const, uid: userId };
     
     let driverProfileData: UserProfileData | undefined = undefined;
     if (isDriver) {
