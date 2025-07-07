@@ -42,10 +42,10 @@ const upcomingActiveRydStatuses: ARStatus[] = [
   ARStatus.IN_PROGRESS_ROUTE,
 ];
 
-// Refined: A request is only "pending" if it has not yet been assigned a driver.
 const pendingRequestStatuses: RydStatus[] = [
   'requested',
   'searching_driver',
+  'driver_assigned',
 ];
 
 
@@ -76,21 +76,18 @@ export default function UpcomingRydzPage() {
           passengerIdsForQuery.push(...authUserProfile.managedStudentIds);
       }
       
-      // Query 1: Active Rydz where the user is the DRIVER
       const drivingQuery = query(
         collection(db, "activeRydz"),
         where("driverId", "==", authUser.uid),
         where("status", "in", upcomingActiveRydStatuses)
       );
 
-      // Query 2: Active Rydz where the user OR THEIR STUDENTS are a PASSENGER
       const passengerQuery = query(
         collection(db, "activeRydz"),
         where("passengerUids", "array-contains-any", passengerIdsForQuery),
         where("status", "in", upcomingActiveRydStatuses)
       );
       
-      // Query 3: Pending Ryd Requests made by or for the user or their students
       const pendingRequestsQuery = query(
         collection(db, "rydz"),
         where("passengerIds", "array-contains-any", passengerIdsForQuery),
@@ -103,21 +100,16 @@ export default function UpcomingRydzPage() {
         getDocs(pendingRequestsQuery),
       ]);
 
-      // --- Process Driving Rydz ---
       const drivingRydzPromises = drivingSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
         const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        
         let passengerProfiles: UserProfileData[] = [];
         if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
             const profilePromises = activeRyd.passengerManifest
                 .filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER)
                 .map(item => getDoc(doc(db, "users", item.userId)));
             const profileSnaps = await Promise.all(profilePromises);
-            passengerProfiles = profileSnaps
-                .filter(snap => snap.exists())
-                .map(snap => snap.data() as UserProfileData);
+            passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
         }
-
         return {
             id: activeRyd.id,
             rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
@@ -132,12 +124,8 @@ export default function UpcomingRydzPage() {
         };
       });
       
-      // --- Process Passenger Rydz ---
-      const passengerRydzPromises = passengerSnap.docs.map(async (docSnap): Promise<DisplayRydData | null> => {
+      const passengerRydzPromises = passengerSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
         const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        
-        if (activeRyd.driverId === authUser.uid) return null;
-
         let driverProfile: UserProfileData | undefined = undefined;
         if (activeRyd.driverId) {
           try {
@@ -146,18 +134,12 @@ export default function UpcomingRydzPage() {
             if (driverDocSnap.exists()) driverProfile = driverDocSnap.data() as UserProfileData;
           } catch (e) { console.warn(`Failed to fetch driver profile for ${activeRyd.driverId}`, e); }
         }
-
         let passengerProfiles: UserProfileData[] = [];
         if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
-            const profilePromises = activeRyd.passengerManifest
-                .filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER)
-                .map(item => getDoc(doc(db, "users", item.userId)));
+            const profilePromises = activeRyd.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER).map(item => getDoc(doc(db, "users", item.userId)));
             const profileSnaps = await Promise.all(profilePromises);
-            passengerProfiles = profileSnaps
-                .filter(snap => snap.exists())
-                .map(snap => snap.data() as UserProfileData);
+            passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
         }
-        
         return {
             id: activeRyd.id,
             rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
@@ -171,30 +153,22 @@ export default function UpcomingRydzPage() {
         };
       });
 
-      // --- Process Pending Requests ---
       const pendingRequestsPromises = pendingRequestsSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
           const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
-
           let driverProfile: UserProfileData | undefined = undefined;
           if (rydData.driverId) {
               try {
                   const driverDocRef = doc(db, "users", rydData.driverId);
                   const driverDocSnap = await getDoc(driverDocRef);
-                  if (driverDocSnap.exists()) {
-                      driverProfile = driverDocSnap.data() as UserProfileData;
-                  }
+                  if (driverDocSnap.exists()) driverProfile = driverDocSnap.data() as UserProfileData;
               } catch (e) { console.warn(`Failed to fetch driver profile for pending request: ${rydData.driverId}`, e); }
           }
-
           let passengerProfiles: UserProfileData[] = [];
           if (rydData.passengerIds && rydData.passengerIds.length > 0) {
               const profilePromises = rydData.passengerIds.map(item => getDoc(doc(db, "users", item)));
               const profileSnaps = await Promise.all(profilePromises);
-              passengerProfiles = profileSnaps
-                  .filter(snap => snap.exists())
-                  .map(snap => snap.data() as UserProfileData);
+              passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
           }
-          
           return {
               id: rydData.id,
               rydTimestamp: rydData.rydTimestamp,
@@ -208,16 +182,16 @@ export default function UpcomingRydzPage() {
               requestedBy: rydData.requestedBy,
           };
       });
-      const pendingRequestsData = await Promise.all(pendingRequestsPromises);
       
-      const [resolvedDrivingRydz, resolvedPassengerRydz] = await Promise.all([
+      const [resolvedDrivingRydz, unfilteredPassengerRydz, pendingRequestsData] = await Promise.all([
           Promise.all(drivingRydzPromises),
-          Promise.all(passengerRydzPromises)
+          Promise.all(passengerRydzPromises),
+          Promise.all(pendingRequestsPromises),
       ]);
       
-      const finalPassengerRydz = resolvedPassengerRydz.filter(Boolean) as DisplayRydData[];
-
-      // --- Sort and Set State ---
+      const drivingRydzIds = new Set(resolvedDrivingRydz.map(r => r.id));
+      const finalPassengerRydz = unfilteredPassengerRydz.filter(r => !drivingRydzIds.has(r.id));
+      
       resolvedDrivingRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
       finalPassengerRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
       pendingRequestsData.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
