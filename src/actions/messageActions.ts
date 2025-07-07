@@ -81,7 +81,7 @@ export async function getConversationsAction(userId: string): Promise<{ success:
                 rydName: ryd.eventName || ryd.finalDestinationAddress || `Ryd ${ryd.id.substring(0, 6)}`,
                 lastMessage: lastMessage ? {
                     text: lastMessage.text,
-                    timestamp: lastMessage.timestamp,
+                    timestamp: lastMessage.timestamp.toDate().toISOString(), // Convert to string
                     senderName: lastMessage.senderName,
                 } : undefined,
                 otherParticipants,
@@ -90,8 +90,8 @@ export async function getConversationsAction(userId: string): Promise<{ success:
         
         // Sort by last message timestamp, descending
         conversationListItems.sort((a, b) => {
-            const timeA = a.lastMessage?.timestamp.toMillis() || 0;
-            const timeB = b.lastMessage?.timestamp.toMillis() || 0;
+            const timeA = a.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
+            const timeB = b.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
             return timeB - timeA;
         });
 

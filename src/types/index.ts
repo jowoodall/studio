@@ -238,7 +238,7 @@ export interface ConversationListItem {
   rydName: string;
   lastMessage?: {
     text: string;
-    timestamp: Timestamp;
+    timestamp: string;
     senderName: string;
   };
   otherParticipants: {

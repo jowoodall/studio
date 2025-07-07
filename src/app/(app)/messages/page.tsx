@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -114,7 +115,7 @@ export default function MessagesPage() {
                                     </div>
                                     {convo.lastMessage && (
                                         <p className="text-xs text-muted-foreground self-start">
-                                            {format(convo.lastMessage.timestamp.toDate(), 'p')}
+                                            {format(new Date(convo.lastMessage.timestamp), 'p')}
                                         </p>
                                     )}
                                 </CardContent>
