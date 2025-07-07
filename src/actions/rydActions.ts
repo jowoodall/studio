@@ -13,6 +13,7 @@ import {
   PassengerManifestStatus,
 } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
+import { isAfter } from 'date-fns';
 
 // --- Firestore REST API Helpers ---
 // These helpers allow us to run queries against Firestore's REST API using a user's
@@ -116,7 +117,6 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    // Fetch user profile to check for managed students
     const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
     if (!userProfileSnap.exists) {
         return { success: false, message: "User profile not found." };
@@ -134,14 +134,8 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     ];
     const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
 
-    // --- Queries using REST API ---
-    // Query for rydz the user is driving
     const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
-    
-    // Query for active rydz where the user OR their students are passengers
     const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
-    
-    // Query for pending requests where the user OR their students are passengers
     const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
 
     const [drivingResults, passengerResults, requestsResults] = await Promise.all([
@@ -149,8 +143,7 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
       runFirestoreQuery(passengerQuery, idToken),
       runFirestoreQuery(requestsQuery, idToken),
     ]);
-
-    // --- Process Driving Rydz ---
+    
     const drivingRydzPromises = drivingResults
       .filter(ryd => upcomingActiveRydStatuses.includes(ryd.status))
       .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
@@ -165,7 +158,6 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
         };
       });
 
-    // --- Process Passenger Rydz ---
     const passengerRydzPromises = passengerResults
       .filter(ryd => ryd.driverId !== userId && upcomingActiveRydStatuses.includes(ryd.status))
       .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
@@ -181,7 +173,6 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
         };
       });
       
-    // --- Process Pending Requests ---
     const pendingRequestsPromises = requestsResults
       .filter(req => pendingRequestStatuses.includes(req.status))
       .map(async (req: RydData): Promise<DisplayRydData> => {
@@ -201,13 +192,38 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
         Promise.all(pendingRequestsPromises)
     ]);
 
-    // Sort results by timestamp
-    const sortByTimestamp = (a: DisplayRydData, b: DisplayRydData) => new Date(a.rydTimestamp).getTime() - new Date(b.rydTimestamp).getTime();
-    drivingRydz.sort(sortByTimestamp);
-    passengerRydz.sort(sortByTimestamp);
-    pendingRequests.sort(sortByTimestamp);
+    // --- NEW FILTERING LOGIC ---
+    const now = new Date();
+    // Allow rydz from the last 6 hours to still show up, e.g., if they are in progress.
+    const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000); 
 
-    return { success: true, drivingRydz, passengerRydz, pendingRequests };
+    const filterTrulyUpcoming = (ryd: DisplayRydData) => {
+      if (!ryd.rydTimestamp) return false; // Don't show rydz without a timestamp
+      
+      const rydTime = new Date(ryd.rydTimestamp);
+      const isInProgress = ryd.status === ActiveRydStatus.IN_PROGRESS_PICKUP || ryd.status === ActiveRydStatus.IN_PROGRESS_ROUTE;
+      
+      // Keep if it's in progress, OR if the event time is after 6 hours ago.
+      return isInProgress || isAfter(rydTime, sixHoursAgo);
+    };
+
+    const finalDrivingRydz = drivingRydz.filter(filterTrulyUpcoming);
+    const finalPassengerRydz = passengerRydz.filter(filterTrulyUpcoming);
+    const finalPendingRequests = pendingRequests.filter(filterTrulyUpcoming);
+    // --- END NEW FILTERING LOGIC ---
+
+
+    const sortByTimestamp = (a: DisplayRydData, b: DisplayRydData) => new Date(a.rydTimestamp).getTime() - new Date(b.rydTimestamp).getTime();
+    finalDrivingRydz.sort(sortByTimestamp);
+    finalPassengerRydz.sort(sortByTimestamp);
+    finalPendingRequests.sort(sortByTimestamp);
+
+    return { 
+      success: true, 
+      drivingRydz: finalDrivingRydz, 
+      passengerRydz: finalPassengerRydz, 
+      pendingRequests: finalPendingRequests 
+    };
 
   } catch (error: any) {
     console.error(`[Action: getUpcomingRydzAction] Error:`, error);
