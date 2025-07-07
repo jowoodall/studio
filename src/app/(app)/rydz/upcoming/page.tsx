@@ -9,44 +9,16 @@ import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, 
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, Timestamp, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { RydData, RydStatus, UserProfileData, ActiveRyd } from '@/types';
-import { ActiveRydStatus as ARStatus, UserRole, PassengerManifestStatus } from '@/types';
+import { type DisplayRydData, type RydStatus, type ActiveRyd } from '@/types';
+import { ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 import { updateStaleRydzAction } from '@/actions/systemActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-
-interface DisplayRydData extends Partial<RydData> {
-  id: string;
-  isDriver?: boolean;
-  driverProfile?: UserProfileData;
-  passengerProfiles?: UserProfileData[];
-  rydTimestamp: Timestamp;
-  eventName?: string;
-  destination: string;
-  status: RydStatus | ARStatus;
-  assignedActiveRydId?: string;
-  requestedBy?: string;
-}
-
-
-const upcomingActiveRydStatuses: ARStatus[] = [
-  ARStatus.PLANNING,
-  ARStatus.AWAITING_PASSENGERS,
-  ARStatus.RYD_PLANNED,
-  ARStatus.IN_PROGRESS_PICKUP,
-  ARStatus.IN_PROGRESS_ROUTE,
-];
-
-const pendingRequestStatuses: RydStatus[] = [
-  'requested',
-  'searching_driver',
-  'driver_assigned',
-];
+import { getUpcomingRydzAction } from '@/actions/rydActions';
+import type { Timestamp } from 'firebase/firestore';
 
 
 export default function UpcomingRydzPage() {
@@ -61,7 +33,7 @@ export default function UpcomingRydzPage() {
   const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({});
 
   const fetchUpcomingRydz = useCallback(async () => {
-    if (!authUser || !authUserProfile) {
+    if (!authUser) {
       if (!authLoading && !isLoadingProfile) {
         setIsLoadingRydz(false);
       }
@@ -71,155 +43,29 @@ export default function UpcomingRydzPage() {
     setIsLoadingRydz(true);
     setError(null);
     try {
-      const passengerIdsForQuery = [authUser.uid];
-      if (authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds) {
-          passengerIdsForQuery.push(...authUserProfile.managedStudentIds);
+      // Run stale check in the background
+      updateStaleRydzAction().catch(err => console.error("Background stale rydz check failed:", err));
+      
+      const result = await getUpcomingRydzAction(authUser.uid);
+
+      if (result.success) {
+        setDrivingRydz(result.drivingRydz || []);
+        setPassengerRydz(result.passengerRydz || []);
+        setPendingRequests(result.pendingRequests || []);
+      } else {
+        throw new Error(result.message || "Failed to fetch rydz from server action.");
       }
-      
-      const drivingQuery = query(
-        collection(db, "activeRydz"),
-        where("driverId", "==", authUser.uid),
-        where("status", "in", upcomingActiveRydStatuses)
-      );
-
-      const passengerQuery = query(
-        collection(db, "activeRydz"),
-        where("passengerUids", "array-contains-any", passengerIdsForQuery),
-        where("status", "in", upcomingActiveRydStatuses)
-      );
-      
-      const pendingRequestsQuery = query(
-        collection(db, "rydz"),
-        where("passengerIds", "array-contains-any", passengerIdsForQuery),
-        where("status", "in", pendingRequestStatuses)
-      );
-
-      const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
-        getDocs(drivingQuery),
-        getDocs(passengerQuery),
-        getDocs(pendingRequestsQuery),
-      ]);
-
-      const drivingRydzPromises = drivingSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
-        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        let passengerProfiles: UserProfileData[] = [];
-        if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
-            const profilePromises = activeRyd.passengerManifest
-                .filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER)
-                .map(item => getDoc(doc(db, "users", item.userId)));
-            const profileSnaps = await Promise.all(profilePromises);
-            passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
-        }
-        return {
-            id: activeRyd.id,
-            rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
-            destination: activeRyd.finalDestinationAddress || 'Destination TBD',
-            eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
-            status: activeRyd.status,
-            driverProfile: authUserProfile,
-            passengerProfiles,
-            assignedActiveRydId: activeRyd.id,
-            isDriver: true,
-            requestedBy: activeRyd.driverId,
-        };
-      });
-      
-      const passengerRydzPromises = passengerSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
-        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-        let driverProfile: UserProfileData | undefined = undefined;
-        if (activeRyd.driverId) {
-          try {
-            const driverDocRef = doc(db, "users", activeRyd.driverId);
-            const driverDocSnap = await getDoc(driverDocRef);
-            if (driverDocSnap.exists()) driverProfile = driverDocSnap.data() as UserProfileData;
-          } catch (e) { console.warn(`Failed to fetch driver profile for ${activeRyd.driverId}`, e); }
-        }
-        let passengerProfiles: UserProfileData[] = [];
-        if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
-            const profilePromises = activeRyd.passengerManifest.filter(p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER && p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER).map(item => getDoc(doc(db, "users", item.userId)));
-            const profileSnaps = await Promise.all(profilePromises);
-            passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
-        }
-        return {
-            id: activeRyd.id,
-            rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
-            destination: activeRyd.finalDestinationAddress || 'Destination TBD',
-            eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
-            status: activeRyd.status,
-            driverProfile: driverProfile,
-            passengerProfiles,
-            assignedActiveRydId: activeRyd.id,
-            isDriver: false,
-        };
-      });
-
-      const pendingRequestsPromises = pendingRequestsSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
-          const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
-          let driverProfile: UserProfileData | undefined = undefined;
-          if (rydData.driverId) {
-              try {
-                  const driverDocRef = doc(db, "users", rydData.driverId);
-                  const driverDocSnap = await getDoc(driverDocRef);
-                  if (driverDocSnap.exists()) driverProfile = driverDocSnap.data() as UserProfileData;
-              } catch (e) { console.warn(`Failed to fetch driver profile for pending request: ${rydData.driverId}`, e); }
-          }
-          let passengerProfiles: UserProfileData[] = [];
-          if (rydData.passengerIds && rydData.passengerIds.length > 0) {
-              const profilePromises = rydData.passengerIds.map(item => getDoc(doc(db, "users", item)));
-              const profileSnaps = await Promise.all(profilePromises);
-              passengerProfiles = profileSnaps.filter(snap => snap.exists()).map(snap => snap.data() as UserProfileData);
-          }
-          return {
-              id: rydData.id,
-              rydTimestamp: rydData.rydTimestamp,
-              destination: rydData.destination,
-              eventName: rydData.eventName || rydData.destination,
-              status: rydData.status,
-              isDriver: false,
-              driverProfile: driverProfile,
-              passengerProfiles: passengerProfiles,
-              assignedActiveRydId: rydData.assignedActiveRydId,
-              requestedBy: rydData.requestedBy,
-          };
-      });
-      
-      const [resolvedDrivingRydz, unfilteredPassengerRydz, pendingRequestsData] = await Promise.all([
-          Promise.all(drivingRydzPromises),
-          Promise.all(passengerRydzPromises),
-          Promise.all(pendingRequestsPromises),
-      ]);
-      
-      const drivingRydzIds = new Set(resolvedDrivingRydz.map(r => r.id));
-      const finalPassengerRydz = unfilteredPassengerRydz.filter(r => !drivingRydzIds.has(r.id));
-      
-      resolvedDrivingRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
-      finalPassengerRydz.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
-      pendingRequestsData.sort((a, b) => a.rydTimestamp.toMillis() - b.rydTimestamp.toMillis());
-      
-      setDrivingRydz(resolvedDrivingRydz);
-      setPassengerRydz(finalPassengerRydz);
-      setPendingRequests(pendingRequestsData);
-
     } catch (e: any) {
-      console.error("Error fetching upcoming rydz:", e);
-      let detailedError = "Failed to load upcoming rydz.";
-       if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required to load upcoming rydz. Please check the browser's developer console for a link to create it.";
-      } else if (e.code === 'permission-denied') {
-        detailedError = "Permission denied when fetching upcoming rydz. Please check Firestore security rules.";
-      }
-      setError(detailedError);
-      toast({ title: "Error", description: detailedError, variant: "destructive", duration: 10000 });
+      console.error("Error calling getUpcomingRydzAction:", e);
+      setError(e.message || "An unexpected client-side error occurred.");
+      toast({ title: "Error", description: e.message, variant: "destructive", duration: 9000 });
     } finally {
       setIsLoadingRydz(false);
     }
-  }, [authUser, authUserProfile, toast, authLoading, isLoadingProfile]);
+  }, [authUser, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
     if (!authLoading && !isLoadingProfile) {
-      updateStaleRydzAction().catch(error => {
-        console.error("Background stale rydz check failed:", error);
-      });
       fetchUpcomingRydz();
     }
   }, [authLoading, isLoadingProfile, fetchUpcomingRydz]);
@@ -291,7 +137,7 @@ export default function UpcomingRydzPage() {
   }
 
   const renderRydCard = (ryd: DisplayRydData, isPendingRequest: boolean = false) => {
-    const rydDate = (ryd.rydTimestamp as Timestamp)?.toDate() || new Date();
+    const rydDate = (ryd.rydTimestamp as unknown as Timestamp)?.toDate() || new Date();
     const driverName = ryd.driverProfile?.fullName || "Pending";
     const trackable = !!ryd.assignedActiveRydId;
     const isDriver = !!ryd.isDriver;
