@@ -16,6 +16,7 @@ import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 import { getUpcomingRydzAction } from '@/actions/rydActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { updateStaleEventsAction, updateStaleRydzAction } from '@/actions/systemActions';
 
 export default function UpcomingRydzPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -27,6 +28,15 @@ export default function UpcomingRydzPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+        updateStaleEventsAction().catch(e => console.error("Upcoming Rydz background stale events check failed:", e.message));
+        updateStaleRydzAction().catch(e => console.error("Upcoming Rydz background stale rydz check failed:", e.message));
+    } catch (e: any) {
+        console.error("Error initiating background jobs on Upcoming Rydz page:", e);
+    }
+  }, []);
 
   const fetchUpcomingRydz = useCallback(async () => {
     if (!authUser) {

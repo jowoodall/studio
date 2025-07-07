@@ -13,6 +13,7 @@ import { type DisplayRydData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { getRydHistoryAction } from '@/actions/rydActions';
 import { format } from 'date-fns';
+import { updateStaleEventsAction, updateStaleRydzAction } from '@/actions/systemActions';
 
 export default function RydHistoryPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -21,6 +22,15 @@ export default function RydHistoryPage() {
   const [rydHistory, setRydHistory] = useState<DisplayRydData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+        updateStaleEventsAction().catch(e => console.error("Ryd History background stale events check failed:", e.message));
+        updateStaleRydzAction().catch(e => console.error("Ryd History background stale rydz check failed:", e.message));
+    } catch (e: any) {
+        console.error("Error initiating background jobs on Ryd History page:", e);
+    }
+  }, []);
 
   const fetchRydHistory = useCallback(async () => {
     if (!authUser) {
