@@ -91,7 +91,7 @@ export function MyNextRyd() {
     );
   }
   
-  const rydTime = nextRyd.eventTimestamp?.toDate();
+  const rydTime = nextRyd.eventTimestamp ? new Date(nextRyd.eventTimestamp) : undefined;
 
   return (
     <Card className="shadow-lg">

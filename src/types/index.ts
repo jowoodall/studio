@@ -206,7 +206,7 @@ export interface DashboardRydData {
   eventName: string;
   destination: string;
   rydStatus: ActiveRydStatus; 
-  eventTimestamp: Timestamp; 
+  eventTimestamp: string; // Changed from Timestamp to string to be serializable
   earliestPickupTimestamp?: Timestamp; 
   proposedDepartureTimestamp?: Timestamp; 
   driverName?: string;

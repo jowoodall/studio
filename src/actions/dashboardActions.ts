@@ -152,8 +152,10 @@ export async function getMyNextRydAction({ idToken }: { idToken: string }): Prom
         driverProfileData = userProfile;
     } else if (nextRyd.driverId) {
         const driverSnap = await admin.firestore().collection('users').doc(nextRyd.driverId).get();
-        if (driverSnap.exists()) driverProfileData = driverSnap.data() as UserProfileData;
+        if (driverSnap.exists) driverProfileData = driverSnap.data() as UserProfileData;
     }
+    
+    const eventTime = nextRyd.plannedArrivalTime || nextRyd.proposedDepartureTime || now;
 
     const dashboardRyd: DashboardRydData = {
         id: nextRyd.id,
@@ -162,7 +164,7 @@ export async function getMyNextRydAction({ idToken }: { idToken: string }): Prom
         eventName: nextRyd.eventName || "Unnamed Ryd",
         destination: nextRyd.finalDestinationAddress || "TBD",
         rydStatus: nextRyd.status,
-        eventTimestamp: nextRyd.plannedArrivalTime || nextRyd.proposedDepartureTime || now,
+        eventTimestamp: eventTime.toDate().toISOString(), // Convert to serializable string
         driverName: driverProfileData?.fullName,
         driverId: nextRyd.driverId,
         passengerStatus: isDriver ? undefined : nextRyd.passengerManifest.find(p => p.userId === rydFor.uid)?.status,

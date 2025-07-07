@@ -11,8 +11,8 @@ if (!admin.apps.length) {
       // This MUST match the client-side `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
       // The error message indicates the client is using 'rydzconnect'.
       projectId: 'rydzconnect',
-    });
-    console.log('[Firebase Admin] Initialized successfully using specified project ID.');
+ });
+    console.log('[Firebase Admin] Initialized successfully using specified project ID:', 'rydzconnect');
   } catch (error) {
     console.error('[Firebase Admin] CRITICAL: Failed to initialize Firebase Admin SDK:', error);
     // In a local development environment, this can happen if you haven't configured
