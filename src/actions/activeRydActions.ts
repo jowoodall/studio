@@ -3,10 +3,11 @@
 
 import admin from '@/lib/firebaseAdmin'; // Using firebaseAdmin for server-side operations
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole, RydData, RydStatus, EventData, RydMessage} from '@/types';
-import { PassengerManifestStatus, ActiveRydStatus as ARStatus, UserRole as RoleEnum } from '@/types';
+import type { ActiveRyd, PassengerManifestItem, UserProfileData, UserRole, RydData, RydStatus, EventData, RydMessage, NotificationType} from '@/types';
+import { PassengerManifestStatus, ActiveRydStatus as ARStatus, UserRole as RoleEnum, NotificationType as NotificationTypeEnum } from '@/types';
 import * as z from 'zod';
 import { nanoid } from 'nanoid';
+import { createNotification } from './notificationActions';
 
 const db = admin.firestore(); // Get Firestore instance from the admin SDK
 
@@ -17,7 +18,7 @@ async function getUserProfile(userId: string): Promise<UserProfileData | null> {
   if (!userDocSnap.exists) {
     return null;
   }
-  return userDocSnap.data() as UserProfileData;
+  return { uid: userDocSnap.id, ...userDocSnap.data() } as UserProfileData;
 }
 
 const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
@@ -83,7 +84,7 @@ export async function requestToJoinActiveRydAction(
     }
 
     // --- Transactional Read-Modify-Write ---
-    const resultMessage = await db.runTransaction(async (transaction) => {
+    const resultData = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
 
       if (!activeRydDocSnap.exists) {
@@ -123,6 +124,7 @@ export async function requestToJoinActiveRydAction(
       let finalStatus = PassengerManifestStatus.PENDING_DRIVER_APPROVAL;
       let approvalRequired = false;
       let finalMessage = `${passengerProfile.fullName}'s request to join the ryd has been sent to the driver for approval.`;
+      let parentIdForNotification: string | null = null;
 
       if (passengerProfile.role === RoleEnum.STUDENT && passengerProfile.associatedParentIds && passengerProfile.associatedParentIds.length > 0) {
         const parentId = passengerProfile.associatedParentIds[0]; // Assuming one parent for now
@@ -137,6 +139,7 @@ export async function requestToJoinActiveRydAction(
             finalStatus = PassengerManifestStatus.PENDING_PARENT_APPROVAL;
             approvalRequired = true;
             finalMessage = `The driver for this ryd has not been approved yet. A request has been sent to ${parentProfile.fullName} for approval.`;
+            parentIdForNotification = parentProfile.uid;
           }
         }
       }
@@ -172,13 +175,42 @@ export async function requestToJoinActiveRydAction(
       }
 
       transaction.update(activeRydDocRef, updatePayload);
-      return finalMessage;
+      
+      return { 
+        finalMessage, 
+        driverId: activeRydData.driverId,
+        isParentalApproval: approvalRequired,
+        parentId: parentIdForNotification,
+      };
     });
+    
+    // --- Create notification outside of transaction ---
+    const passengerName = passengerProfile.fullName;
+    const { driverId, isParentalApproval, parentId } = resultData;
+
+    if (isParentalApproval && parentId) {
+        await createNotification(
+            parentId,
+            'Ryd Approval Required',
+            `Your approval is required for ${passengerName} to join a ryd.`,
+            NotificationTypeEnum.WARNING,
+            '/parent/approvals'
+        );
+    } else {
+        await createNotification(
+            driverId,
+            'New Ryd Request',
+            `${passengerName} has requested to join your ryd.`,
+            NotificationTypeEnum.INFO,
+            `/rydz/tracking/${activeRydId}`
+        );
+    }
+    // --- End notification creation ---
 
     console.log("[Action: requestToJoinActiveRydAction] Transaction successful for rydId:", activeRydId);
     return {
         success: true,
-        message: resultMessage,
+        message: resultData.finalMessage,
         rydId: activeRydId,
     };
 

@@ -248,3 +248,21 @@ export interface ConversationListItem {
   }[];
   isUnread?: boolean; // For future use
 }
+
+export enum NotificationType {
+  INFO = 'info',
+  SUCCESS = 'success',
+  WARNING = 'warning',
+  ERROR = 'error',
+}
+
+export interface NotificationData {
+  id: string;
+  userId: string; // The user who receives the notification
+  title: string;
+  message: string;
+  type: NotificationType;
+  createdAt: Timestamp;
+  read: boolean;
+  link?: string; // Optional link to navigate to, e.g., /rydz/tracking/some_ryd_id
+}

@@ -1,61 +1,102 @@
 
+"use client";
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BellRing, CheckCheck, AlertTriangle, Info } from "lucide-react";
+import { BellRing, CheckCheck, AlertTriangle, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next';
+import { useAuth } from '@/context/AuthContext';
+import { getNotificationsAction, markAllNotificationsAsReadAction } from '@/actions/notificationActions';
+import { type NotificationData, NotificationType } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { formatDistanceToNow } from 'date-fns';
+import { cn } from '@/lib/utils';
 
-export const metadata: Metadata = {
-  title: 'Notifications',
+const iconMap: Record<NotificationType, { icon: React.ElementType, colorClass: string, bgClass: string }> = {
+  [NotificationType.INFO]: { icon: Info, colorClass: "text-blue-500", bgClass: "bg-blue-100" },
+  [NotificationType.SUCCESS]: { icon: CheckCheck, colorClass: "text-green-500", bgClass: "bg-green-100" },
+  [NotificationType.WARNING]: { icon: AlertTriangle, colorClass: "text-yellow-500", bgClass: "bg-yellow-100" },
+  [NotificationType.ERROR]: { icon: AlertTriangle, colorClass: "text-destructive", bgClass: "bg-destructive/10" },
 };
 
-const mockNotifications = [
-  { id: "1", title: "New Ryd Request", message: "John Doe requested a ryd to Northwood High.", date: "2024-11-15 09:30 AM", type: "info", read: false, icon: Info, iconColor: "text-blue-500" }, // Changed Ride to Ryd, ride to ryd
-  { id: "2", title: "Ryd Confirmed", message: "Your ryd with Jane Smith for the School Annual Day is confirmed.", date: "2024-11-14 05:00 PM", type: "success", read: true, icon: CheckCheck, iconColor: "text-green-500" }, // Changed Ride to Ryd, ride to ryd
-  { id: "3", title: "Driver Approved", message: "You approved Alex Johnson to drive your child.", date: "2024-11-14 02:10 PM", type: "success", read: true, icon: CheckCheck, iconColor: "text-green-500"},
-  { id: "4", title: "Event Reminder", message: "Community Soccer Match starts in 2 hours.", date: "2024-11-13 12:00 PM", type: "warning", read: false, icon: AlertTriangle, iconColor: "text-yellow-500" },
-];
-
 export default function NotificationsPage() {
-  // In a real app, you'd fetch notifications
-  const unreadCount = mockNotifications.filter(n => !n.read).length;
+  const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
+  
+  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  return (
-    <>
-      <PageHeader
-        title="Notifications"
-        description={`You have ${unreadCount} unread notifications.`}
-        actions={
-          <Button variant="outline" disabled={mockNotifications.every(n => n.read)}>Mark all as read</Button>
-        }
-      />
+  const fetchNotifications = useCallback(async () => {
+    if (!user) {
+      if (!authLoading) setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await getNotificationsAction(user.uid);
+      if (result.success && result.notifications) {
+        setNotifications(result.notifications);
+      } else {
+        throw new Error(result.message || "Failed to load notifications.");
+      }
+    } catch (err: any) {
+      setError(err.message);
+      toast({
+        title: "Error Loading Notifications",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, authLoading, toast]);
 
-      {mockNotifications.length > 0 ? (
-        <div className="space-y-4">
-          {mockNotifications.map((notification) => {
-            const IconComponent = notification.icon;
-            return (
-            <Card key={notification.id} className={`shadow-md ${!notification.read ? 'border-primary border-2' : 'border-border'}`}>
-              <CardHeader className="flex flex-row items-start gap-4 pb-3 pt-4">
-                <div className={`p-2 bg-muted rounded-full ${notification.iconColor} bg-opacity-20`}>
-                    <IconComponent className={`h-5 w-5 ${notification.iconColor}`} />
-                </div>
-                <div className="flex-1">
-                  <CardTitle className={`text-base font-semibold ${!notification.read ? 'text-primary' : ''}`}>{notification.title}</CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground">{notification.date}</CardDescription>
-                </div>
-                {!notification.read && <div className="h-2.5 w-2.5 rounded-full bg-primary mt-1"></div>}
-              </CardHeader>
-              <CardContent className="pb-4 pt-0 pl-16">
-                <p className="text-sm">{notification.message}</p>
-                {/* Add actions specific to notification type if needed */}
-                {/* e.g., <Button variant="link" size="sm" className="px-0">View Details</Button> */}
-              </CardContent>
-            </Card>
-          )})}
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const handleMarkAllAsRead = async () => {
+    if (!user) return;
+    try {
+      const result = await markAllNotificationsAsReadAction(user.uid);
+      if (result.success) {
+        toast({ title: "Notifications Updated", description: result.message });
+        // Optimistically update UI
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      } else {
+        toast({ title: "Error", description: result.message, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: "An unexpected error occurred.", variant: "destructive" });
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const renderContent = () => {
+    if (isLoading || authLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full py-12">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="mt-4 text-muted-foreground">Loading notifications...</p>
         </div>
-      ) : (
+      );
+    }
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full py-12 text-center">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h3 className="text-xl font-semibold">Error Loading Notifications</h3>
+          <p className="text-muted-foreground mt-2">{error}</p>
+        </div>
+      );
+    }
+    if (notifications.length === 0) {
+      return (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <BellRing className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -63,12 +104,65 @@ export default function NotificationsPage() {
           </CardHeader>
           <CardContent>
             <CardDescription>
-              You&apos;re all caught up!
+              You're all caught up!
             </CardDescription>
           </CardContent>
         </Card>
-      )}
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {notifications.map((notification) => {
+          const { icon: IconComponent, colorClass, bgClass } = iconMap[notification.type];
+          const notificationCard = (
+            <Card key={notification.id} className={cn("shadow-md transition-all", !notification.read && 'border-primary border-2')}>
+              <CardHeader className="flex flex-row items-start gap-4 pb-3 pt-4">
+                <div className={cn("p-2 rounded-full", bgClass)}>
+                    <IconComponent className={cn("h-5 w-5", colorClass)} />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className={cn("text-base font-semibold", !notification.read && 'text-primary')}>{notification.title}</CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(notification.createdAt.toDate(), { addSuffix: true })}
+                  </CardDescription>
+                </div>
+                {!notification.read && <div className="h-2.5 w-2.5 rounded-full bg-primary mt-1"></div>}
+              </CardHeader>
+              <CardContent className="pb-4 pt-0 pl-16">
+                <p className="text-sm">{notification.message}</p>
+              </CardContent>
+            </Card>
+          );
+          
+          return notification.link ? (
+            <Link href={notification.link} key={notification.id} className="block hover:opacity-90">
+              {notificationCard}
+            </Link>
+          ) : (
+            notificationCard
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Notifications"
+        description={isLoading ? "Loading..." : `You have ${unreadCount} unread notifications.`}
+        actions={
+          <Button 
+            variant="outline" 
+            onClick={handleMarkAllAsRead}
+            disabled={unreadCount === 0 || isLoading}
+          >
+            Mark all as read
+          </Button>
+        }
+      />
+      {renderContent()}
     </>
   );
 }
-
