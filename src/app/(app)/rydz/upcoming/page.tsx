@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -9,7 +8,7 @@ import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, 
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
-import { type DisplayRydData, type RydStatus, type ActiveRyd } from '@/types';
+import { type DisplayRydData, type RydStatus, type ActiveRyd, type UserProfileData } from '@/types';
 import { ActiveRydStatus as ARStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -17,64 +16,170 @@ import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
 import { updateStaleRydzAction } from '@/actions/systemActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { getUpcomingRydzAction } from '@/actions/rydActions';
-import type { Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, doc, getDoc, Timestamp } from 'firebase/firestore';
+
+
+// Helper function to fetch a user profile
+async function getClientSideUserProfile(userId: string): Promise<UserProfileData | null> {
+    if (!userId) return null;
+    try {
+        const userDocRef = doc(db, "users", userId);
+        const userDocSnap = await getDoc(userDocRef);
+        return userDocSnap.exists() ? (userDocSnap.data() as UserProfileData) : null;
+    } catch (error) {
+        console.error(`Error fetching profile for ${userId}:`, error);
+        return null;
+    }
+}
 
 
 export default function UpcomingRydzPage() {
-  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
 
   const [drivingRydz, setDrivingRydz] = useState<DisplayRydData[]>([]);
   const [passengerRydz, setPassengerRydz] = useState<DisplayRydData[]>([]);
   const [pendingRequests, setPendingRequests] = useState<DisplayRydData[]>([]);
-  const [isLoadingRydz, setIsLoadingRydz] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCancellingRyd, setIsCancellingRyd] = useState<Record<string, boolean>>({});
 
   const fetchUpcomingRydz = useCallback(async () => {
     if (!authUser) {
-      if (!authLoading && !isLoadingProfile) {
-        setIsLoadingRydz(false);
-      }
+      setIsLoading(false);
       return;
     }
 
-    setIsLoadingRydz(true);
+    setIsLoading(true);
     setError(null);
     try {
       // Run stale check in the background
       updateStaleRydzAction().catch(err => console.error("Background stale rydz check failed:", err));
-      
-      const result = await getUpcomingRydzAction(authUser.uid);
 
-      if (result.success) {
-        setDrivingRydz(result.drivingRydz || []);
-        setPassengerRydz(result.passengerRydz || []);
-        setPendingRequests(result.pendingRequests || []);
-      } else {
-        throw new Error(result.message || "Failed to fetch rydz from server action.");
-      }
+      const upcomingActiveRydStatuses: ARStatus[] = [
+        ARStatus.PLANNING, ARStatus.AWAITING_PASSENGERS, ARStatus.RYD_PLANNED,
+        ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE,
+      ];
+      const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
+
+      // --- Queries ---
+      const drivingQuery = query(collection(db, "activeRydz"), where("driverId", "==", authUser.uid));
+      const passengerQuery = query(collection(db, "activeRydz"), where("passengerUids", "array-contains", authUser.uid));
+      const pendingRequestsQuery = query(collection(db, "rydz"), where("passengerIds", "array-contains", authUser.uid));
+      
+      const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
+        getDocs(drivingQuery),
+        getDocs(passengerQuery),
+        getDocs(pendingRequestsQuery),
+      ]);
+
+      // --- Process Driving Rydz ---
+      const drivingDocs = drivingSnap.docs
+        .filter(doc => upcomingActiveRydStatuses.includes(doc.data().status));
+      const drivingRydzPromises = drivingDocs.map(async (docSnap): Promise<DisplayRydData> => {
+        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+        const passengerProfiles = (await Promise.all(
+          (activeRyd.passengerUids || []).map(id => getClientSideUserProfile(id))
+        )).filter(Boolean) as UserProfileData[];
+        const driverProfile = await getClientSideUserProfile(authUser.uid);
+
+        return {
+          id: activeRyd.id,
+          rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
+          destination: activeRyd.finalDestinationAddress || 'Destination TBD',
+          eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
+          status: activeRyd.status,
+          driverProfile: driverProfile || undefined,
+          passengerProfiles,
+          assignedActiveRydId: activeRyd.id,
+          isDriver: true,
+          requestedBy: activeRyd.driverId,
+        };
+      });
+      const resolvedDrivingRydz = await Promise.all(drivingRydzPromises);
+      resolvedDrivingRydz.sort((a, b) => (a.rydTimestamp as Timestamp).toMillis() - (b.rydTimestamp as Timestamp).toMillis());
+      setDrivingRydz(resolvedDrivingRydz);
+
+
+      // --- Process Passenger Rydz ---
+      const passengerDocs = passengerSnap.docs
+        .filter(doc => doc.data().driverId !== authUser.uid) // Exclude rydz they are driving
+        .filter(doc => upcomingActiveRydStatuses.includes(doc.data().status));
+      const passengerRydzPromises = passengerDocs.map(async (docSnap): Promise<DisplayRydData> => {
+        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+        const driverProfile = await getClientSideUserProfile(activeRyd.driverId);
+        const passengerProfiles = (await Promise.all(
+          (activeRyd.passengerUids || []).map(id => getClientSideUserProfile(id))
+        )).filter(Boolean) as UserProfileData[];
+
+        return {
+          id: activeRyd.id,
+          rydTimestamp: activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime || activeRyd.createdAt,
+          destination: activeRyd.finalDestinationAddress || 'Destination TBD',
+          eventName: activeRyd.eventName || activeRyd.finalDestinationAddress || 'Unnamed Ryd',
+          status: activeRyd.status,
+          driverProfile: driverProfile || undefined,
+          passengerProfiles,
+          assignedActiveRydId: activeRyd.id,
+          isDriver: false,
+        };
+      });
+      const resolvedPassengerRydz = await Promise.all(passengerRydzPromises);
+      resolvedPassengerRydz.sort((a, b) => (a.rydTimestamp as Timestamp).toMillis() - (b.rydTimestamp as Timestamp).toMillis());
+      setPassengerRydz(resolvedPassengerRydz);
+
+
+      // --- Process Pending Requests ---
+      const pendingRequestDocs = pendingRequestsSnap.docs
+        .filter(doc => pendingRequestStatuses.includes(doc.data().status));
+      const pendingRequestsPromises = pendingRequestDocs.map(async (docSnap): Promise<DisplayRydData> => {
+        const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
+        const driverProfile = rydData.driverId ? await getClientSideUserProfile(rydData.driverId) : undefined;
+        const passengerProfiles = (await Promise.all(
+          (rydData.passengerIds || []).map(id => getClientSideUserProfile(id))
+        )).filter(Boolean) as UserProfileData[];
+
+        return {
+          id: rydData.id,
+          rydTimestamp: rydData.rydTimestamp,
+          destination: rydData.destination,
+          eventName: rydData.eventName || rydData.destination,
+          status: rydData.status,
+          isDriver: false,
+          driverProfile: driverProfile || undefined,
+          passengerProfiles: passengerProfiles,
+          assignedActiveRydId: rydData.assignedActiveRydId,
+          requestedBy: rydData.requestedBy,
+        };
+      });
+      const pendingRequestsData = await Promise.all(pendingRequestsPromises);
+      pendingRequestsData.sort((a, b) => (a.rydTimestamp as Timestamp).toMillis() - (b.rydTimestamp as Timestamp).toMillis());
+      setPendingRequests(pendingRequestsData);
+
+
     } catch (e: any) {
-      console.error("Error calling getUpcomingRydzAction:", e);
-      setError(e.message || "An unexpected client-side error occurred.");
-      toast({ title: "Error", description: e.message, variant: "destructive", duration: 9000 });
+      console.error("Error fetching rydz on client:", e);
+      let errorMessage = "An error occurred while fetching your rydz.";
+      if (e.code === 'permission-denied' || e.message.includes('permission-denied')) {
+        errorMessage = "You do not have permission to view these rydz. Please check your Firestore security rules.";
+      }
+      setError(errorMessage);
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     } finally {
-      setIsLoadingRydz(false);
+      setIsLoading(false);
     }
-  }, [authUser, toast, authLoading, isLoadingProfile]);
+  }, [authUser, toast]);
 
   useEffect(() => {
-    if (!authLoading && !isLoadingProfile) {
+    if (!authLoading) {
       fetchUpcomingRydz();
     }
-  }, [authLoading, isLoadingProfile, fetchUpcomingRydz]);
+  }, [authLoading, fetchUpcomingRydz]);
+
 
   const handleCancelRydRequest = async (rydRequestId: string) => {
-    if (!authUser) {
-      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
-      return;
-    }
+    if (!authUser) return;
     setIsCancellingRyd(prev => ({ ...prev, [rydRequestId]: true }));
     try {
       const result = await cancelRydRequestByUserAction({
@@ -82,7 +187,7 @@ export default function UpcomingRydzPage() {
         cancellingUserId: authUser.uid,
       });
       if (result.success) {
-        toast({ title: "Ryd Request Cancelled", description: result.message });
+        toast({ title: "Request Cancelled", description: result.message });
         fetchUpcomingRydz();
       } else {
         toast({ title: "Cancellation Failed", description: result.message, variant: "destructive" });
@@ -94,9 +199,8 @@ export default function UpcomingRydzPage() {
     }
   };
 
-  const isLoadingInitial = authLoading || isLoadingProfile;
 
-  if (isLoadingInitial) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -104,38 +208,8 @@ export default function UpcomingRydzPage() {
       </div>
     );
   }
-  
-  if (!authUser && !isLoadingInitial) {
-     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-        <p className="text-muted-foreground px-4">Please log in to view your upcoming rydz.</p>
-        <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
-      </div>
-    );
-  }
 
-  if (isLoadingRydz && !isLoadingInitial) { 
-     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Fetching your rydz...</p>
-      </div>
-    );
-  }
-  
-  if (error && !isLoadingRydz) {
-     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Error Loading Rydz</h2>
-        <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
-        <Button onClick={fetchUpcomingRydz} className="mt-4">Try Again</Button>
-      </div>
-    );
-  }
-
+  // JSX rendering part
   const renderRydCard = (ryd: DisplayRydData, isPendingRequest: boolean = false) => {
     const rydDate = (ryd.rydTimestamp as unknown as Timestamp)?.toDate() || new Date();
     const driverName = ryd.driverProfile?.fullName || "Pending";
@@ -222,70 +296,89 @@ export default function UpcomingRydzPage() {
     );
   }
 
+  // JSX structure
   return (
     <>
       <PageHeader
         title="Upcoming Rydz"
         description="Here are your scheduled and requested rydz."
       />
+      {error && (
+        <Card className="text-center py-10 shadow-md bg-destructive/10 border-destructive">
+          <CardHeader>
+            <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
+            <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Rydz</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
+              {error}
+            </CardDescription>
+            <Button onClick={fetchUpcomingRydz} variant="secondary" type="button">Try Again</Button>
+          </CardContent>
+        </Card>
+      )}
       
-      <section>
-        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Rydz I'm Driving</h2>
-        {drivingRydz.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {drivingRydz.map(ryd => renderRydCard(ryd, false))}
-          </div>
-        ) : (
-          <Card className="text-center py-12 shadow-md">
-            <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
-            <CardContent>
-              <CardTitle className="font-headline text-xl">No Driving Commitments</CardTitle>
-              <CardDescription className="mt-2">You are not scheduled to drive for any upcoming rydz.</CardDescription>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      <Separator className="my-8" />
-      
-      <section>
-        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Upcoming Rydz (as Passenger)</h2>
-        {passengerRydz.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {passengerRydz.map(ryd => renderRydCard(ryd, false))}
-          </div>
-        ) : (
-          <Card className="text-center py-12 shadow-md">
-            <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
-            <CardContent>
-              <CardTitle className="font-headline text-xl">No Upcoming Rydz</CardTitle>
-              <CardDescription className="mt-2 mb-6">You are not a passenger in any upcoming rydz.</CardDescription>
-              <Button asChild>
-                <Link href="/rydz/request">Request a Ryd</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      <Separator className="my-8" />
-
-      <section>
-        <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Pending Requests</h2>
-        {pendingRequests.length > 0 ? (
-           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {pendingRequests.map(ryd => renderRydCard(ryd, true))}
-          </div>
-        ) : (
-           <Card className="text-center py-12 shadow-md">
-            <CardHeader><Clock className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
-            <CardContent>
-              <CardTitle className="font-headline text-xl">No Pending Requests</CardTitle>
-              <CardDescription className="mt-2">You have no ryd requests that are currently awaiting a driver.</CardDescription>
-            </CardContent>
-          </Card>
-        )}
-      </section>
+      {!error && (
+        <>
+            <section>
+                <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Rydz I'm Driving</h2>
+                {drivingRydz.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {drivingRydz.map(ryd => renderRydCard(ryd, false))}
+                </div>
+                ) : (
+                <Card className="text-center py-12 shadow-md">
+                    <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
+                    <CardContent>
+                    <CardTitle className="font-headline text-xl">No Driving Commitments</CardTitle>
+                    <CardDescription className="mt-2">You are not scheduled to drive for any upcoming rydz.</CardDescription>
+                    </CardContent>
+                </Card>
+                )}
+            </section>
+            
+            <Separator className="my-8" />
+            
+            <section>
+                <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Upcoming Rydz (as Passenger)</h2>
+                {passengerRydz.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {passengerRydz.map(ryd => renderRydCard(ryd, false))}
+                </div>
+                ) : (
+                <Card className="text-center py-12 shadow-md">
+                    <CardHeader><Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
+                    <CardContent>
+                    <CardTitle className="font-headline text-xl">No Upcoming Rydz</CardTitle>
+                    <CardDescription className="mt-2 mb-6">You are not a passenger in any upcoming rydz.</CardDescription>
+                    <Button asChild>
+                        <Link href="/rydz/request">Request a Ryd</Link>
+                    </Button>
+                    </CardContent>
+                </Card>
+                )}
+            </section>
+            
+            <Separator className="my-8" />
+            
+            <section>
+                <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Pending Requests</h2>
+                {pendingRequests.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {pendingRequests.map(ryd => renderRydCard(ryd, true))}
+                </div>
+                ) : (
+                <Card className="text-center py-12 shadow-md">
+                    <CardHeader><Clock className="mx-auto h-12 w-12 text-muted-foreground mb-4" /></CardHeader>
+                    <CardContent>
+                    <CardTitle className="font-headline text-xl">No Pending Requests</CardTitle>
+                    <CardDescription className="mt-2">You have no ryd requests that are currently awaiting a driver.</CardDescription>
+                    </CardContent>
+                </Card>
+                )}
+            </section>
+        </>
+      )}
     </>
   );
 }
