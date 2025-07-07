@@ -39,11 +39,6 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
       return { success: false, message: "User profile not found." };
     }
     const userProfile = userProfileSnap.data() as UserProfileData;
-
-    const passengerIdsForQuery = [userId];
-    if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
-        passengerIdsForQuery.push(...userProfile.managedStudentIds);
-    }
     
     const now = Timestamp.now();
     const upcomingStatuses: ActiveRydStatus[] = [
@@ -54,73 +49,45 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
       ActiveRydStatus.IN_PROGRESS_ROUTE,
     ];
 
-    const drivingQuery = db.collection('activeRydz')
-      .where('driverId', '==', userId)
-      .where('status', 'in', upcomingStatuses)
-      .where('plannedArrivalTime', '>=', now)
-      .orderBy('plannedArrivalTime', 'asc')
-      .limit(1);
-
-    const passengerQuery = db.collection('activeRydz')
-      .where('passengerUids', 'array-contains-any', passengerIdsForQuery)
-      .where('status', 'in', upcomingStatuses)
-      .where('plannedArrivalTime', '>=', now)
-      .orderBy('plannedArrivalTime', 'asc')
-      .limit(5); // Fetch a few to find the next relevant one
+    // Use simple, valid queries
+    const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId);
+    const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains', userId);
 
     const [drivingSnap, passengerSnap] = await Promise.all([
       drivingQuery.get(),
       passengerQuery.get(),
     ]);
-
-    let nextRyd: ActiveRyd | null = null;
-    let isDriver = false;
-
-    const nextDrivingRyd = drivingSnap.empty ? null : { id: drivingSnap.docs[0].id, ...drivingSnap.docs[0].data() } as ActiveRyd;
     
-    const passengerRydz = passengerSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActiveRyd))
-        .filter(ryd => ryd.driverId !== userId); // Exclude rydz they are driving
-        
-    const nextPassengerRyd = passengerRydz.length > 0 ? passengerRydz[0] : null;
+    // Combine and filter in code
+    const allUserRydz: ActiveRyd[] = [];
+    drivingSnap.forEach(doc => allUserRydz.push({ id: doc.id, ...doc.data() } as ActiveRyd));
+    passengerSnap.forEach(doc => {
+        // Avoid duplicates if user is passenger in their own ryd (edge case)
+        if (!allUserRydz.some(r => r.id === doc.id)) {
+            allUserRydz.push({ id: doc.id, ...doc.data() } as ActiveRyd);
+        }
+    });
 
-    if (nextDrivingRyd && nextPassengerRyd) {
-      if ((nextDrivingRyd.plannedArrivalTime as Timestamp).toMillis() <= (nextPassengerRyd.plannedArrivalTime as Timestamp).toMillis()) {
-        nextRyd = nextDrivingRyd;
-        isDriver = true;
-      } else {
-        nextRyd = nextPassengerRyd;
-        isDriver = false;
-      }
-    } else if (nextDrivingRyd) {
-      nextRyd = nextDrivingRyd;
-      isDriver = true;
-    } else if (nextPassengerRyd) {
-      nextRyd = nextPassengerRyd;
-      isDriver = false;
-    }
+    const upcomingRydz = allUserRydz
+        .filter(ryd => upcomingStatuses.includes(ryd.status))
+        .filter(ryd => (ryd.plannedArrivalTime as Timestamp)?.toMillis() >= now.toMillis())
+        .sort((a, b) => (a.plannedArrivalTime as Timestamp).toMillis() - (b.plannedArrivalTime as Timestamp).toMillis());
 
-    if (!nextRyd) {
+
+    if (upcomingRydz.length === 0) {
       return { success: true, ryd: null };
     }
-
+    
+    const nextRyd = upcomingRydz[0];
+    const isDriver = nextRyd.driverId === userId;
+    
     // Determine which user this ryd is for (self or student)
     let rydFor = { name: userProfile.fullName, relation: 'self' as const, uid: userId };
-    if (!isDriver) {
-      for (const passengerId of passengerIdsForQuery) {
-        if (nextRyd.passengerManifest.some(p => p.userId === passengerId)) {
-          if (passengerId !== userId) {
-            const studentProfileSnap = await db.collection('users').doc(passengerId).get();
-            if (studentProfileSnap.exists()) {
-              rydFor = { name: (studentProfileSnap.data() as UserProfileData).fullName, relation: 'student' as const, uid: passengerId };
-            }
-          }
-          break; // Found the relevant passenger
-        }
-      }
-    }
     
     let driverProfile: UserProfileData | undefined = undefined;
-    if (!isDriver && nextRyd.driverId) {
+    if (isDriver) {
+        driverProfile = userProfile;
+    } else if (nextRyd.driverId) {
         const driverSnap = await db.collection('users').doc(nextRyd.driverId).get();
         if (driverSnap.exists()) driverProfile = driverSnap.data() as UserProfileData;
     }
@@ -133,7 +100,7 @@ export async function getMyNextRydAction(userId: string): Promise<{ success: boo
         destination: nextRyd.finalDestinationAddress || "TBD",
         rydStatus: nextRyd.status,
         eventTimestamp: nextRyd.plannedArrivalTime || nextRyd.proposedDepartureTime || now,
-        driverName: isDriver ? userProfile.fullName : driverProfile?.fullName,
+        driverName: driverProfile?.fullName,
         driverId: nextRyd.driverId,
         passengerStatus: isDriver ? undefined : nextRyd.passengerManifest.find(p => p.userId === rydFor.uid)?.status,
     };

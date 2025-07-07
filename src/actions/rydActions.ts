@@ -69,19 +69,13 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
         
         // Query for rydz the user is DRIVING
-        const drivingQuery = db.collection('activeRydz')
-            .where('driverId', '==', userId)
-            .where('status', 'in', upcomingActiveRydStatuses);
+        const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId);
         
         // Query for ACTIVE rydz the user is a PASSENGER in
-        const passengerQuery = db.collection('activeRydz')
-            .where('passengerUids', 'array-contains', userId)
-            .where('status', 'in', upcomingActiveRydStatuses);
+        const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains', userId);
             
         // Query for PENDING requests where the user is a passenger
-        const pendingRequestsQuery = db.collection('rydz')
-            .where('passengerIds', 'array-contains', userId)
-            .where('status', 'in', pendingRequestStatuses);
+        const pendingRequestsQuery = db.collection('rydz').where('passengerIds', 'array-contains', userId);
         
 
         const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
@@ -89,9 +83,15 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
             passengerQuery.get(),
             pendingRequestsQuery.get(),
         ]);
+        
+        // Filter in code, not in the query
+        const drivingRydzDocs = drivingSnap.docs.filter(doc => upcomingActiveRydStatuses.includes(doc.data().status));
+        const passengerRydzDocs = passengerSnap.docs.filter(doc => upcomingActiveRydStatuses.includes(doc.data().status));
+        const pendingRequestsDocs = pendingRequestsSnap.docs.filter(doc => pendingRequestStatuses.includes(doc.data().status));
+
 
         // --- Process Driving Rydz ---
-        const drivingRydzPromises = drivingSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+        const drivingRydzPromises = drivingRydzDocs.map(async (docSnap): Promise<DisplayRydData> => {
             const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
             let passengerProfiles: UserProfileData[] = [];
             if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
@@ -115,7 +115,7 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         });
         
         // --- Process Passenger Rydz ---
-        const passengerRydzPromises = passengerSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+        const passengerRydzPromises = passengerRydzDocs.map(async (docSnap): Promise<DisplayRydData> => {
             const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
             const driverProfileData = await getUserProfile(activeRyd.driverId);
             let passengerProfiles: UserProfileData[] = [];
@@ -139,7 +139,7 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         });
 
         // --- Process Pending Rydz ---
-        const pendingRequestsPromises = pendingRequestsSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+        const pendingRequestsPromises = pendingRequestsDocs.map(async (docSnap): Promise<DisplayRydData> => {
             const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
             const driverProfileData = rydData.driverId ? await getUserProfile(rydData.driverId) : undefined;
             let passengerProfiles: UserProfileData[] = [];
