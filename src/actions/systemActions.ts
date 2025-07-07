@@ -38,57 +38,51 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
+  const statusesToUpdate: ARStatus[] = [
+    ARStatus.PLANNING,
+    ARStatus.AWAITING_PASSENGERS,
+    ARStatus.RYD_PLANNED,
+    ARStatus.IN_PROGRESS_PICKUP,
+    ARStatus.IN_PROGRESS_ROUTE,
+  ];
+
   try {
-    // Query by 'createdAt' to find all old rydz, as this field is always present.
-    // This is more reliable than querying by 'plannedArrivalTime'.
+    // This query is specific and may require a composite index in Firestore on (status, plannedArrivalTime).
+    // The query finds rydz with an "active" status whose planned arrival time was over 48 hours ago.
     const staleRydzQuery = db.collection('activeRydz')
-      .where('createdAt', '<', fortyEightHoursAgo);
+      .where('status', 'in', statusesToUpdate)
+      .where('plannedArrivalTime', '<', fortyEightHoursAgo);
 
     const snapshot = await staleRydzQuery.get();
 
     if (snapshot.empty) {
-      const message = "No potentially stale non-event rydz found to update.";
-      return { success: true, message, updatedRydz: 0 };
-    }
-
-    const statusesToUpdate: ARStatus[] = [
-      ARStatus.PLANNING,
-      ARStatus.AWAITING_PASSENGERS,
-      ARStatus.RYD_PLANNED,
-      ARStatus.IN_PROGRESS_PICKUP,
-      ARStatus.IN_PROGRESS_ROUTE,
-    ];
-
-    // Filter in code for rydz without an associated event and with a resolvable status.
-    const docsToProcess = snapshot.docs.filter(doc => 
-      !doc.data().associatedEventId && statusesToUpdate.includes(doc.data().status)
-    );
-
-    if (docsToProcess.length === 0) {
-      const message = "No stale non-event rydz with unresolved statuses found.";
+      const message = "No stale non-event rydz found to update.";
       return { success: true, message, updatedRydz: 0 };
     }
 
     const batch = db.batch();
     let updatedCount = 0;
 
-    docsToProcess.forEach(doc => {
+    snapshot.docs.forEach(doc => {
       const ryd = doc.data() as ActiveRyd;
-      const rydRef = doc.ref;
-      let newStatus: ARStatus | null = null;
+      
+      // Further filter in code to only affect rydz without an associated event,
+      // as event-based rydz are handled by a different action.
+      if (!ryd.associatedEventId) {
+        let newStatus: ARStatus | null = null;
+        const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE, ARStatus.RYD_PLANNED];
+        const planningStatuses = [ARStatus.AWAITING_PASSENGERS, ARStatus.PLANNING];
 
-      const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE];
-      const planningStatuses = [ARStatus.AWAITING_PASSENGERS, ARStatus.PLANNING, ARStatus.RYD_PLANNED];
+        if (inProgressStatuses.includes(ryd.status)) {
+          newStatus = ARStatus.COMPLETED;
+        } else if (planningStatuses.includes(ryd.status)) {
+          newStatus = ARStatus.CANCELLED_BY_SYSTEM;
+        }
 
-      if (inProgressStatuses.includes(ryd.status)) {
-        newStatus = ARStatus.COMPLETED;
-      } else if (planningStatuses.includes(ryd.status)) {
-        newStatus = ARStatus.CANCELLED_BY_SYSTEM;
-      }
-
-      if (newStatus) {
-        batch.update(rydRef, { status: newStatus, updatedAt: FieldValue.serverTimestamp() });
-        updatedCount++;
+        if (newStatus) {
+          batch.update(doc.ref, { status: newStatus, updatedAt: FieldValue.serverTimestamp() });
+          updatedCount++;
+        }
       }
     });
 
@@ -100,6 +94,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     return { success: true, message: successMessage, updatedRydz: updatedCount };
 
   } catch (error: any) {
+    // The handleActionError function already has logic to provide a user-friendly
+    // message if a composite index is missing.
     const { message } = handleActionError(error, "updateStaleRydzAction");
     return { success: false, message, updatedRydz: 0 };
   }
