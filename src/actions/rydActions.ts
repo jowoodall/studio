@@ -116,6 +116,18 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
+    // Fetch user profile to check for managed students
+    const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
+    if (!userProfileSnap.exists()) {
+        return { success: false, message: "User profile not found." };
+    }
+    const userProfile = userProfileSnap.data() as UserProfileData;
+
+    const uidsToQuery = [userId];
+    if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
+        uidsToQuery.push(...userProfile.managedStudentIds);
+    }
+
     const upcomingActiveRydStatuses: ActiveRydStatus[] = [
       ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS, ActiveRydStatus.RYD_PLANNED,
       ActiveRydStatus.IN_PROGRESS_PICKUP, ActiveRydStatus.IN_PROGRESS_ROUTE,
@@ -123,9 +135,14 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
 
     // --- Queries using REST API ---
+    // Query for rydz the user is driving
     const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
-    const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } } } };
-    const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } } } };
+    
+    // Query for active rydz where the user OR their students are passengers
+    const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+    
+    // Query for pending requests where the user OR their students are passengers
+    const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
 
     const [drivingResults, passengerResults, requestsResults] = await Promise.all([
       runFirestoreQuery(drivingQuery, idToken),
