@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -26,7 +27,8 @@ export function MyNextRyd() {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await getMyNextRydAction(user.uid);
+        const idToken = await user.getIdToken();
+        const result = await getMyNextRydAction({ idToken });
         if (result.success) {
           setNextRyd(result.ryd);
         } else {
@@ -34,7 +36,7 @@ export function MyNextRyd() {
           setNextRyd(null);
         }
       } catch (e: any) {
-        setError("An unexpected error occurred.");
+        setError(`An unexpected error occurred: ${e.message}`);
         setNextRyd(null);
       } finally {
         setIsLoading(false);
