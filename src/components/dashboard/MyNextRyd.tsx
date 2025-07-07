@@ -62,12 +62,19 @@ export function MyNextRyd() {
 
   if (error) {
     return (
-      <Card className="shadow-lg text-center py-8 bg-destructive/10">
-        <CardHeader>
-          <Car className="mx-auto h-12 w-12 text-destructive mb-2" />
-          <CardTitle className="text-destructive-foreground">Could Not Load Ryd</CardTitle>
-          <CardDescription className="text-destructive-foreground/80">{error}</CardDescription>
+      <Card className="shadow-lg text-center py-8 bg-destructive/10 border border-destructive/20">
+        <CardHeader className="items-center">
+          <Car className="h-10 w-10 text-destructive mb-2" />
+          <CardTitle className="font-semibold text-destructive">Could Not Load Ryd</CardTitle>
+          <CardDescription className="text-destructive/90 mt-2 max-w-md mx-auto text-balance">
+            An unexpected error occurred. Please try to refresh your browser. Make sure that the database project and authentication tokens are configured correctly. We are also working on improvements to make the dashboard faster and more reliable, so check back in the future.
+          </CardDescription>
         </CardHeader>
+        <CardContent>
+          <p className="text-xs text-destructive/70 mt-2 italic max-w-md mx-auto">
+            (Debug Info: {error})
+          </p>
+        </CardContent>
       </Card>
     );
   }
