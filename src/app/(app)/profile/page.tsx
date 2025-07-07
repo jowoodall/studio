@@ -163,15 +163,31 @@ export default function ProfilePage() {
       
       const batch = writeBatch(db);
       const parentDocRef = doc(db, "users", authUser.uid);
-      batch.update(parentDocRef, { managedStudentIds: arrayUnion(studentIdToAdd) });
+      // Automatically approve the parent to drive the student they are adding
+      batch.update(parentDocRef, { 
+        managedStudentIds: arrayUnion(studentIdToAdd),
+        [`approvedDrivers.${authUser.uid}`]: arrayUnion(studentIdToAdd),
+      });
       const studentDocRef = doc(db, "users", studentIdToAdd);
       batch.update(studentDocRef, { associatedParentIds: arrayUnion(authUser.uid) });
       await batch.commit();
 
       setManagedStudents(prev => [...prev, { uid: studentIdToAdd, fullName: studentData.fullName, email: studentData.email }]);
-      setLocalUserProfile(prev => prev ? ({ ...prev, managedStudentIds: [...(prev.managedStudentIds || []), studentIdToAdd] }) : null);
+      setLocalUserProfile(prev => {
+        if (!prev) return null;
+        const newApprovedDrivers = { ...(prev.approvedDrivers || {}) };
+        const currentApprovals = newApprovedDrivers[authUser.uid] || [];
+        newApprovedDrivers[authUser.uid] = [...new Set([...currentApprovals, studentIdToAdd])];
+        
+        return { 
+          ...prev, 
+          managedStudentIds: [...(prev.managedStudentIds || []), studentIdToAdd],
+          approvedDrivers: newApprovedDrivers,
+        };
+      });
+
       setStudentEmailInput("");
-      toast({ title: "Student Associated", description: `${studentData.fullName || studentEmailToAdd} linked.` });
+      toast({ title: "Student Associated", description: `${studentData.fullName || studentEmailToAdd} linked. You have been auto-approved to drive this student.` });
     } catch (error: any) {
       console.error("handleAddStudent Error:", error);
       toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
@@ -216,16 +232,22 @@ export default function ProfilePage() {
       }
       
       const batch = writeBatch(db);
+      // Student's document update
       const studentDocRef = doc(db, "users", authUser.uid);
       batch.update(studentDocRef, { associatedParentIds: arrayUnion(parentIdToAdd) });
+      
+      // Parent's document update
       const parentDocRefToUpdate = doc(db, "users", parentIdToAdd);
-      batch.update(parentDocRefToUpdate, { managedStudentIds: arrayUnion(authUser.uid) });
+      batch.update(parentDocRefToUpdate, { 
+          managedStudentIds: arrayUnion(authUser.uid),
+          [`approvedDrivers.${parentIdToAdd}`]: arrayUnion(authUser.uid),
+      });
       await batch.commit();
       
       setDisplayedAssociatedParents(prev => [...prev, {uid: parentIdToAdd, fullName: parentData.fullName, email: parentData.email}]);
       setLocalUserProfile(prev => prev ? ({ ...prev, associatedParentIds: [...(prev.associatedParentIds || []), parentIdToAdd] }) : null);
       setParentIdentifierInput("");
-      toast({ title: "Parent/Guardian Associated", description: `${parentData.fullName || parentEmailToAdd} linked.` });
+      toast({ title: "Parent/Guardian Associated", description: `${parentData.fullName || parentEmailToAdd} linked. They are now an approved driver for you.` });
     } catch (error: any) {
         console.error("handleAddParent Error:", error);
         toast({ title: "Association Failed", description: error.message || "Could not associate parent.", variant: "destructive" });
