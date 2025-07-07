@@ -255,19 +255,10 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
         if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
             uidsToQuery.push(...userProfile.managedStudentIds);
         }
-        
-        const historicalStatuses: (ActiveRydStatus | RydStatus)[] = [
-            ActiveRydStatus.COMPLETED,
-            ActiveRydStatus.CANCELLED_BY_DRIVER,
-            ActiveRydStatus.CANCELLED_BY_SYSTEM,
-            'cancelled_by_user',
-        ];
 
-        // Fetch from activeRydz
+        // Fetch ALL rydz and requests associated with the user, regardless of status
         const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
         const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
-        
-        // Fetch from rydz (requests)
         const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
 
         const [drivingResults, passengerResults, requestsResults] = await Promise.all([
@@ -276,18 +267,15 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
             runFirestoreQuery(requestsQuery, idToken),
         ]);
         
-        const allRydz = [...drivingResults, ...passengerResults];
-        const uniqueRydz = allRydz.reduce((acc, current) => {
+        const allActiveRydz = [...drivingResults, ...passengerResults];
+        const uniqueActiveRydz = allActiveRydz.reduce((acc, current) => {
             if (!acc.find(item => item.id === current.id)) {
                 acc.push(current);
             }
             return acc;
         }, [] as any[]);
 
-        const historicalActiveRydz = uniqueRydz.filter(ryd => historicalStatuses.includes(ryd.status));
-        const historicalRequests = requestsResults.filter(req => historicalStatuses.includes(req.status));
-
-        const activeRydzPromises = historicalActiveRydz.map(async (ryd): Promise<DisplayRydData> => {
+        const activeRydzPromises = uniqueActiveRydz.map(async (ryd): Promise<DisplayRydData> => {
             const driverProfile = await getClientSideUserProfile(ryd.driverId, idToken);
             const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
             return {
@@ -300,7 +288,7 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
             };
         });
         
-        const requestPromises = historicalRequests.map(async (req): Promise<DisplayRydData> => {
+        const requestPromises = requestsResults.map(async (req): Promise<DisplayRydData> => {
             const passengerProfiles = (await Promise.all((req.passengerIds || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
             return {
               ...req,
@@ -311,11 +299,27 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
             };
         });
 
-        const allHistoryItems = await Promise.all([...activeRydzPromises, ...requestPromises]);
+        const allItems = await Promise.all([...activeRydzPromises, ...requestPromises]);
 
-        allHistoryItems.sort((a, b) => new Date(b.rydTimestamp).getTime() - new Date(a.rydTimestamp).getTime());
+        // Filter out upcoming items to leave only history
+        const now = new Date();
+        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
 
-        return { success: true, history: allHistoryItems };
+        const finalHistoryItems = allItems.filter(ryd => {
+            if (!ryd.rydTimestamp) return true; // Keep items without a timestamp in history? Maybe filter them out. Let's keep for now.
+
+            const rydTime = new Date(ryd.rydTimestamp);
+            const isInProgress = ryd.status === ActiveRydStatus.IN_PROGRESS_PICKUP || ryd.status === ActiveRydStatus.IN_PROGRESS_ROUTE;
+            
+            const isUpcoming = isInProgress || isAfter(rydTime, sixHoursAgo);
+            
+            // Return true for items that are NOT upcoming
+            return !isUpcoming;
+        });
+
+        finalHistoryItems.sort((a, b) => new Date(b.rydTimestamp).getTime() - new Date(a.rydTimestamp).getTime());
+
+        return { success: true, history: finalHistoryItems };
         
     } catch (error: any) {
         console.error(`[Action: getRydHistoryAction] Error:`, error);
