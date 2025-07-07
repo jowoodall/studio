@@ -3,7 +3,7 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { ActiveRyd, UserProfileData, ConversationListItem, RydMessage } from '@/types';
+import { type ActiveRyd, type UserProfileData, type ConversationListItem, type RydMessage, ActiveRydStatus } from '@/types';
 
 const db = admin.firestore();
 
@@ -21,7 +21,10 @@ async function getMultipleUserProfiles(userIds: string[]): Promise<Map<string, U
     return profiles;
 }
 
-export async function getConversationsAction(userId: string): Promise<{ success: boolean; conversations?: ConversationListItem[]; message?: string }> {
+export async function getConversationsAction(
+    userId: string,
+    statusType: 'active' | 'archived' = 'active'
+): Promise<{ success: boolean; conversations?: ConversationListItem[]; message?: string }> {
     if (!userId) {
         return { success: false, message: "User ID is required." };
     }
@@ -29,13 +32,37 @@ export async function getConversationsAction(userId: string): Promise<{ success:
     try {
         const conversationsMap = new Map<string, ActiveRyd>();
 
+        const activeStatuses: ActiveRydStatus[] = [
+            ActiveRydStatus.PLANNING,
+            ActiveRydStatus.AWAITING_PASSENGERS,
+            ActiveRydStatus.RYD_PLANNED,
+            ActiveRydStatus.IN_PROGRESS_PICKUP,
+            ActiveRydStatus.IN_PROGRESS_ROUTE,
+        ];
+
+        const archivedStatuses: ActiveRydStatus[] = [
+            ActiveRydStatus.COMPLETED,
+            ActiveRydStatus.CANCELLED_BY_DRIVER,
+            ActiveRydStatus.CANCELLED_BY_SYSTEM,
+        ];
+
+        const statusesToQuery = statusType === 'active' ? activeStatuses : archivedStatuses;
+        
+        if (statusesToQuery.length === 0) {
+            return { success: true, conversations: [] };
+        }
+
         // 1. Get rydz where the user is the driver
-        const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId);
+        const drivingQuery = db.collection('activeRydz')
+            .where('driverId', '==', userId)
+            .where('status', 'in', statusesToQuery);
         const drivingSnap = await drivingQuery.get();
         drivingSnap.forEach(doc => conversationsMap.set(doc.id, { id: doc.id, ...doc.data() } as ActiveRyd));
 
         // 2. Get rydz where the user is a passenger
-        const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains', userId);
+        const passengerQuery = db.collection('activeRydz')
+            .where('passengerUids', 'array-contains', userId)
+            .where('status', 'in', statusesToQuery);
         const passengerSnap = await passengerQuery.get();
         passengerSnap.forEach(doc => conversationsMap.set(doc.id, { id: doc.id, ...doc.data() } as ActiveRyd));
         
@@ -99,6 +126,10 @@ export async function getConversationsAction(userId: string): Promise<{ success:
         
     } catch (error: any) {
         console.error("Error in getConversationsAction:", error);
-        return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+        let errorMessage = `An unexpected server error occurred: ${error.message}`;
+        if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
+            errorMessage = "A Firestore index is required to load conversations. Please check the browser's console for a link to create it.";
+        }
+        return { success: false, message: errorMessage };
     }
 }

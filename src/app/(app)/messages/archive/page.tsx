@@ -6,8 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Loader2, AlertTriangle, Archive } from "lucide-react";
+import { Loader2, AlertTriangle, Archive, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { getConversationsAction } from '@/actions/messageActions';
@@ -15,7 +14,7 @@ import type { ConversationListItem } from '@/types';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
-export default function MessagesPage() {
+export default function ArchivedMessagesPage() {
     const { user, loading: authLoading } = useAuth();
     const { toast } = useToast();
     const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -34,16 +33,17 @@ export default function MessagesPage() {
             setIsLoading(true);
             setError(null);
             try {
-                const result = await getConversationsAction(user.uid, 'active');
+                // Call with 'archived'
+                const result = await getConversationsAction(user.uid, 'archived');
                 if (result.success && result.conversations) {
                     setConversations(result.conversations);
                 } else {
-                    throw new Error(result.message || "Failed to load conversations.");
+                    throw new Error(result.message || "Failed to load archived conversations.");
                 }
             } catch (err: any) {
                 setError(err.message || "An unknown error occurred.");
                 toast({
-                    title: "Error Loading Messages",
+                    title: "Error Loading Archive",
                     description: err.message,
                     variant: "destructive",
                 });
@@ -60,7 +60,7 @@ export default function MessagesPage() {
             return (
                 <div className="flex flex-col items-center justify-center h-full py-12">
                     <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                    <p className="mt-4 text-muted-foreground">Loading your conversations...</p>
+                    <p className="mt-4 text-muted-foreground">Loading archived conversations...</p>
                 </div>
             );
         }
@@ -69,7 +69,7 @@ export default function MessagesPage() {
             return (
                 <div className="flex flex-col items-center justify-center h-full py-12 text-center">
                     <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-                    <h3 className="text-xl font-semibold">Error Loading Messages</h3>
+                    <h3 className="text-xl font-semibold">Error Loading Archive</h3>
                     <p className="text-muted-foreground mt-2">{error}</p>
                 </div>
             );
@@ -78,10 +78,10 @@ export default function MessagesPage() {
         if (conversations.length === 0) {
             return (
                 <div className="flex flex-col items-center justify-center h-full py-12 text-center">
-                    <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-xl font-semibold">No Active Conversations</h3>
+                    <Archive className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-xl font-semibold">No Archived Conversations</h3>
                     <p className="text-muted-foreground mt-2">
-                        You have no ongoing conversations. Completed or cancelled chats can be found in the archive.
+                        Chats from your completed or cancelled rydz will appear here.
                     </p>
                 </div>
             );
@@ -130,20 +130,20 @@ export default function MessagesPage() {
     return (
         <>
             <PageHeader
-                title="Active Conversations"
-                description="View ongoing messages from your active rydz."
+                title="Archived Conversations"
+                description="View messages from your past rydz."
                 actions={
                     <Button variant="outline" asChild>
-                        <Link href="/messages/archive">
-                            <Archive className="mr-2 h-4 w-4" /> View Archived
+                        <Link href="/messages">
+                            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Active Chats
                         </Link>
                     </Button>
                 }
             />
             <Card className="shadow-xl">
                 <CardHeader>
-                    <CardTitle>Active Ryd Chats</CardTitle>
-                    <CardDescription>Select a conversation to view the full chat history and send messages.</CardDescription>
+                    <CardTitle>Archived Ryd Chats</CardTitle>
+                    <CardDescription>Select a conversation to view the full chat history.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {renderContent()}
