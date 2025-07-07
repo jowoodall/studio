@@ -39,9 +39,10 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
-    // Simplified query to avoid composite index. Filter for null associatedEventId in code.
+    // Query by 'createdAt' to find all old rydz, as this field is always present.
+    // This is more reliable than querying by 'plannedArrivalTime'.
     const staleRydzQuery = db.collection('activeRydz')
-      .where('plannedArrivalTime', '<', fortyEightHoursAgo);
+      .where('createdAt', '<', fortyEightHoursAgo);
 
     const snapshot = await staleRydzQuery.get();
 
@@ -58,7 +59,7 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
       ARStatus.IN_PROGRESS_ROUTE,
     ];
 
-    // Filter in code for rydz without an associated event
+    // Filter in code for rydz without an associated event and with a resolvable status.
     const docsToProcess = snapshot.docs.filter(doc => 
       !doc.data().associatedEventId && statusesToUpdate.includes(doc.data().status)
     );
