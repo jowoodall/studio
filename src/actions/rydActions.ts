@@ -73,15 +73,29 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         ];
         const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
         
+        // Driving query remains simple and efficient
         const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId).where('status', 'in', upcomingActiveRydStatuses);
-        const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains-any', passengerIdsForQuery).where('status', 'in', upcomingActiveRydStatuses);
-        const pendingRequestsQuery = db.collection('rydz').where('passengerIds', 'array-contains-any', passengerIdsForQuery).where('status', 'in', pendingRequestStatuses);
+        
+        // Simplified queries for passengers and pending requests
+        const allActiveUpcomingQuery = db.collection('activeRydz').where('status', 'in', upcomingActiveRydStatuses);
+        const allPendingRequestsQuery = db.collection('rydz').where('status', 'in', pendingRequestStatuses);
 
-        const [drivingSnap, passengerSnap, pendingRequestsSnap] = await Promise.all([
+        const [drivingSnap, allActiveUpcomingSnap, allPendingRequestsSnap] = await Promise.all([
             drivingQuery.get(),
-            passengerQuery.get(),
-            pendingRequestsQuery.get(),
+            allActiveUpcomingQuery.get(),
+            allPendingRequestsQuery.get(),
         ]);
+
+        // Filter passenger and pending rydz in code
+        const passengerDocs = allActiveUpcomingSnap.docs.filter(doc => {
+            const passengerUids = doc.data().passengerUids || [];
+            return passengerUids.some((uid: string) => passengerIdsForQuery.includes(uid));
+        });
+
+        const pendingDocs = allPendingRequestsSnap.docs.filter(doc => {
+            const passengerUids = doc.data().passengerIds || [];
+            return passengerUids.some((uid: string) => passengerIdsForQuery.includes(uid));
+        });
         
         // --- Process Driving Rydz ---
         const drivingRydzPromises = drivingSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
@@ -108,7 +122,7 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         });
         
         // --- Process Passenger Rydz ---
-        const passengerRydzPromises = passengerSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+        const passengerRydzPromises = passengerDocs.map(async (docSnap): Promise<DisplayRydData> => {
             const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
             const driverProfileData = await getUserProfile(activeRyd.driverId);
             let passengerProfiles: UserProfileData[] = [];
@@ -132,7 +146,7 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         });
 
         // --- Process Pending Rydz ---
-        const pendingRequestsPromises = pendingRequestsSnap.docs.map(async (docSnap): Promise<DisplayRydData> => {
+        const pendingRequestsPromises = pendingDocs.map(async (docSnap): Promise<DisplayRydData> => {
             const rydData = { id: docSnap.id, ...docSnap.data() } as RydData & { id: string };
             const driverProfileData = rydData.driverId ? await getUserProfile(rydData.driverId) : undefined;
             let passengerProfiles: UserProfileData[] = [];

@@ -39,28 +39,38 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
+    // Simplified query to avoid composite index
     const staleRydzQuery = db.collection('activeRydz')
-      .where('associatedEventId', '==', null) // Only handle rydz without an event
-      .where('plannedArrivalTime', '<', fortyEightHoursAgo)
-      .where('status', 'in', [
-        ARStatus.PLANNING,
-        ARStatus.AWAITING_PASSENGERS,
-        ARStatus.RYD_PLANNED,
-        ARStatus.IN_PROGRESS_PICKUP,
-        ARStatus.IN_PROGRESS_ROUTE,
-      ]);
+      .where('associatedEventId', '==', null)
+      .where('plannedArrivalTime', '<', fortyEightHoursAgo);
 
     const snapshot = await staleRydzQuery.get();
 
     if (snapshot.empty) {
-      const message = "No stale non-event rydz found to update.";
+      const message = "No potentially stale non-event rydz found to update.";
+      return { success: true, message, updatedRydz: 0 };
+    }
+
+    const statusesToUpdate: ARStatus[] = [
+      ARStatus.PLANNING,
+      ARStatus.AWAITING_PASSENGERS,
+      ARStatus.RYD_PLANNED,
+      ARStatus.IN_PROGRESS_PICKUP,
+      ARStatus.IN_PROGRESS_ROUTE,
+    ];
+
+    // Filter in code
+    const docsToProcess = snapshot.docs.filter(doc => statusesToUpdate.includes(doc.data().status));
+
+    if (docsToProcess.length === 0) {
+      const message = "No stale non-event rydz with unresolved statuses found.";
       return { success: true, message, updatedRydz: 0 };
     }
 
     const batch = db.batch();
     let updatedCount = 0;
 
-    snapshot.forEach(doc => {
+    docsToProcess.forEach(doc => {
       const ryd = doc.data() as ActiveRyd;
       const rydRef = doc.ref;
       let newStatus: ARStatus | null = null;
