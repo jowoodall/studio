@@ -118,7 +118,7 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
 
     // Fetch user profile to check for managed students
     const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
-    if (!userProfileSnap.exists()) {
+    if (!userProfileSnap.exists) {
         return { success: false, message: "User profile not found." };
     }
     const userProfile = userProfileSnap.data() as UserProfileData;
