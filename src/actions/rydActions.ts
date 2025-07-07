@@ -8,42 +8,192 @@ import {
   type RydData,
   type ActiveRyd,
   UserRole,
-  ActiveRydStatus as ARStatus,
+  ActiveRydStatus,
   RydStatus,
   PassengerManifestStatus,
 } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-const db = admin.firestore();
+// --- Firestore REST API Helpers ---
+// These helpers allow us to run queries against Firestore's REST API using a user's
+// ID token, which enforces security rules and avoids Admin SDK credential issues.
 
-// A robust, centralized error handler for server actions.
-const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
-    console.error(`[Action: ${actionName}] Error:`, error);
-    const errorMessage = error.message || "An unknown server error occurred.";
+function parseFirestoreDocument(doc: any): any {
+  const fields = doc.fields || {};
+  const parsed: { [key: string]: any } = {};
 
-    // Handle Firestore index errors
-    if (error.code === 5 || error.code === 'failed-precondition' || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
-      return { success: false, message: `A Firestore index is required for this query. Please check your server terminal logs for an error message from Firestore that contains a link to create the necessary index automatically.` };
+  for (const key in fields) {
+    const value = fields[key];
+    if (value.stringValue !== undefined) {
+      parsed[key] = value.stringValue;
+    } else if (value.integerValue !== undefined) {
+      parsed[key] = parseInt(value.integerValue, 10);
+    } else if (value.doubleValue !== undefined) {
+      parsed[key] = value.doubleValue;
+    } else if (value.booleanValue !== undefined) {
+      parsed[key] = value.booleanValue;
+    } else if (value.timestampValue !== undefined) {
+      // Return as a string for client-side serialization
+      parsed[key] = value.timestampValue;
+    } else if (value.mapValue !== undefined) {
+      parsed[key] = parseFirestoreDocument(value.mapValue);
+    } else if (value.arrayValue !== undefined) {
+      parsed[key] = (value.arrayValue.values || []).map((v: any) => parseFirestoreDocument({ fields: { inner: v } }).inner);
+    } else if (value.nullValue !== undefined) {
+      parsed[key] = null;
     }
+  }
 
-    if (errorMessage.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED') {
-        return {
-            success: false,
-            message: `A server authentication or timeout error occurred. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`
-        };
-    }
-    return { success: false, message: `An unexpected error occurred: ${errorMessage}` };
-};
-
-// Helper to fetch user profile
-async function getUserProfile(userId: string): Promise<UserProfileData | null> {
-    const userDocRef = db.collection('users').doc(userId);
-    const userDocSnap = await userDocRef.get();
-    if (!userDocSnap.exists) {
-        return null;
-    }
-    return userDocSnap.data() as UserProfileData;
+  if (doc.name) {
+    parsed.id = doc.name.split('/').pop();
+  }
+  
+  return parsed;
 }
 
-// getUpcomingRydzAction is no longer needed as the logic has been moved to the client.
-// This file can be cleaned up or other ryd-related server actions can be placed here.
+async function runFirestoreQuery(query: object, idToken: string): Promise<any[]> {
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (!projectId) {
+    throw new Error("Firebase Project ID is not configured.");
+  }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ structuredQuery: query }),
+    cache: 'no-store', // Ensure fresh data is fetched
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json();
+    console.error("Firestore Query Error:", JSON.stringify(errorBody, null, 2));
+    throw new Error(`Firestore query failed: ${errorBody.error?.message || 'Unknown error'}`);
+  }
+
+  const data = await response.json();
+  return data
+    .filter((item: any) => item.document)
+    .map((item: any) => parseFirestoreDocument(item.document));
+}
+
+async function getClientSideUserProfile(userId: string, idToken: string): Promise<UserProfileData | null> {
+    if (!userId) return null;
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${userId}`;
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${idToken}` },
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return parseFirestoreDocument(data) as UserProfileData;
+    } catch (error) {
+        console.error(`Error fetching profile for ${userId}:`, error);
+        return null;
+    }
+}
+
+
+export async function getUpcomingRydzAction({ idToken }: { idToken: string }): Promise<{
+    success: boolean;
+    drivingRydz?: DisplayRydData[];
+    passengerRydz?: DisplayRydData[];
+    pendingRequests?: DisplayRydData[];
+    message?: string;
+}> {
+  console.log('[Action: getUpcomingRydzAction] Fetching upcoming rydz using proxy model.');
+
+  if (!idToken) {
+    return { success: false, message: "Authentication token is required." };
+  }
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+
+    const upcomingActiveRydStatuses: ActiveRydStatus[] = [
+      ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS, ActiveRydStatus.RYD_PLANNED,
+      ActiveRydStatus.IN_PROGRESS_PICKUP, ActiveRydStatus.IN_PROGRESS_ROUTE,
+    ];
+    const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
+
+    // --- Queries using REST API ---
+    const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
+    const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } } } };
+    const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } } } };
+
+    const [drivingResults, passengerResults, requestsResults] = await Promise.all([
+      runFirestoreQuery(drivingQuery, idToken),
+      runFirestoreQuery(passengerQuery, idToken),
+      runFirestoreQuery(requestsQuery, idToken),
+    ]);
+
+    // --- Process Driving Rydz ---
+    const drivingRydzPromises = drivingResults
+      .filter(ryd => upcomingActiveRydStatuses.includes(ryd.status))
+      .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
+        const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+        return {
+          ...ryd,
+          isDriver: true,
+          passengerProfiles,
+          driverProfile: await getClientSideUserProfile(userId, idToken) || undefined,
+          assignedActiveRydId: ryd.id,
+          rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime,
+        };
+      });
+
+    // --- Process Passenger Rydz ---
+    const passengerRydzPromises = passengerResults
+      .filter(ryd => ryd.driverId !== userId && upcomingActiveRydStatuses.includes(ryd.status))
+      .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
+        const driverProfile = await getClientSideUserProfile(ryd.driverId, idToken);
+        const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+        return {
+          ...ryd,
+          isDriver: false,
+          driverProfile: driverProfile || undefined,
+          passengerProfiles,
+          assignedActiveRydId: ryd.id,
+          rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime,
+        };
+      });
+      
+    // --- Process Pending Requests ---
+    const pendingRequestsPromises = requestsResults
+      .filter(req => pendingRequestStatuses.includes(req.status))
+      .map(async (req: RydData): Promise<DisplayRydData> => {
+        const driverProfile = req.driverId ? await getClientSideUserProfile(req.driverId, idToken) : undefined;
+        const passengerProfiles = (await Promise.all((req.passengerIds || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+        return {
+          ...req,
+          isDriver: false,
+          driverProfile,
+          passengerProfiles,
+        };
+      });
+
+    const [drivingRydz, passengerRydz, pendingRequests] = await Promise.all([
+        Promise.all(drivingRydzPromises),
+        Promise.all(passengerRydzPromises),
+        Promise.all(pendingRequestsPromises)
+    ]);
+
+    // Sort results by timestamp
+    const sortByTimestamp = (a: DisplayRydData, b: DisplayRydData) => new Date(a.rydTimestamp).getTime() - new Date(b.rydTimestamp).getTime();
+    drivingRydz.sort(sortByTimestamp);
+    passengerRydz.sort(sortByTimestamp);
+    pendingRequests.sort(sortByTimestamp);
+
+    return { success: true, drivingRydz, passengerRydz, pendingRequests };
+
+  } catch (error: any) {
+    console.error(`[Action: getUpcomingRydzAction] Error:`, error);
+    return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+  }
+}
