@@ -284,7 +284,7 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
               passengerProfiles,
               driverProfile: driverProfile || undefined,
               assignedActiveRydId: ryd.id,
-              rydTimestamp: ryd.updatedAt || ryd.createdAt, 
+              rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime || ryd.createdAt,
             };
         });
         
@@ -295,7 +295,7 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
               isDriver: false,
               driverProfile: undefined,
               passengerProfiles,
-              rydTimestamp: req.updatedAt || req.createdAt,
+              rydTimestamp: req.rydTimestamp || req.createdAt,
             };
         });
 
