@@ -37,12 +37,12 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         return { success: false, message: 'User ID is required.' };
     }
 
-    const userProfile = await getUserProfile(userId);
-    if (!userProfile) {
-        return { success: false, message: 'User profile not found.' };
-    }
-
     try {
+        const userProfile = await getUserProfile(userId);
+        if (!userProfile) {
+            return { success: false, message: 'User profile not found.' };
+        }
+
         const passengerIdsForQuery = [userId];
         if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
             passengerIdsForQuery.push(...userProfile.managedStudentIds);

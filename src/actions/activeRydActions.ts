@@ -568,8 +568,7 @@ export async function fulfillRequestWithExistingRydAction(
     };
 
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "fulfillRequestWithExistingRydAction");
-    return { success, message };
+    return handleActionError(error, "fulfillRequestWithExistingRydAction");
   }
 }
 
@@ -684,8 +683,7 @@ export async function cancelRydRequestByUserAction(
     return { success: true, message: "Your ryd request has been successfully cancelled." };
 
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "cancelRydRequestByUserAction");
-    return { success, message: message || "An unexpected error occurred while cancelling." };
+    return handleActionError(error, "cancelRydRequestByUserAction");
   }
 }
 
@@ -744,8 +742,7 @@ export async function revertPassengerPickupAction(
     return { success: true, message: resultMessage };
 
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "revertPassengerPickupAction");
-    return { success, message: message || "An unexpected server error occurred." };
+    return handleActionError(error, "revertPassengerPickupAction");
   }
 }
 

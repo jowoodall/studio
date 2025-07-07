@@ -74,8 +74,7 @@ export async function confirmRydPlanAction(
     return { success: true, message: "The ryd plan has been confirmed. No more passengers can join." };
 
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "confirmRydPlanAction");
-    return { success, message: message || "An unexpected error occurred." };
+    return handleActionError(error, "confirmRydPlanAction");
   }
 }
 
@@ -108,8 +107,7 @@ export async function startRydAction(
 
     return { success: true, message: "Ryd started! You are now in the pickup phase." };
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "startRydAction");
-    return { success, message: message || "An unknown error occurred." };
+    return handleActionError(error, "startRydAction");
   }
 }
 
@@ -143,8 +141,7 @@ export async function completeRydAction(
     });
     return { success: true, message: "Ryd marked as completed!" };
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "completeRydAction");
-    return { success, message: message || "An unknown error occurred." };
+    return handleActionError(error, "completeRydAction");
   }
 }
 
@@ -191,8 +188,7 @@ export async function cancelRydByDriverAction(
     return { success: true, message: "The ryd has been successfully cancelled. All passengers will be notified." };
 
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "cancelRydByDriverAction");
-    return { success, message: message || "An unexpected error occurred." };
+    return handleActionError(error, "cancelRydByDriverAction");
   }
 }
 
@@ -220,8 +216,7 @@ export async function revertToPlanningAction(
 
     return { success: true, message: "Ryd has been unlocked and returned to planning status." };
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "revertToPlanningAction");
-    return { success, message: message || "An unknown error occurred." };
+    return handleActionError(error, "revertToPlanningAction");
   }
 }
 
@@ -250,7 +245,6 @@ export async function revertToRydPlannedAction(
 
     return { success: true, message: "Ryd has been paused and returned to the planned state." };
   } catch (error: any) {
-    const { success, message } = handleActionError(error, "revertToRydPlannedAction");
-    return { success, message: message || "An unknown error occurred." };
+    return handleActionError(error, "revertToRydPlannedAction");
   }
 }
