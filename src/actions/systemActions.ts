@@ -33,7 +33,7 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
 
 // This action is designed to be called as a "lazy cron" from a high-traffic page.
 export async function updateStaleRydzAction(): Promise<{ success: boolean; message: string; updatedRydz: number }> {
-  console.log('[Action: updateStaleRydzAction] Running job to update stale rydz not linked to events.');
+  console.log('[Action: updateStaleRydzAction] Running job to update stale rydz.');
 
   const now = Timestamp.now();
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
@@ -54,7 +54,7 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     const snapshot = await staleRydzQuery.get();
 
     if (snapshot.empty) {
-      const message = "No active-status non-event rydz found to process.";
+      const message = "No active-status rydz found to process.";
       return { success: true, message, updatedRydz: 0 };
     }
 
@@ -64,8 +64,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
     snapshot.docs.forEach(doc => {
       const ryd = doc.data() as ActiveRyd;
       
-      // Filter in code: only affect rydz without an associated event AND where planned time is past the stale threshold.
-      if (!ryd.associatedEventId && ryd.plannedArrivalTime && ryd.plannedArrivalTime.toMillis() < fortyEightHoursAgo.toMillis()) {
+      // Filter in code: only affect rydz where planned time is past the stale threshold.
+      if (ryd.plannedArrivalTime && ryd.plannedArrivalTime.toMillis() < fortyEightHoursAgo.toMillis()) {
         let newStatus: ARStatus | null = null;
         const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE, ARStatus.RYD_PLANNED];
         const planningStatuses = [ARStatus.AWAITING_PASSENGERS, ARStatus.PLANNING];
@@ -87,7 +87,7 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
         await batch.commit();
     }
 
-    const successMessage = `Successfully processed stale rydz check. Updated ${updatedCount} non-event rydz.`;
+    const successMessage = `Successfully processed stale rydz check. Updated ${updatedCount} rydz.`;
     return { success: true, message: successMessage, updatedRydz: updatedCount };
 
   } catch (error: any) {
