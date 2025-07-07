@@ -39,9 +39,8 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
-    // Simplified query to avoid composite index
+    // Simplified query to avoid composite index. Filter for null associatedEventId in code.
     const staleRydzQuery = db.collection('activeRydz')
-      .where('associatedEventId', '==', null)
       .where('plannedArrivalTime', '<', fortyEightHoursAgo);
 
     const snapshot = await staleRydzQuery.get();
@@ -59,8 +58,10 @@ export async function updateStaleRydzAction(): Promise<{ success: boolean; messa
       ARStatus.IN_PROGRESS_ROUTE,
     ];
 
-    // Filter in code
-    const docsToProcess = snapshot.docs.filter(doc => statusesToUpdate.includes(doc.data().status));
+    // Filter in code for rydz without an associated event
+    const docsToProcess = snapshot.docs.filter(doc => 
+      !doc.data().associatedEventId && statusesToUpdate.includes(doc.data().status)
+    );
 
     if (docsToProcess.length === 0) {
       const message = "No stale non-event rydz with unresolved statuses found.";
@@ -110,13 +111,22 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
   const fortyEightHoursAgo = new Timestamp(now.seconds - (48 * 60 * 60), now.nanoseconds);
 
   try {
+    // Simplified query on status only to avoid composite index. Filter timestamp in code.
     const staleEventsQuery = db.collection('events')
-      .where('eventTimestamp', '<', fortyEightHoursAgo)
-      .where('status', '==', EventStatus.ACTIVE); // Only find active events to update
+      .where('status', '==', EventStatus.ACTIVE);
 
     const eventsSnapshot = await staleEventsQuery.get();
 
     if (eventsSnapshot.empty) {
+      return { success: true, message: "No active events found to process.", updatedEvents: 0, updatedRydz: 0 };
+    }
+
+    const docsToProcess = eventsSnapshot.docs.filter(doc => {
+      const eventTimestamp = doc.data().eventTimestamp as Timestamp;
+      return eventTimestamp.toMillis() < fortyEightHoursAgo.toMillis();
+    });
+
+    if (docsToProcess.length === 0) {
       return { success: true, message: "No stale active events found to update.", updatedEvents: 0, updatedRydz: 0 };
     }
 
@@ -132,7 +142,7 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
         ARStatus.IN_PROGRESS_ROUTE,
     ];
 
-    for (const eventDoc of eventsSnapshot.docs) {
+    for (const eventDoc of docsToProcess) {
       const eventId = eventDoc.id;
       
       // Mark the event as completed

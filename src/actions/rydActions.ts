@@ -76,7 +76,7 @@ export async function getUpcomingRydzAction(userId: string): Promise<{
         // Driving query remains simple and efficient
         const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId).where('status', 'in', upcomingActiveRydStatuses);
         
-        // Simplified queries for passengers and pending requests
+        // Simplified queries for passengers and pending requests to avoid composite indexes
         const allActiveUpcomingQuery = db.collection('activeRydz').where('status', 'in', upcomingActiveRydStatuses);
         const allPendingRequestsQuery = db.collection('rydz').where('status', 'in', pendingRequestStatuses);
 
