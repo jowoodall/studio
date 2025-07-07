@@ -238,20 +238,27 @@ export async function managePassengerJoinRequestAction(
   }
 
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+  const driverDocRef = db.collection('users').doc(actingUserId);
 
   try {
+    let activeRydData: ActiveRyd | null = null;
     const resultMessage = await db.runTransaction(async (transaction) => {
-      const activeRydDocSnap = await transaction.get(activeRydDocRef);
+      const [activeRydDocSnap, driverDocSnap] = await transaction.getAll(activeRydDocRef, driverDocRef);
       if (!activeRydDocSnap.exists) {
         throw new Error("ActiveRyd not found.");
       }
-      const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+      if (!driverDocSnap.exists) {
+        throw new Error("Acting user/driver profile not found.");
+      }
+      
+      const rydData = activeRydDocSnap.data() as ActiveRyd;
+      activeRydData = rydData; // Assign for use outside transaction
 
-      if (activeRydData.driverId !== actingUserId) {
+      if (rydData.driverId !== actingUserId) {
         throw new Error("Unauthorized: Only the driver can manage join requests.");
       }
 
-      const passengerIndex = activeRydData.passengerManifest.findIndex(
+      const passengerIndex = rydData.passengerManifest.findIndex(
         (p) => p.userId === passengerUserId && p.status === PassengerManifestStatus.PENDING_DRIVER_APPROVAL
       );
 
@@ -263,8 +270,8 @@ export async function managePassengerJoinRequestAction(
       const passengerName = passengerProfile?.fullName || `User ${passengerUserId.substring(0,6)}`;
 
       if (newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER) {
-        const passengerCapacity = parseInt(activeRydData.vehicleDetails?.passengerCapacity || "0", 10);
-        const confirmedPassengersCount = activeRydData.passengerManifest.filter(
+        const passengerCapacity = parseInt(rydData.vehicleDetails?.passengerCapacity || "0", 10);
+        const confirmedPassengersCount = rydData.passengerManifest.filter(
           p => p.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER || p.status === PassengerManifestStatus.AWAITING_PICKUP || p.status === PassengerManifestStatus.ON_BOARD
         ).length;
 
@@ -275,10 +282,10 @@ export async function managePassengerJoinRequestAction(
         throw new Error("Invalid status update."); 
       }
       
-      const updatedManifest = [...activeRydData.passengerManifest];
+      const updatedManifest = [...rydData.passengerManifest];
       updatedManifest[passengerIndex].status = newStatus;
       
-      const newRydStatus = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? ARStatus.PLANNING : activeRydData.status;
+      const newRydStatus = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? ARStatus.PLANNING : rydData.status;
 
       const updatePayload: any = {
         passengerManifest: updatedManifest,
@@ -286,7 +293,6 @@ export async function managePassengerJoinRequestAction(
         updatedAt: FieldValue.serverTimestamp(),
       };
       
-      // If passenger is rejected, remove them from the simple UID list
       if (newStatus === PassengerManifestStatus.REJECTED_BY_DRIVER) {
           updatePayload.passengerUids = FieldValue.arrayRemove(passengerUserId);
       }
@@ -296,6 +302,21 @@ export async function managePassengerJoinRequestAction(
       const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
       return `Passenger ${passengerName}'s request has been ${actionVerb}.`;
     });
+
+    // --- Create notification outside of transaction ---
+    if (activeRydData) {
+      const driverProfile = await getUserProfile(actingUserId);
+      const eventName = activeRydData.eventName || "the ryd";
+      const actionVerb = newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? "approved" : "rejected";
+      await createNotification(
+          passengerUserId,
+          `Your Ryd Request was ${actionVerb}`,
+          `${driverProfile?.fullName || 'The driver'} has ${actionVerb} your request to join the ryd for "${eventName}".`,
+          newStatus === PassengerManifestStatus.CONFIRMED_BY_DRIVER ? NotificationTypeEnum.SUCCESS : NotificationTypeEnum.ERROR,
+          `/rydz/tracking/${activeRydId}`
+      );
+    }
+    // --- End notification creation ---
 
     console.log(`[Action: managePassengerJoinRequestAction] Transaction successful for rydId: ${activeRydId}`);
     return { success: true, message: resultMessage };
@@ -322,6 +343,8 @@ export async function cancelPassengerSpotAction(
   }
 
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
+  let driverIdForNotification: string | undefined;
+  let eventNameForNotification: string | undefined;
 
   try {
     const cancellingUserProfile = await getUserProfile(cancellingUserId);
@@ -344,6 +367,10 @@ export async function cancelPassengerSpotAction(
         throw new Error("ActiveRyd not found.");
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
+      
+      driverIdForNotification = activeRydData.driverId;
+      eventNameForNotification = activeRydData.eventName;
+
 
       const passengerIndex = activeRydData.passengerManifest.findIndex(p => p.userId === passengerUserIdToCancel);
       if (passengerIndex === -1) {
@@ -398,6 +425,18 @@ export async function cancelPassengerSpotAction(
 
       return { passengerName };
     });
+    
+    // --- Create notification for driver ---
+    if (driverIdForNotification) {
+        await createNotification(
+            driverIdForNotification,
+            'Passenger Cancelled',
+            `${result.passengerName} has cancelled their spot for the ryd to "${eventNameForNotification || 'your ryd'}".`,
+            NotificationTypeEnum.INFO,
+            `/rydz/tracking/${activeRydId}`
+        );
+    }
+    // --- End notification creation ---
 
     console.log(`[Action: cancelPassengerSpotAction] Successfully cancelled spot for passenger ${result.passengerName} on rydId: ${activeRydId}`);
     return { success: true, message: `Spot for ${result.passengerName} on the ryd has been successfully cancelled.` };

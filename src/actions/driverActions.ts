@@ -3,10 +3,22 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { ActiveRyd, UserProfileData } from '@/types';
-import { ActiveRydStatus as ARStatus, PassengerManifestStatus } from '@/types';
+import type { ActiveRyd, UserProfileData, NotificationType } from '@/types';
+import { ActiveRydStatus as ARStatus, PassengerManifestStatus, NotificationType as NotificationTypeEnum } from '@/types';
+import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
+
+// Helper function to get user profile (not transaction-aware)
+async function getUserProfile(userId: string): Promise<UserProfileData | null> {
+  const userDocRef = db.collection('users').doc(userId);
+  const userDocSnap = await userDocRef.get();
+  if (!userDocSnap.exists) {
+    return null;
+  }
+  return { uid: userDocSnap.id, ...userDocSnap.data() } as UserProfileData;
+}
+
 
 const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
     console.error(`[Action: ${actionName}] Error:`, error);
@@ -93,13 +105,15 @@ export async function startRydAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    await db.runTransaction(async (transaction) => {
+    const transactionResult = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
       if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
 
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
       if (activeRydData.driverId !== driverUserId) throw new Error("Unauthorized: You are not the driver.");
       if (activeRydData.status !== ARStatus.RYD_PLANNED) throw new Error(`Ryd cannot be started. Current status: ${activeRydData.status}.`);
+      
+      if (!activeRydData.proposedDepartureTime) throw new Error("Cannot start ryd without a proposed departure time.");
 
       const twoHoursBefore = new Timestamp(activeRydData.proposedDepartureTime.seconds - (2 * 60 * 60), activeRydData.proposedDepartureTime.nanoseconds);
       if (Timestamp.now() < twoHoursBefore) throw new Error("Ryd cannot be started more than 2 hours before proposed departure time.");
@@ -109,7 +123,27 @@ export async function startRydAction(
         actualDepartureTime: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      
+      const passengerIds = activeRydData.passengerManifest
+        .filter(p => p.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER)
+        .map(p => p.userId);
+
+      return {
+        passengerIds,
+        eventName: activeRydData.eventName
+      }
     });
+
+    const driverProfile = await getUserProfile(driverUserId);
+    for (const passengerId of transactionResult.passengerIds) {
+      await createNotification(
+        passengerId,
+        'Your Ryd has Started!',
+        `${driverProfile?.fullName || 'Your driver'} has started the ryd to "${transactionResult.eventName || 'the event'}" and is on their way.`,
+        NotificationTypeEnum.INFO,
+        `/rydz/tracking/${activeRydId}`
+      );
+    }
 
     return { success: true, message: "Ryd started! You are now in the pickup phase." };
   } catch (error: any) {
@@ -125,7 +159,7 @@ export async function completeRydAction(
 
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
   try {
-    await db.runTransaction(async (transaction) => {
+    const transactionResult = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
       if (!activeRydDocSnap.exists) throw new Error("ActiveRyd not found.");
 
@@ -144,7 +178,24 @@ export async function completeRydAction(
         estimatedCompletionTime: FieldValue.serverTimestamp(), // Using this field for actual completion
         updatedAt: FieldValue.serverTimestamp(),
       });
+
+      const passengerIds = activeRydData.passengerManifest
+        .filter(p => p.status === PassengerManifestStatus.ON_BOARD || p.status === PassengerManifestStatus.DROPPED_OFF)
+        .map(p => p.userId);
+      return { passengerIds, eventName: activeRydData.eventName };
     });
+
+    const driverProfile = await getUserProfile(driverUserId);
+    for (const passengerId of transactionResult.passengerIds) {
+      await createNotification(
+        passengerId,
+        'Ryd Completed!',
+        `Your ryd to "${transactionResult.eventName || 'the event'}" is complete. Please rate your driver, ${driverProfile?.fullName || 'the driver'}.`,
+        NotificationTypeEnum.SUCCESS,
+        `/drivers/${driverUserId}/rate`
+      );
+    }
+
     return { success: true, message: "Ryd marked as completed!" };
   } catch (error: any) {
     return handleActionError(error, "completeRydAction");
@@ -164,7 +215,7 @@ export async function cancelRydByDriverAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
 
   try {
-    await db.runTransaction(async (transaction) => {
+    const transactionResult = await db.runTransaction(async (transaction) => {
       const activeRydDocSnap = await transaction.get(activeRydDocRef);
       if (!activeRydDocSnap.exists) {
         throw new Error("ActiveRyd not found.");
@@ -188,7 +239,24 @@ export async function cancelRydByDriverAction(
         status: ARStatus.CANCELLED_BY_DRIVER,
         updatedAt: FieldValue.serverTimestamp(),
       });
+      
+      const passengerIds = activeRydData.passengerManifest
+        .filter(p => p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER && p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER)
+        .map(p => p.userId);
+
+      return { passengerIds, eventName: activeRydData.eventName };
     });
+
+    const driverProfile = await getUserProfile(driverUserId);
+    for (const passengerId of transactionResult.passengerIds) {
+      await createNotification(
+        passengerId,
+        'Ryd Cancelled by Driver',
+        `The ryd to "${transactionResult.eventName || 'the event'}" by ${driverProfile?.fullName || 'the driver'} has been cancelled. Please make other arrangements.`,
+        NotificationTypeEnum.ERROR,
+        `/rydz/upcoming`
+      );
+    }
 
     console.log(`[Action: cancelRydByDriverAction] Successfully cancelled rydId: ${activeRydId}`);
     return { success: true, message: "The ryd has been successfully cancelled. All passengers will be notified." };
