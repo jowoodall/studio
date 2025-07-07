@@ -15,7 +15,7 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
     
     // Handle Firestore index errors
     if (error.code === 5 || error.code === 'failed-precondition' || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
-      return { success: false, message: `A Firestore index is required for the '${actionName}' query. Please check the browser's console for a link to create it.` };
+      return { success: false, message: `A Firestore index is required for this query. Please check your server terminal logs for an error message from Firestore that contains a link to create the necessary index automatically.` };
     }
     
     // Handle Authentication/Network errors
