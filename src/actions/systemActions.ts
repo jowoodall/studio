@@ -115,16 +115,28 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
     const staleEventsQuery = db.collection('events')
       .where('status', '==', EventStatus.ACTIVE);
 
+    console.log(`[Action: updateStaleEventsAction] Checking for stale events older than ${fortyEightHoursAgo.toDate().toISOString()}.`)
+
     const eventsSnapshot = await staleEventsQuery.get();
 
     if (eventsSnapshot.empty) {
+      console.log(`[Action: updateStaleEventsAction] No active events found to process.`)
       return { success: true, message: "No active events found to process.", updatedEvents: 0, updatedRydz: 0 };
     }
 
+    console.log(`[Action: updateStaleEventsAction] Found ${eventsSnapshot.docs.length} active events to process.`);
+    
     const docsToProcess = eventsSnapshot.docs.filter(doc => {
       const eventTimestamp = doc.data().eventTimestamp as Timestamp;
-      return eventTimestamp.toMillis() < fortyEightHoursAgo.toMillis();
+      // Add a check to ensure eventTimestamp is a valid Firestore Timestamp object
+      if (eventTimestamp && typeof eventTimestamp.toMillis === 'function') {
+        return eventTimestamp.toMillis() < fortyEightHoursAgo.toMillis();
+      }
+      // If the timestamp is missing or not the correct type, don't process it as stale.
+      return false;
     });
+
+    console.log(`[Action: updateStaleEventsAction] Found ${docsToProcess.length} stale events to process.`);
 
     if (docsToProcess.length === 0) {
       return { success: true, message: "No stale active events found to update.", updatedEvents: 0, updatedRydz: 0 };
@@ -161,7 +173,7 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
         const ryd = rydDoc.data() as ActiveRyd;
         let newStatus: ARStatus | null = null;
         
-        const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE];
+        const inProgressStatuses = [ARStatus.IN_PROGRESS_PICKUP, ARStatus.IN_PROGRESS_ROUTE, ARStatus.RYD_PLANNED];
         const planningStatuses = [ARStatus.AWAITING_PASSENGERS, ARStatus.PLANNING, ARStatus.RYD_PLANNED];
         
         if (inProgressStatuses.includes(ryd.status)) {
