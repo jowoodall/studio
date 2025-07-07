@@ -149,14 +149,15 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
       batch.update(eventDoc.ref, { status: EventStatus.COMPLETED, updatedAt: FieldValue.serverTimestamp() });
       updatedEventsCount++;
 
-      // Find and update associated rydz
+      // Find associated rydz with a simple query, then filter in code to avoid composite index.
       const associatedRydzQuery = activeRydzCollectionRef
-        .where('associatedEventId', '==', eventId)
-        .where('status', 'in', unresolvedRydStatuses);
+        .where('associatedEventId', '==', eventId);
         
       const rydzSnapshot = await associatedRydzQuery.get();
       
-      rydzSnapshot.forEach(rydDoc => {
+      const rydzToProcess = rydzSnapshot.docs.filter(doc => unresolvedRydStatuses.includes(doc.data().status));
+
+      rydzToProcess.forEach(rydDoc => {
         const ryd = rydDoc.data() as ActiveRyd;
         let newStatus: ARStatus | null = null;
         
