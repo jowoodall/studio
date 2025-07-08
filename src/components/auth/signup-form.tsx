@@ -32,6 +32,8 @@ import { useRouter } from "next/navigation";
 import { UserRole } from "@/types";
 import { Loader2 } from "lucide-react";
 
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
+import { verifyRecaptcha } from '@/actions/recaptchaActions';
 
 const signupFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
@@ -50,6 +52,7 @@ export function SignupForm() {
   const { toast } = useToast();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const { executeRecaptcha } = useGoogleReCaptcha();
 
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupFormSchema),
@@ -64,7 +67,32 @@ export function SignupForm() {
 
   async function onSubmit(data: SignupFormValues) {
     setIsLoading(true);
+
+    if (!executeRecaptcha) {
+      console.error("reCAPTCHA not initialized. Check provider and site key configuration.");
+      toast({
+        title: "Security Check Unavailable",
+        description: "Could not initialize reCAPTCHA. Please ensure the site is configured correctly in the .env file.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
+      const token = await executeRecaptcha('signup');
+      const verificationResult = await verifyRecaptcha(token);
+
+      if (!verificationResult.success) {
+          toast({
+              title: "Security Check Failed",
+              description: "Your request could not be verified as human. Please try again.",
+              variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       
       if (userCredential.user) {
@@ -78,9 +106,9 @@ export function SignupForm() {
           fullName: data.fullName,
           email: data.email,
           role: data.role,
-          createdAt: serverTimestamp(), // Use serverTimestamp here
+          createdAt: serverTimestamp(),
           avatarUrl: userCredential.user.photoURL || "",
-          dataAiHint: "", // Ensure dataAiHint is included
+          dataAiHint: "",
           canDrive: false,
           bio: "",
           phone: "",
@@ -102,12 +130,11 @@ export function SignupForm() {
           },
           managedStudentIds: [],
           associatedParentIds: [],
-          approvedDrivers: {}, // Changed from approvedDriverIds
+          approvedDrivers: {},
           declinedDriverIds: [],
           joinedGroupIds: [], 
         };
         
-        console.log("Attempting to set user profile data:", userProfileData);
         await setDoc(userRef, userProfileData);
       }
 
@@ -118,9 +145,6 @@ export function SignupForm() {
       router.push("/dashboard"); 
     } catch (error: any) {
       console.error("Signup error:", error);
-      console.error("Signup error code:", error.code);
-      console.error("Signup error message:", error.message);
-
       let errorMessage = "An unexpected error occurred. Please try again.";
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email address is already in use.";
@@ -136,7 +160,7 @@ export function SignupForm() {
         title: "Signup Failed",
         description: errorMessage,
         variant: "destructive",
-        duration: 9000, // Longer duration for detailed error messages
+        duration: 9000,
       });
     } finally {
       setIsLoading(false);
@@ -213,7 +237,6 @@ export function SignupForm() {
                 <SelectContent>
                   <SelectItem value={UserRole.STUDENT}>Student</SelectItem>
                   <SelectItem value={UserRole.PARENT}>Parent or Guardian</SelectItem>
-                  {/* <SelectItem value={UserRole.ADMIN}>Admin</SelectItem> */} {/* Admin option removed */}
                 </SelectContent>
               </Select>
               <FormMessage />
