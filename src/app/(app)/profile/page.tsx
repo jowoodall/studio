@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle, MapPin } from "lucide-react";
 import Link from "next/link";
 import { UserRole, type UserProfileData } from '@/types'; // Import UserProfileData
 import { Checkbox } from "@/components/ui/checkbox";
@@ -268,6 +268,9 @@ export default function ProfilePage() {
                 <Button variant="outline" className="w-full justify-start" asChild>
                     <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> Account Settings</Link>
                 </Button>
+                 <Button variant="outline" className="w-full justify-start" asChild>
+                    <Link href="/profile/locations"><MapPin className="mr-2 h-4 w-4" /> My Locations</Link>
+                </Button>
                 { (localUserProfile.role === UserRole.PARENT) &&
                     <Button variant="outline" className="w-full justify-start" asChild>
                         <Link href="/parent/approvals"><Shield className="mr-2 h-4 w-4" /> Driver Approvals</Link>
@@ -308,15 +311,6 @@ export default function ProfilePage() {
                   <Label htmlFor="phone">Phone Number</Label>
                   <Input id="phone" type="tel" value={localUserProfile.phone || ""} readOnly className="mt-1 bg-muted/50" />
                 </div>
-              <div>
-                <Label htmlFor="address">Address</Label>
-                <Input id="addressStreet" value={localUserProfile.address?.street || ""} readOnly className="mt-1 bg-muted/50" placeholder="Street not set"/>
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                    <Input id="addressCity" placeholder="City" value={localUserProfile.address?.city || ""} readOnly className="bg-muted/50" />
-                    <Input id="addressState" placeholder="State" value={localUserProfile.address?.state || ""} readOnly className="bg-muted/50" />
-                    <Input id="addressZip" placeholder="Zip" value={localUserProfile.address?.zip || ""} readOnly className="bg-muted/50" />
-                </div>
-              </div>
               
               <Separator className="my-6" />
 

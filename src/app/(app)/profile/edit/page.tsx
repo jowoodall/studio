@@ -38,11 +38,6 @@ const profileEditFormSchema = z.object({
   dataAiHint: z.string().optional(),
   bio: z.string().max(500, "Bio cannot exceed 500 characters.").optional(),
   phone: z.string().optional(), 
-  
-  addrStreet: z.string().optional(),
-  addrCity: z.string().optional(),
-  addrState: z.string().optional(),
-  addrZip: z.string().optional(),
 
   canDrive: z.boolean().optional(),
   driverAgeRange: z.string().optional(),
@@ -68,10 +63,6 @@ export default function EditProfilePage() {
       dataAiHint: "",
       bio: "",
       phone: "",
-      addrStreet: "",
-      addrCity: "",
-      addrState: "",
-      addrZip: "",
       canDrive: false,
       driverAgeRange: "",
       driverExperience: "",
@@ -89,10 +80,6 @@ export default function EditProfilePage() {
             dataAiHint: authUserProfile.dataAiHint || "",
             bio: authUserProfile.bio || "",
             phone: authUserProfile.phone || "",
-            addrStreet: authUserProfile.address?.street || "",
-            addrCity: authUserProfile.address?.city || "",
-            addrState: authUserProfile.address?.state || "",
-            addrZip: authUserProfile.address?.zip || "",
             canDrive: authUserProfile.canDrive || false,
             driverAgeRange: authUserProfile.driverDetails?.ageRange || "",
             driverExperience: authUserProfile.driverDetails?.drivingExperience || "",
@@ -129,19 +116,12 @@ export default function EditProfilePage() {
     setIsSubmitting(true);
     try {
       const userDocRef = doc(db, "users", authUser.uid);
-      const updatedData: Partial<Omit<UserProfileData, 'role' | 'email' | 'uid' | 'createdAt'>> = {
+      const updatedData: Partial<Omit<UserProfileData, 'role' | 'email' | 'uid' | 'createdAt' | 'address'>> = {
         fullName: data.fullName,
         avatarUrl: data.avatarUrl,
         dataAiHint: data.dataAiHint,
         bio: data.bio,
         phone: data.phone,
-        // Preferences are now managed on the settings page
-        address: {
-          street: data.addrStreet,
-          city: data.addrCity,
-          state: data.addrState,
-          zip: data.addrZip,
-        },
         canDrive: data.canDrive,
         driverDetails: data.canDrive ? {
           ageRange: data.driverAgeRange,
@@ -270,14 +250,6 @@ export default function EditProfilePage() {
                   </FormItem>
                 )}
               />
-
-              <h3 className="text-lg font-semibold pt-4 border-t">Address</h3>
-              <FormField control={form.control} name="addrStreet" render={({ field }) => (<FormItem><FormLabel>Street</FormLabel><FormControl><Input placeholder="123 Main St" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField control={form.control} name="addrCity" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Anytown" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="addrState" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="CA" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="addrZip" render={({ field }) => (<FormItem><FormLabel>Zip Code</FormLabel><FormControl><Input placeholder="90210" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              </div>
 
               <div className="pt-4 border-t">
                 <FormField
