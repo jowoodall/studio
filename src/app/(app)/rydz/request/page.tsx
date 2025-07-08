@@ -1,7 +1,7 @@
 
 "use client"; 
 
-import React, { useState, useEffect, useCallback } from "react"; 
+import React, { useState, useEffect, useCallback, useMemo } from "react"; 
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -105,7 +105,14 @@ export default function RydRequestPage() {
   const [isLoadingJoinOfferDetails, setIsLoadingJoinOfferDetails] = useState(false);
   const [joinOfferError, setJoinOfferError] = useState<string | null>(null);
 
-  const savedLocations = userProfile?.savedLocations || [];
+  const sortedSavedLocations = useMemo(() => {
+    const locations = userProfile?.savedLocations || [];
+    const defaultId = userProfile?.defaultLocationId;
+    if (!defaultId) return locations;
+    const defaultLocation = locations.find(loc => loc.id === defaultId);
+    if (!defaultLocation) return locations;
+    return [defaultLocation, ...locations.filter(loc => loc.id !== defaultId)];
+  }, [userProfile?.savedLocations, userProfile?.defaultLocationId]);
 
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(createRydRequestFormSchema(userProfile?.role, isJoinOfferContext)), 
@@ -190,7 +197,13 @@ export default function RydRequestPage() {
             }
         }
         
-        if (!form.getValues("pickupLocation") && userProfile?.address?.street) { // If not set by original request, use profile
+        if (!form.getValues("pickupLocation") && userProfile?.defaultLocationId) {
+            const defaultLoc = (userProfile.savedLocations || []).find(l => l.id === userProfile.defaultLocationId);
+            if (defaultLoc) {
+                form.setValue("pickupLocation", defaultLoc.address);
+                console.log("[RydRequestPage] Pre-filled pickupLocation from user's default location.");
+            }
+        } else if (!form.getValues("pickupLocation") && userProfile?.address?.street) { // If not set by original request, use profile
              form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
              console.log("[RydRequestPage] Pre-filled pickupLocation from user profile.");
         }
@@ -229,7 +242,12 @@ export default function RydRequestPage() {
         if (eventExists) form.setValue('eventId', eventIdQuery);
         else if (eventIdQuery === "custom") form.setValue('eventId', "custom");
       }
-      if (userProfile?.address?.street && !form.getValues("pickupLocation")) {
+      if (userProfile?.defaultLocationId) {
+        const defaultLoc = (userProfile.savedLocations || []).find(l => l.id === userProfile.defaultLocationId);
+        if (defaultLoc && !form.getValues("pickupLocation")) {
+            form.setValue("pickupLocation", defaultLoc.address);
+        }
+      } else if (userProfile?.address?.street && !form.getValues("pickupLocation")) {
         form.setValue("pickupLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
       }
     }
@@ -573,10 +591,10 @@ export default function RydRequestPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Destination Address</FormLabel>
-                    {savedLocations.length > 0 && !isJoinOfferContext && (!selectedEventId || selectedEventId === "custom") && (
+                    {sortedSavedLocations.length > 0 && !isJoinOfferContext && (!selectedEventId || selectedEventId === "custom") && (
                       <Select
                         onValueChange={(value) => {
-                          const selectedLoc = savedLocations.find(loc => loc.id === value);
+                          const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
                           if (selectedLoc) {
                             form.setValue("destination", selectedLoc.address);
                           }
@@ -587,7 +605,7 @@ export default function RydRequestPage() {
                           <SelectValue placeholder="Or use a saved location for destination..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {savedLocations.map((loc) => (
+                          {sortedSavedLocations.map((loc) => (
                             <SelectItem key={loc.id} value={loc.id}>
                               {`${loc.name} (${loc.address})`}
                             </SelectItem>
@@ -611,10 +629,10 @@ export default function RydRequestPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Your Pickup Location</FormLabel>
-                    {savedLocations.length > 0 && (
+                    {sortedSavedLocations.length > 0 && (
                       <Select
                         onValueChange={(value) => {
-                          const selectedLoc = savedLocations.find(loc => loc.id === value);
+                          const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
                           if (selectedLoc) {
                             form.setValue("pickupLocation", selectedLoc.address);
                           }
@@ -624,7 +642,7 @@ export default function RydRequestPage() {
                           <SelectValue placeholder="Or use a saved location for pickup..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {savedLocations.map((loc) => (
+                          {sortedSavedLocations.map((loc) => (
                             <SelectItem key={loc.id} value={loc.id}>
                                {`${loc.name} (${loc.address})`}
                             </SelectItem>

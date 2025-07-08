@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, use, useMemo } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,7 +47,14 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const [passengerNamesToFulfill, setPassengerNamesToFulfill] = useState<string>("");
   const requestId = searchParams.get('requestId');
 
-  const savedLocations = userProfile?.savedLocations || [];
+  const sortedSavedLocations = useMemo(() => {
+    const locations = userProfile?.savedLocations || [];
+    const defaultId = userProfile?.defaultLocationId;
+    if (!defaultId) return locations;
+    const defaultLocation = locations.find(loc => loc.id === defaultId);
+    if (!defaultLocation) return locations;
+    return [defaultLocation, ...locations.filter(loc => loc.id !== defaultId)];
+  }, [userProfile?.savedLocations, userProfile?.defaultLocationId]);
 
   const form = useForm<OfferDriveFormValues>({
     resolver: zodResolver(offerDriveFormSchema),
@@ -60,7 +67,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       vehicleMakeModel: userProfile?.driverDetails?.primaryVehicle || "",
       vehicleColor: "",
       licensePlate: "",
-      driverStartLocation: userProfile?.address?.street ? `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, '') : "",
+      driverStartLocation: "",
     },
   });
 
@@ -75,11 +82,15 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       if (!form.getValues("vehicleMakeModel") && userProfile.driverDetails?.primaryVehicle) {
         form.setValue("vehicleMakeModel", userProfile.driverDetails.primaryVehicle);
       }
-      if (!form.getValues("driverStartLocation") && userProfile.address?.street) {
+      const defaultLocation = sortedSavedLocations.length > 0 && sortedSavedLocations[0].id === userProfile.defaultLocationId ? sortedSavedLocations[0] : null;
+
+      if (defaultLocation && !form.getValues("driverStartLocation")) {
+        form.setValue("driverStartLocation", defaultLocation.address);
+      } else if (!form.getValues("driverStartLocation") && userProfile.address?.street) {
          form.setValue("driverStartLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
       }
     }
-  }, [userProfile, form]);
+  }, [userProfile, form, sortedSavedLocations]);
 
 
   useEffect(() => {
@@ -504,10 +515,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Your Starting Location / General Pickup Area</FormLabel>
-                       {savedLocations.length > 0 && (
+                       {sortedSavedLocations.length > 0 && (
                         <Select
                           onValueChange={(value) => {
-                            const selectedLoc = savedLocations.find(loc => loc.id === value);
+                            const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
                             if (selectedLoc) {
                               form.setValue("driverStartLocation", selectedLoc.address);
                             }
@@ -519,7 +530,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {savedLocations.map((loc) => (
+                            {sortedSavedLocations.map((loc) => (
                               <SelectItem key={loc.id} value={loc.id}>
                                 {`${loc.name} (${loc.address})`}
                               </SelectItem>

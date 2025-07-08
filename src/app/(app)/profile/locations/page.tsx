@@ -1,13 +1,13 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { PlusCircle, Edit3, Trash2, Home, Briefcase, School, MapPin, Loader2, AlertTriangle } from "lucide-react";
+import { PlusCircle, Edit3, Trash2, Home, Briefcase, School, MapPin, Loader2, AlertTriangle, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,6 +20,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import type { SavedLocation } from '@/types';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 const locationFormSchema = z.object({
   name: z.string().min(2, { message: "Location name must be at least 2 characters." }),
@@ -56,6 +57,16 @@ export default function MyLocationsPage() {
     }
   }, [userProfile]);
 
+  const sortedLocations = useMemo(() => {
+    const defaultId = userProfile?.defaultLocationId;
+    if (!defaultId || locations.length === 0) return locations;
+
+    const defaultLocation = locations.find(loc => loc.id === defaultId);
+    const otherLocations = locations.filter(loc => loc.id !== defaultId);
+
+    return defaultLocation ? [defaultLocation, ...otherLocations] : locations;
+  }, [locations, userProfile?.defaultLocationId]);
+
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationFormSchema),
     defaultValues: {
@@ -82,7 +93,7 @@ export default function MyLocationsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleDatabaseUpdate = async (updatedLocations: SavedLocation[]) => {
+  const handleDatabaseUpdate = async (updatePayload: object) => {
     if (!user) {
       toast({ title: "Not Authenticated", description: "You must be logged in to manage locations.", variant: "destructive" });
       return false;
@@ -90,8 +101,7 @@ export default function MyLocationsPage() {
     setIsSubmitting(true);
     try {
       const userDocRef = doc(db, "users", user.uid);
-      await updateDoc(userDocRef, { savedLocations: updatedLocations });
-      setLocations(updatedLocations);
+      await updateDoc(userDocRef, updatePayload);
       return true;
     } catch (error: any) {
       console.error("Error updating locations:", error);
@@ -104,24 +114,27 @@ export default function MyLocationsPage() {
 
   const handleDeleteLocation = async (locationId: string) => {
     const updatedLocations = locations.filter(loc => loc.id !== locationId);
-    const success = await handleDatabaseUpdate(updatedLocations);
+    const success = await handleDatabaseUpdate({ savedLocations: updatedLocations });
     if (success) {
+      setLocations(updatedLocations);
       toast({ title: "Location Removed", description: "The location has been successfully removed." });
+    }
+  };
+
+  const handleSetDefaultLocation = async (locationId: string) => {
+    const success = await handleDatabaseUpdate({ defaultLocationId: locationId });
+    if (success) {
+      toast({ title: "Default Location Set", description: "Your default location has been updated." });
     }
   };
 
   async function onSubmit(data: LocationFormValues) {
     let updatedLocations: SavedLocation[];
-    let success = false;
-
+    
     if (isEditMode && currentLocation) {
       updatedLocations = locations.map(loc =>
         loc.id === currentLocation.id ? { ...currentLocation, name: data.name, icon: data.icon, address: data.address } : loc
       );
-      success = await handleDatabaseUpdate(updatedLocations);
-      if (success) {
-        toast({ title: "Location Updated", description: `"${data.name}" has been updated.` });
-      }
     } else {
       const newLocation: SavedLocation = {
         id: `loc_${Date.now()}`,
@@ -130,13 +143,14 @@ export default function MyLocationsPage() {
         icon: data.icon,
       };
       updatedLocations = [newLocation, ...locations];
-      success = await handleDatabaseUpdate(updatedLocations);
-      if (success) {
-        toast({ title: "Location Added", description: `"${data.name}" has been added to your locations.` });
-      }
     }
-
+    
+    const success = await handleDatabaseUpdate({ savedLocations: updatedLocations });
     if (success) {
+      const toastTitle = isEditMode ? "Location Updated" : "Location Added";
+      const toastDescription = isEditMode ? `"${data.name}" has been updated.` : `"${data.name}" has been added to your locations.`;
+      toast({ title: toastTitle, description: toastDescription });
+      setLocations(updatedLocations);
       setIsDialogOpen(false);
       form.reset({ name: "", address: "", icon: "MapPin" });
     }
@@ -248,28 +262,35 @@ export default function MyLocationsPage() {
         }
       />
 
-      {locations.length > 0 ? (
+      {sortedLocations.length > 0 ? (
         <div className="max-w-2xl mx-auto space-y-4">
-          {locations.map((location) => {
+          {sortedLocations.map((location) => {
             const IconComponent = iconMap[location.icon] || MapPin;
+            const isDefault = location.id === userProfile?.defaultLocationId;
             return (
               <Card 
                 key={location.id} 
-                className={cn("shadow-md transition-all hover:shadow-lg")}
+                className={cn("shadow-md transition-all hover:shadow-lg", isDefault && "border-primary border-2")}
               >
                 <CardHeader className="flex flex-row items-center justify-between p-4">
                   <div className="flex items-center gap-3">
                     <IconComponent className="h-6 w-6 text-primary" />
                     <div>
-                      <CardTitle className="font-headline text-base">{location.name}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="font-headline text-base">{location.name}</CardTitle>
+                        {isDefault && <Badge variant="default" className="text-xs">Default</Badge>}
+                      </div>
                       <p className="text-xs text-muted-foreground">{formatAddress(location.address)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-0">
-                      <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(location); }} aria-label="Edit location">
+                      <Button variant="ghost" size="icon_sm" onClick={() => handleSetDefaultLocation(location.id)} disabled={isDefault}>
+                        <Star className={cn("h-4 w-4", isDefault ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground hover:text-yellow-400")} />
+                      </Button>
+                      <Button variant="ghost" size="icon_sm" onClick={() => handleOpenDialog(location)} aria-label="Edit location">
                         <Edit3 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleDeleteLocation(location.id); }} className="text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete location">
+                      <Button variant="ghost" size="icon_sm" onClick={() => handleDeleteLocation(location.id)} className="text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete location">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                   </div>

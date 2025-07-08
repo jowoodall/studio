@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -56,7 +56,14 @@ export default function CreateEventPage() {
   const [availableGroups, setAvailableGroups] = useState<GroupSelectItem[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(true);
 
-  const savedLocations = userProfile?.savedLocations || [];
+  const sortedLocations = useMemo(() => {
+    const locations = userProfile?.savedLocations || [];
+    const defaultId = userProfile?.defaultLocationId;
+    if (!defaultId) return locations;
+    const defaultLocation = locations.find(loc => loc.id === defaultId);
+    if (!defaultLocation) return locations;
+    return [defaultLocation, ...locations.filter(loc => loc.id !== defaultId)];
+  }, [userProfile?.savedLocations, userProfile?.defaultLocationId]);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -68,6 +75,15 @@ export default function CreateEventPage() {
       eventLocation: "",
     },
   });
+
+  useEffect(() => {
+    // Pre-fill location with default location if available
+    if (sortedLocations.length > 0 && userProfile?.defaultLocationId === sortedLocations[0].id) {
+      if (!form.getValues("eventLocation")) {
+        form.setValue("eventLocation", formatAddress(sortedLocations[0].address));
+      }
+    }
+  }, [sortedLocations, userProfile, form]);
 
   useEffect(() => {
     const fetchUserGroups = async () => {
@@ -213,12 +229,12 @@ export default function CreateEventPage() {
                 )}
               />
 
-              {savedLocations.length > 0 && (
+              {sortedLocations.length > 0 && (
                 <FormItem>
                   <FormLabel>Use a Saved Location</FormLabel>
                   <Select
                     onValueChange={(value) => {
-                      const selectedLoc = savedLocations.find(loc => loc.id === value);
+                      const selectedLoc = sortedLocations.find(loc => loc.id === value);
                       if (selectedLoc) {
                         form.setValue("eventLocation", formatAddress(selectedLoc.address));
                       }
@@ -230,7 +246,7 @@ export default function CreateEventPage() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {savedLocations.map((loc) => (
+                      {sortedLocations.map((loc) => (
                         <SelectItem key={loc.id} value={loc.id}>
                           {`${loc.name} (${formatAddress(loc.address)})`}
                         </SelectItem>
@@ -433,7 +449,7 @@ export default function CreateEventPage() {
                                         {group.name}
                                         <button
                                             type="button"
-                                            className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                            className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                                             onClick={() => handleGroupSelection(groupId)}
                                         >
                                             <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />

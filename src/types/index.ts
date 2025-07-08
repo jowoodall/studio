@@ -55,6 +55,7 @@ export interface UserProfileData {
     zip?: string;
   };
   savedLocations?: SavedLocation[];
+  defaultLocationId?: string;
   canDrive?: boolean;
   driverDetails?: {
     ageRange?: string;
