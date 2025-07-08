@@ -44,28 +44,30 @@ export default function MyLocationsPage() {
   const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
 
   const [locations, setLocations] = useState<SavedLocation[]>([]);
+  const [defaultLocationId, setDefaultLocationId] = useState<string | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<SavedLocation | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (userProfile?.savedLocations) {
-      setLocations(userProfile.savedLocations);
+    if (userProfile) {
+      setLocations(userProfile.savedLocations || []);
+      setDefaultLocationId(userProfile.defaultLocationId);
     } else {
       setLocations([]);
+      setDefaultLocationId(undefined);
     }
   }, [userProfile]);
 
   const sortedLocations = useMemo(() => {
-    const defaultId = userProfile?.defaultLocationId;
-    if (!defaultId || locations.length === 0) return locations;
+    if (!defaultLocationId || locations.length === 0) return locations;
 
-    const defaultLocation = locations.find(loc => loc.id === defaultId);
-    const otherLocations = locations.filter(loc => loc.id !== defaultId);
+    const defaultLocation = locations.find(loc => loc.id === defaultLocationId);
+    const otherLocations = locations.filter(loc => loc.id !== defaultLocationId);
 
     return defaultLocation ? [defaultLocation, ...otherLocations] : locations;
-  }, [locations, userProfile?.defaultLocationId]);
+  }, [locations, defaultLocationId]);
 
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationFormSchema),
@@ -114,9 +116,14 @@ export default function MyLocationsPage() {
 
   const handleDeleteLocation = async (locationId: string) => {
     const updatedLocations = locations.filter(loc => loc.id !== locationId);
-    const success = await handleDatabaseUpdate({ savedLocations: updatedLocations });
+    let newDefaultId = defaultLocationId;
+    if (locationId === defaultLocationId) {
+        newDefaultId = undefined; // If we delete the default, clear it
+    }
+    const success = await handleDatabaseUpdate({ savedLocations: updatedLocations, defaultLocationId: newDefaultId });
     if (success) {
       setLocations(updatedLocations);
+      if(locationId === defaultLocationId) setDefaultLocationId(undefined);
       toast({ title: "Location Removed", description: "The location has been successfully removed." });
     }
   };
@@ -124,6 +131,7 @@ export default function MyLocationsPage() {
   const handleSetDefaultLocation = async (locationId: string) => {
     const success = await handleDatabaseUpdate({ defaultLocationId: locationId });
     if (success) {
+      setDefaultLocationId(locationId); // Update local state for immediate UI feedback
       toast({ title: "Default Location Set", description: "Your default location has been updated." });
     }
   };
@@ -266,7 +274,7 @@ export default function MyLocationsPage() {
         <div className="max-w-2xl mx-auto space-y-4">
           {sortedLocations.map((location) => {
             const IconComponent = iconMap[location.icon] || MapPin;
-            const isDefault = location.id === userProfile?.defaultLocationId;
+            const isDefault = location.id === defaultLocationId;
             return (
               <Card 
                 key={location.id} 
