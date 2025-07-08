@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { Metadata } from 'next';
 import { MyNextRyd } from "@/components/dashboard/MyNextRyd";
 import { updateStaleEventsAction, updateStaleRydzAction } from "@/actions/systemActions";
+import { WhatsNewFeed } from "@/components/dashboard/WhatsNewFeed";
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -43,28 +44,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Overview of your latest interactions.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              <li className="flex items-center gap-3">
-                <div className="p-2 bg-accent/20 rounded-full"><Car className="h-4 w-4 text-accent" /></div>
-                <p className="text-sm">Ryd to "School Event" confirmed for tomorrow.</p>
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="p-2 bg-green-500/20 rounded-full"><Users className="h-4 w-4 text-green-500" /></div>
-                <p className="text-sm">New member joined "Morning Commute Crew".</p>
-              </li>
-               <li className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-500/20 rounded-full"><CalendarDays className="h-4 w-4 text-yellow-500" /></div>
-                <p className="text-sm">"Weekend Soccer Practice" event updated.</p>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+        <WhatsNewFeed />
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>Quick Links</CardTitle>
