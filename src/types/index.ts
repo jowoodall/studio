@@ -36,6 +36,13 @@ export interface SavedLocation {
   icon: 'Home' | 'Briefcase' | 'School' | 'MapPin';
 }
 
+export interface NotificationPreferences {
+  rydUpdates?: { email?: boolean; text?: boolean };
+  groupActivity?: { email?: boolean; text?: boolean };
+  parentalApprovals?: { email?: boolean; text?: boolean };
+  chatMessages?: { email?: boolean; text?: boolean };
+}
+
 export interface UserProfileData {
   uid: string;
   fullName: string;
@@ -46,7 +53,7 @@ export interface UserProfileData {
   bio?: string;
   phone?: string;
   preferences?: {
-    notifications?: string;
+    notifications?: NotificationPreferences;
   };
   address?: {
     street?: string;

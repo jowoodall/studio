@@ -1,3 +1,4 @@
+
 "use client"; // Needs to be a client component to include the form
 
 import React, { useState, useEffect } from "react";
@@ -6,7 +7,6 @@ import { UpdatePasswordForm } from "@/components/auth/update-password-form";
 import { Cog, Loader2, LinkIcon, ExternalLinkIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,12 +15,38 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { UserRole } from "@/types";
 
 const notificationSettingsSchema = z.object({
-  prefNotifications: z.string(),
+  rydUpdates: z.object({
+    email: z.boolean().default(false),
+    text: z.boolean().default(false),
+  }).default({ email: true, text: false }),
+  groupActivity: z.object({
+    email: z.boolean().default(false),
+    text: z.boolean().default(false),
+  }).default({ email: true, text: false }),
+  parentalApprovals: z.object({
+    email: z.boolean().default(false),
+    text: z.boolean().default(false),
+  }).default({ email: true, text: false }),
+  chatMessages: z.object({
+    email: z.boolean().default(false),
+    text: z.boolean().default(false),
+  }).default({ email: true, text: false }),
 });
 
 type NotificationSettingsFormValues = z.infer<typeof notificationSettingsSchema>;
+
+const notificationTypes = [
+  { id: 'rydUpdates', label: 'Ryd Updates', description: 'Driver assignments, cancellations, and time changes.' },
+  { id: 'groupActivity', label: 'Group Activity', description: 'New members join your groups, or new events are posted.' },
+  { id: 'parentalApprovals', label: 'Parental Approvals', description: 'When a student you manage requires ryd approval.', roles: [UserRole.PARENT] },
+  { id: 'chatMessages', label: 'Ryd Chat Messages', description: 'Notifications for new messages in an active ryd.' },
+] as const;
+
 
 const exampleLinkedApps = [
   { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
@@ -38,13 +64,21 @@ export default function SettingsPage() {
   const form = useForm<NotificationSettingsFormValues>({
     resolver: zodResolver(notificationSettingsSchema),
     defaultValues: {
-      prefNotifications: "email",
-    }
+      rydUpdates: { email: true, text: false },
+      groupActivity: { email: true, text: false },
+      parentalApprovals: { email: true, text: false },
+      chatMessages: { email: true, text: false },
+    },
   });
   
   useEffect(() => {
     if (userProfile?.preferences?.notifications) {
-      form.setValue("prefNotifications", userProfile.preferences.notifications);
+      form.reset({
+        rydUpdates: userProfile.preferences.notifications.rydUpdates ?? { email: true, text: false },
+        groupActivity: userProfile.preferences.notifications.groupActivity ?? { email: true, text: false },
+        parentalApprovals: userProfile.preferences.notifications.parentalApprovals ?? { email: true, text: false },
+        chatMessages: userProfile.preferences.notifications.chatMessages ?? { email: true, text: false },
+      });
     }
   }, [userProfile, form]);
 
@@ -57,9 +91,9 @@ export default function SettingsPage() {
     try {
       const userDocRef = doc(db, "users", user.uid);
       await updateDoc(userDocRef, {
-        "preferences.notifications": data.prefNotifications,
+        "preferences.notifications": data,
       });
-      toast({ title: "Settings Saved", description: "Your notification preference has been updated." });
+      toast({ title: "Settings Saved", description: "Your notification preferences have been updated." });
     } catch (error: any) {
       toast({ title: "Update Failed", description: "Could not save your settings.", variant: "destructive" });
     } finally {
@@ -82,29 +116,57 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                         <FormField
-                            control={form.control}
-                            name="prefNotifications"
-                            render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Notification Type</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                                <FormControl>
-                                    <SelectTrigger>
-                                    <SelectValue placeholder="Select notification preference" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    <SelectItem value="email">Email</SelectItem>
-                                    <SelectItem value="push">Push Notifications (coming soon)</SelectItem>
-                                    <SelectItem value="none">None</SelectItem>
-                                </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>
-                            )}
-                        />
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Notification Type</TableHead>
+                              <TableHead className="text-center">Email</TableHead>
+                              <TableHead className="text-center">Text (SMS)</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {notificationTypes.map((item) => {
+                              if (item.roles && (!userProfile || !item.roles.includes(userProfile.role))) {
+                                return null;
+                              }
+                              return (
+                                <TableRow key={item.id}>
+                                  <TableCell>
+                                    <p className="font-medium">{item.label}</p>
+                                    <p className="text-xs text-muted-foreground">{item.description}</p>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <FormField
+                                      control={form.control}
+                                      name={`${item.id}.email`}
+                                      render={({ field }) => (
+                                        <FormItem className="flex justify-center">
+                                          <FormControl>
+                                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                                          </FormControl>
+                                        </FormItem>
+                                      )}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <FormField
+                                      control={form.control}
+                                      name={`${item.id}.text`}
+                                      render={({ field }) => (
+                                        <FormItem className="flex justify-center">
+                                          <FormControl>
+                                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                                          </FormControl>
+                                        </FormItem>
+                                      )}
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                         <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile}>
                             {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save Preferences"}
                         </Button>

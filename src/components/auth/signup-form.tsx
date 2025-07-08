@@ -113,7 +113,12 @@ export function SignupForm() {
           bio: "",
           phone: "",
           preferences: {
-            notifications: "email", 
+            notifications: {
+              rydUpdates: { email: true, text: false },
+              groupActivity: { email: true, text: false },
+              parentalApprovals: { email: true, text: false },
+              chatMessages: { email: true, text: false },
+            },
           },
           address: {
             street: "",
