@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -16,6 +15,7 @@ import { format } from 'date-fns';
 import { updateStaleEventsAction } from '@/actions/systemActions';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 const StatusBadge = ({ status }: { status?: EventStatus }) => {
   const currentStatus = status || EventStatus.ACTIVE;
@@ -39,6 +39,7 @@ const StatusBadge = ({ status }: { status?: EventStatus }) => {
 
 export default function EventsPage() {
   const { toast } = useToast();
+  const { user: authUser, userProfile, loading: authLoading } = useAuth();
   
   const [events, setEvents] = useState<EventData[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
@@ -48,14 +49,32 @@ export default function EventsPage() {
     setIsLoadingEvents(true);
     setError(null);
     try {
-      // Run the cleanup job in the background. We don't need to wait for it.
       updateStaleEventsAction().catch(err => console.error("Background stale events check failed:", err.message));
 
+      if (!authUser || !userProfile) {
+        if (!authLoading) {
+            setIsLoadingEvents(false);
+            setEvents([]);
+        }
+        return;
+      }
+      
+      const userGroupIds = userProfile.joinedGroupIds || [];
+      
+      if (userGroupIds.length === 0) {
+          setIsLoadingEvents(false);
+          setEvents([]);
+          return;
+      }
+
+      // Query for events that are active and associated with any of the user's groups
       const eventsQuery = query(
         collection(db, "events"), 
         where("status", "==", EventStatus.ACTIVE), 
+        where("associatedGroupIds", "array-contains-any", userGroupIds),
         orderBy("eventTimestamp", "asc")
       );
+
       const querySnapshot = await getDocs(eventsQuery);
       const fetchedEvents: EventData[] = [];
       querySnapshot.forEach((doc) => {
@@ -66,7 +85,7 @@ export default function EventsPage() {
       console.error("Error fetching events:", e);
       let detailedError = "Failed to load active events. Please try again.";
       if (e.code === 5 || (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
-        detailedError = "A Firestore index is required to load active events. Please check the browser's console for a link to create it.";
+        detailedError = "A Firestore index is required to load events for your groups. Please check the browser's console for a link to create it.";
       }
       setError(detailedError);
       toast({
@@ -78,17 +97,22 @@ export default function EventsPage() {
     } finally {
       setIsLoadingEvents(false);
     }
-  }, [toast]);
+  }, [toast, authUser, userProfile, authLoading]);
 
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    if (!authLoading) {
+      fetchEvents();
+    }
+  }, [fetchEvents, authLoading]);
 
-  if (isLoadingEvents) {
+  // Combined loading state
+  const isLoading = authLoading || isLoadingEvents;
+
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground">Loading active events...</p>
+        <p className="text-muted-foreground">Loading events for your groups...</p>
       </div>
     );
   }
@@ -98,7 +122,7 @@ export default function EventsPage() {
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
         <h2 className="text-xl font-semibold mb-2">Error Loading Events</h2>
-        <p className="text-muted-foreground px-4">{error}</p>
+        <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
         <Button onClick={fetchEvents} className="mt-4">Try Again</Button>
       </div>
     );
@@ -108,7 +132,7 @@ export default function EventsPage() {
     <>
       <PageHeader
         title="Active Events"
-        description="View upcoming events or create new ones for carpooling."
+        description="Showing upcoming events for the groups you have joined."
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button variant="outline" asChild>
@@ -170,7 +194,7 @@ export default function EventsPage() {
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are no active events listed currently. Try creating one!
+              There are no active events for the groups you've joined. Try joining more groups or creating a new event.
             </CardDescription>
             <Button asChild>
               <Link href="/events/create">
