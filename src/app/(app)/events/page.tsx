@@ -108,7 +108,7 @@ export default function EventsPage() {
     } catch (e: any) {
       console.error("Error fetching events:", e);
       let detailedError = "Failed to load active events. Please try again.";
-      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
+      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
         detailedError = "A Firestore index is required to load events. Please check the browser's console for a link to create it.";
       }
       setError(detailedError);
