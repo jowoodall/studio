@@ -1,7 +1,7 @@
 
 'use client';
 import Link from 'next/link';
-import React, { useState, useEffect } from 'react'; // Import React, useState, useEffect
+import React, { useState, useEffect } from 'react';
 import { Bell, UserCircle, Menu, LogOut, Settings, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,12 +15,13 @@ import {
 import { Logo } from '@/components/icons/logo';
 import { useSidebar } from '@/components/ui/sidebar'; 
 import { siteConfig, userAccountMenu } from '@/config/site';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { signOut } from 'firebase/auth'; 
 import { auth } from '@/lib/firebase'; 
 import { useAuth } from '@/context/AuthContext'; 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; 
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getNotificationsAction } from '@/actions/notificationActions';
 
 export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
@@ -29,9 +30,36 @@ export function AppHeader() {
   const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   
   const [hasMounted, setHasMounted] = React.useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const pathname = usePathname();
+
   React.useEffect(() => {
     setHasMounted(true);
   }, []);
+  
+  // Effect to fetch notification status
+  useEffect(() => {
+    if (!user) {
+      setHasUnreadNotifications(false);
+      return;
+    }
+
+    const fetchNotificationStatus = async () => {
+      // Don't show the indicator on the notifications page itself
+      if (pathname === '/notifications') {
+        setHasUnreadNotifications(false);
+        return;
+      }
+      const result = await getNotificationsAction(user.uid);
+      if (result.success && result.notifications) {
+        const hasUnread = result.notifications.some(n => !n.read);
+        setHasUnreadNotifications(hasUnread);
+      }
+    };
+
+    fetchNotificationStatus();
+    // Re-fetch when the user changes or the path changes
+  }, [user, pathname]);
 
 
   const handleLogout = async (event: Event) => {
@@ -87,8 +115,11 @@ export function AppHeader() {
         <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/notifications" aria-label="Notifications">
+              <Link href="/notifications" aria-label="Notifications" className="relative">
                 <Bell className="h-5 w-5" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-1.5 right-1.5 block h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-background" />
+                )}
               </Link>
             </Button>
             <DropdownMenu>
