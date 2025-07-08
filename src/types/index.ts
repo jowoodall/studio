@@ -47,7 +47,6 @@ export interface UserProfileData {
   phone?: string;
   preferences?: {
     notifications?: string;
-    preferredPickupRadius?: string;
   };
   address?: {
     street?: string;

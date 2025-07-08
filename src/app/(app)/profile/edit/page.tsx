@@ -40,7 +40,6 @@ const profileEditFormSchema = z.object({
   phone: z.string().optional(), 
   
   prefNotifications: z.string().optional(),
-  prefPickupRadius: z.string().optional(),
 
   addrStreet: z.string().optional(),
   addrCity: z.string().optional(),
@@ -72,7 +71,6 @@ export default function EditProfilePage() {
       bio: "",
       phone: "",
       prefNotifications: "email",
-      prefPickupRadius: "5 miles",
       addrStreet: "",
       addrCity: "",
       addrState: "",
@@ -95,7 +93,6 @@ export default function EditProfilePage() {
             bio: authUserProfile.bio || "",
             phone: authUserProfile.phone || "",
             prefNotifications: authUserProfile.preferences?.notifications || "email",
-            prefPickupRadius: authUserProfile.preferences?.preferredPickupRadius || "5 miles",
             addrStreet: authUserProfile.address?.street || "",
             addrCity: authUserProfile.address?.city || "",
             addrState: authUserProfile.address?.state || "",
@@ -144,7 +141,6 @@ export default function EditProfilePage() {
         phone: data.phone,
         preferences: {
           notifications: data.prefNotifications,
-          preferredPickupRadius: data.prefPickupRadius,
         },
         address: {
           street: data.addrStreet,
@@ -302,25 +298,6 @@ export default function EditProfilePage() {
                         <SelectItem value="email">Email</SelectItem>
                         <SelectItem value="push">Push Notifications</SelectItem>
                         <SelectItem value="none">None</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="prefPickupRadius"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Preferred Pickup Radius</FormLabel>
-                     <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select pickup radius" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="1 mile">1 Mile</SelectItem>
-                        <SelectItem value="3 miles">3 Miles</SelectItem>
-                        <SelectItem value="5 miles">5 Miles</SelectItem>
-                        <SelectItem value="10 miles">10 Miles</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

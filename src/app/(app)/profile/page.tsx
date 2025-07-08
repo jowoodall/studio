@@ -319,15 +319,9 @@ export default function ProfilePage() {
               </div>
               <Separator />
               <h3 className="text-md font-semibold text-muted-foreground">Preferences</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="notifications">Notification Preferences</Label>
-                  <Input id="notifications" value={localUserProfile.preferences?.notifications || "Not set"} readOnly className="mt-1 bg-muted/50" />
-                </div>
-                <div>
-                  <Label htmlFor="pickupRadius">Preferred Pickup Radius</Label>
-                  <Input id="pickupRadius" value={localUserProfile.preferences?.preferredPickupRadius || "Not set"} readOnly className="mt-1 bg-muted/50" />
-                </div>
+              <div>
+                <Label htmlFor="notifications">Notification Preferences</Label>
+                <Input id="notifications" value={localUserProfile.preferences?.notifications || "Not set"} readOnly className="mt-1 bg-muted/50" />
               </div>
 
               <Separator className="my-6" />

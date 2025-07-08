@@ -114,7 +114,6 @@ export function SignupForm() {
           phone: "",
           preferences: {
             notifications: "email", 
-            preferredPickupRadius: "5 miles",
           },
           address: {
             street: "",
