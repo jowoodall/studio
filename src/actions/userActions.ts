@@ -34,7 +34,7 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
     try {
         // Verify parent is actually a parent
         const parentDoc = await db.collection('users').doc(parentUid).get();
-        if (!parentDoc.exists() || parentDoc.data()?.role !== UserRole.PARENT) {
+        if (!parentDoc.exists || parentDoc.data()?.role !== UserRole.PARENT) {
             return { success: false, message: "The requesting user is not a valid parent." };
         }
 
@@ -97,7 +97,7 @@ export async function associateParentWithStudentAction(input: AssociateParentInp
     try {
         // Verify student is actually a student
         const studentDoc = await db.collection('users').doc(studentUid).get();
-        if (!studentDoc.exists() || studentDoc.data()?.role !== UserRole.STUDENT) {
+        if (!studentDoc.exists || studentDoc.data()?.role !== UserRole.STUDENT) {
             return { success: false, message: "The requesting user is not a valid student." };
         }
 
