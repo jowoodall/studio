@@ -43,19 +43,8 @@ export default async function DashboardPage() {
         <MyNextRyd />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6">
         <WhatsNewFeed />
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Quick Links</CardTitle>
-            <CardDescription>Access common actions quickly.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
-            <Button variant="outline" asChild><Link href="/groups/create">Create New Group</Link></Button>
-            <Button variant="outline" asChild><Link href="/events/create">Create New Event</Link></Button>
-            <Button variant="outline" asChild><Link href="/profile">View Profile</Link></Button>
-          </CardContent>
-        </Card>
       </div>
     </>
   );
