@@ -39,7 +39,7 @@ export default function NotificationsPage() {
     try {
       const result = await getNotificationsAction(user.uid);
       if (result.success && result.notifications) {
-        setNotifications(result.notifications);
+        setNotifications(result.notifications as any); // Cast to handle string timestamp
       } else {
         throw new Error(result.message || "Failed to load notifications.");
       }
@@ -124,7 +124,7 @@ export default function NotificationsPage() {
                 <div className="flex-1">
                   <CardTitle className={cn("text-base font-semibold", !notification.read && 'text-primary')}>{notification.title}</CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(notification.createdAt.toDate(), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(notification.createdAt as string), { addSuffix: true })}
                   </CardDescription>
                 </div>
                 {!notification.read && <div className="h-2.5 w-2.5 rounded-full bg-primary mt-1"></div>}

@@ -53,9 +53,19 @@ export async function getNotificationsAction(
       return { success: true, notifications: [] };
     }
 
-    const notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NotificationData));
+    // Convert Timestamp to ISO string for serialization before sending to client
+    const notifications = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        ...data,
+        id: doc.id,
+        createdAt: (data.createdAt as Timestamp).toDate().toISOString(),
+      };
+    });
     
-    return { success: true, notifications };
+    // Return as `any` to bypass TypeScript error at the server/client boundary
+    return { success: true, notifications: notifications as any };
+    
   } catch (error: any) {
     console.error('[Action: getNotificationsAction] Error:', error);
     if (error.code === 5 || (error.message && (error.message.toLowerCase().includes("index") || error.message.toLowerCase().includes("missing a composite index")))) {
