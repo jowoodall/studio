@@ -2,17 +2,16 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import type { DashboardRydData, ActiveRyd, UserProfileData } from '@/types';
-import { UserRole, ActiveRydStatus } from '@/types';
+import type { DashboardRydData, ActiveRyd, UserProfileData, ScheduleItem, RydData, EventData } from '@/types';
+import { UserRole, ActiveRydStatus, EventStatus } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
-
-// --- Firestore REST API Helpers ---
+import { addDays, isWithinInterval } from 'date-fns';
 
 // This function converts a document from Firestore's REST API format
 // into a plain JavaScript object, similar to what the SDK provides.
 function parseFirestoreDocument(doc: any): any {
   const fields = doc.fields || {};
-  const parsed: { [key: string]: any } = {};
+  const parsed: { [key:string]: any } = {};
 
   for (const key in fields) {
     const value = fields[key];
@@ -174,6 +173,116 @@ export async function getMyNextRydAction({ idToken }: { idToken: string }): Prom
 
   } catch (error: any) {
     console.error(`[Action: getMyNextRydAction] Error:`, error);
+    return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+  }
+}
+
+export async function getUpcomingScheduleAction({ idToken }: { idToken: string }): Promise<{ success: boolean; schedule?: ScheduleItem[]; message?: string; }> {
+  console.log('[DashboardAction] Fetching upcoming schedule.');
+  if (!idToken) return { success: false, message: "Authentication token is required." };
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
+    if (!userProfileSnap.exists) return { success: false, message: "User profile not found." };
+    const userProfile = userProfileSnap.data() as UserProfileData;
+
+    const uidsToQuery = [userId];
+    if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
+      uidsToQuery.push(...userProfile.managedStudentIds);
+    }
+
+    const now = new Date();
+    const fourteenDaysLater = addDays(now, 14);
+
+    const scheduleItemsMap = new Map<string, ScheduleItem>();
+    
+    // --- Define Queries ---
+    const activeRydzDriverQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'IN', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+    const activeRydzPassengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+    const rydRequestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+    const managedEventsQuery = { from: [{ collectionId: 'events' }], where: { fieldFilter: { field: { fieldPath: 'managerIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } } } };
+    const groupEventsQuery = userProfile.joinedGroupIds && userProfile.joinedGroupIds.length > 0
+        ? { from: [{ collectionId: 'events' }], where: { fieldFilter: { field: { fieldPath: 'associatedGroupIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: userProfile.joinedGroupIds.map(id => ({ stringValue: id })) } } } } }
+        : null;
+
+    // --- Run Queries in Parallel ---
+    const queriesToRun = [
+        runFirestoreQuery(activeRydzDriverQuery, idToken),
+        runFirestoreQuery(activeRydzPassengerQuery, idToken),
+        runFirestoreQuery(rydRequestsQuery, idToken),
+        runFirestoreQuery(managedEventsQuery, idToken),
+    ];
+    if (groupEventsQuery) queriesToRun.push(runFirestoreQuery(groupEventsQuery, idToken));
+
+    const [activeRydzAsDriver, activeRydzAsPassenger, rydRequests, managedEvents, groupEvents = []] = await Promise.all(queriesToRun);
+
+    const allActiveRydz = [...activeRydzAsDriver, ...activeRydzAsPassenger];
+    const allEvents = [...managedEvents, ...groupEvents];
+    
+    // --- Process Active Rydz ---
+    for (const ryd of allActiveRydz) {
+      const activeRyd = ryd as ActiveRyd;
+      const timestamp = (activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime) as Timestamp | undefined;
+      if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater })) {
+        const relevantUserUid = uidsToQuery.find(uid => uid === activeRyd.driverId || activeRyd.passengerUids?.includes(uid));
+        const relevantUser = await admin.firestore().collection('users').doc(relevantUserUid!).get().then(snap => snap.data() as UserProfileData);
+        let subtitle: string;
+        if (activeRyd.driverId === relevantUserUid) {
+          subtitle = "You are driving";
+        } else {
+          subtitle = `Passenger: ${relevantUser.fullName}`;
+        }
+        
+        scheduleItemsMap.set(`ryd-${activeRyd.id}`, {
+          id: `ryd-${activeRyd.id}`,
+          type: 'ryd',
+          timestamp: timestamp.toDate().toISOString(),
+          title: activeRyd.eventName || 'Unnamed Ryd',
+          subtitle: subtitle,
+          href: `/rydz/tracking/${activeRyd.id}`,
+        });
+      }
+    }
+
+    // --- Process Ryd Requests ---
+    for (const req of rydRequests) {
+      const rydRequest = req as RydData;
+      const timestamp = rydRequest.rydTimestamp as Timestamp | undefined;
+       if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater }) && ['requested', 'searching_driver'].includes(rydRequest.status)) {
+        scheduleItemsMap.set(`request-${rydRequest.id}`, {
+          id: `request-${rydRequest.id}`,
+          type: 'request',
+          timestamp: timestamp.toDate().toISOString(),
+          title: rydRequest.eventName || rydRequest.destination,
+          subtitle: 'Searching for driver',
+          href: `/rydz/upcoming`,
+        });
+      }
+    }
+
+    // --- Process Events ---
+    for (const ev of allEvents) {
+        const event = ev as EventData;
+        const timestamp = event.eventTimestamp as Timestamp | undefined;
+        if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater }) && event.status === EventStatus.ACTIVE) {
+            scheduleItemsMap.set(`event-${event.id}`, {
+                id: `event-${event.id}`,
+                type: 'event',
+                timestamp: timestamp.toDate().toISOString(),
+                title: event.name,
+                href: `/events/${event.id}/rydz`,
+            });
+        }
+    }
+
+    const finalSchedule = Array.from(scheduleItemsMap.values()).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return { success: true, schedule: finalSchedule };
+
+  } catch (error: any) {
+    console.error(`[Action: getUpcomingScheduleAction] Error:`, error);
     return { success: false, message: `An unexpected server error occurred: ${error.message}` };
   }
 }

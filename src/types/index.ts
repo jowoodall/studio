@@ -262,7 +262,16 @@ export interface NotificationData {
   title: string;
   message: string;
   type: NotificationType;
-  createdAt: Timestamp;
+  createdAt: string;
   read: boolean;
   link?: string; // Optional link to navigate to, e.g., /rydz/tracking/some_ryd_id
+}
+
+export interface ScheduleItem {
+  id: string;
+  type: 'ryd' | 'event' | 'request';
+  timestamp: string; // ISO string for serialization
+  title: string;
+  subtitle?: string;
+  href: string;
 }

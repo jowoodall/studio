@@ -1,13 +1,14 @@
 
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, CalendarDays, Car } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from 'next';
 import { MyNextRyd } from "@/components/dashboard/MyNextRyd";
 import { updateStaleEventsAction, updateStaleRydzAction } from "@/actions/systemActions";
 import { WhatsNewFeed } from "@/components/dashboard/WhatsNewFeed";
+import { UpcomingSchedule } from "@/components/dashboard/UpcomingSchedule";
+import { Separator } from "@/components/ui/separator";
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -43,6 +44,12 @@ export default async function DashboardPage() {
         <MyNextRyd />
       </div>
 
+      <div className="mb-8">
+        <UpcomingSchedule />
+      </div>
+      
+      <Separator className="my-8" />
+      
       <div className="grid gap-6">
         <WhatsNewFeed />
       </div>
