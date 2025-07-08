@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -60,32 +61,55 @@ export default function EventsPage() {
       }
       
       const userGroupIds = userProfile.joinedGroupIds || [];
-      
-      if (userGroupIds.length === 0) {
-          setIsLoadingEvents(false);
-          setEvents([]);
-          return;
+      const userId = authUser.uid;
+
+      const eventsMap = new Map<string, EventData>();
+
+      // Query 1: Events for user's groups
+      let groupEventsPromise = Promise.resolve<EventData[]>([]);
+      if (userGroupIds.length > 0) {
+        const groupEventsQuery = query(
+          collection(db, "events"), 
+          where("status", "==", EventStatus.ACTIVE), 
+          where("associatedGroupIds", "array-contains-any", userGroupIds)
+        );
+        groupEventsPromise = getDocs(groupEventsQuery).then(snapshot => 
+          snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventData))
+        );
       }
 
-      // Query for events that are active and associated with any of the user's groups
-      const eventsQuery = query(
-        collection(db, "events"), 
-        where("status", "==", EventStatus.ACTIVE), 
-        where("associatedGroupIds", "array-contains-any", userGroupIds),
-        orderBy("eventTimestamp", "asc")
+      // Query 2: Events managed by user
+      const managedEventsQuery = query(
+        collection(db, "events"),
+        where("status", "==", EventStatus.ACTIVE),
+        where("managerIds", "array-contains", userId)
+      );
+      const managedEventsPromise = getDocs(managedEventsQuery).then(snapshot => 
+        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventData))
       );
 
-      const querySnapshot = await getDocs(eventsQuery);
-      const fetchedEvents: EventData[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedEvents.push({ id: doc.id, ...doc.data() } as EventData);
+      const [groupEvents, managedEvents] = await Promise.all([groupEventsPromise, managedEventsPromise]);
+      
+      // Merge and deduplicate
+      groupEvents.forEach(event => eventsMap.set(event.id, event));
+      managedEvents.forEach(event => eventsMap.set(event.id, event));
+      
+      const combinedEvents = Array.from(eventsMap.values());
+      
+      // Sort by event timestamp on the client
+      combinedEvents.sort((a, b) => {
+        const timeA = a.eventTimestamp?.toMillis() || 0;
+        const timeB = b.eventTimestamp?.toMillis() || 0;
+        return timeA - timeB;
       });
-      setEvents(fetchedEvents);
+
+      setEvents(combinedEvents);
+
     } catch (e: any) {
       console.error("Error fetching events:", e);
       let detailedError = "Failed to load active events. Please try again.";
-      if (e.code === 5 || (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
-        detailedError = "A Firestore index is required to load events for your groups. Please check the browser's console for a link to create it.";
+      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index")))) {
+        detailedError = "A Firestore index is required to load events. Please check the browser's console for a link to create it.";
       }
       setError(detailedError);
       toast({
@@ -132,7 +156,7 @@ export default function EventsPage() {
     <>
       <PageHeader
         title="Active Events"
-        description="Showing upcoming events for the groups you have joined."
+        description="Showing upcoming events for groups you've joined or events you manage."
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             <Button variant="outline" asChild>
@@ -194,7 +218,7 @@ export default function EventsPage() {
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-6">
-              There are no active events for the groups you've joined. Try joining more groups or creating a new event.
+              There are no active events for your groups, nor any you manage. Try joining more groups or creating a new event.
             </CardDescription>
             <Button asChild>
               <Link href="/events/create">
