@@ -251,34 +251,6 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
-          <Card className="mt-6 shadow-lg">
-             <CardHeader>
-                <CardTitle className="text-lg">Quick Actions</CardTitle>
-             </CardHeader>
-             <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start" asChild>
-                    <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> Account Settings</Link>
-                </Button>
-                 <Button variant="outline" className="w-full justify-start" asChild>
-                    <Link href="/profile/locations"><MapPin className="mr-2 h-4 w-4" /> My Locations</Link>
-                </Button>
-                { (localUserProfile.role === UserRole.PARENT) &&
-                    <Button variant="outline" className="w-full justify-start" asChild>
-                        <Link href="/parent/approvals"><Shield className="mr-2 h-4 w-4" /> Driver Approvals</Link>
-                    </Button>
-                }
-                 { (localUserProfile.role === UserRole.PARENT) && // Show "My Students" link for parents
-                    <Button variant="outline" className="w-full justify-start" asChild>
-                        <Link href="/parent/my-students"><Users className="mr-2 h-4 w-4" /> My Students</Link>
-                    </Button>
-                }
-                <Button variant="destructive" className="w-full justify-start" asChild>
-                     <Link href="/"> 
-                        <LogOut className="mr-2 h-4 w-4" /> Log Out
-                     </Link>
-                </Button>
-             </CardContent>
-          </Card>
         </div>
 
         <div className="md:col-span-2">
