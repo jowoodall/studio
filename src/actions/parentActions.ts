@@ -3,10 +3,22 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { UserProfileData, ActiveRyd } from '@/types';
-import { PassengerManifestStatus, UserRole } from '@/types';
+import type { UserProfileData, ActiveRyd, NotificationType } from '@/types';
+import { PassengerManifestStatus, UserRole, NotificationType as NotificationTypeEnum } from '@/types';
+import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
+
+// Helper function to get user profile (not transaction-aware)
+async function getUserProfile(userId: string): Promise<UserProfileData | null> {
+  const userDocRef = db.collection('users').doc(userId);
+  const userDocSnap = await userDocRef.get();
+  if (!userDocSnap.exists) {
+    return null;
+  }
+  return { uid: userDocSnap.id, ...userDocSnap.data() } as UserProfileData;
+}
+
 
 // A robust, centralized error handler for server actions.
 const handleActionError = (error: any, actionName: string): { success: boolean, message: string } => {
@@ -48,10 +60,10 @@ export async function manageDriverApprovalAction(
   const activeRydDocRef = db.collection('activeRydz').doc(activeRydId);
   
   try {
-    const resultMessage = await db.runTransaction(async (transaction) => {
+    const transactionResult = await db.runTransaction(async (transaction) => {
       const [parentDocSnap, activeRydDocSnap] = await transaction.getAll(parentDocRef, activeRydDocRef);
       
-      if (!parentDocSnap.exists) {
+      if (!parentDocSnap.exists()) {
         throw new Error("Parent profile not found.");
       }
       const parentProfile = parentDocSnap.data() as UserProfileData;
@@ -61,7 +73,7 @@ export async function manageDriverApprovalAction(
         throw new Error("Unauthorized: You are not registered as a parent for this student.");
       }
 
-      if (!activeRydDocSnap.exists) {
+      if (!activeRydDocSnap.exists()) {
         throw new Error("The associated ryd could not be found.");
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
@@ -78,6 +90,7 @@ export async function manageDriverApprovalAction(
       let newStatus: PassengerManifestStatus;
       let message = "";
       let parentUpdatePayload: any = {};
+      const shouldNotifyDriver = decision === 'approve_once' || decision === 'approve_permanently';
 
       switch (decision) {
         case 'reject':
@@ -116,10 +129,28 @@ export async function manageDriverApprovalAction(
       
       transaction.update(activeRydDocRef, rydUpdatePayload);
 
-      return message;
+      return { 
+        message, 
+        shouldNotifyDriver,
+        driverId: activeRydData.driverId,
+        eventName: activeRydData.eventName
+      };
     });
 
-    return { success: true, message: resultMessage };
+    // --- Create notification outside of transaction ---
+    if (transactionResult.shouldNotifyDriver) {
+        const studentProfile = await getUserProfile(studentUserId);
+        await createNotification(
+            transactionResult.driverId,
+            'New Ryd Request',
+            `${studentProfile?.fullName || 'A student'} has requested to join your ryd for "${transactionResult.eventName || 'the event'}" (approved by parent).`,
+            NotificationTypeEnum.INFO,
+            `/rydz/tracking/${activeRydId}`
+        );
+    }
+    // --- End notification creation ---
+
+    return { success: true, message: transactionResult.message };
 
   } catch (error: any) {
     return handleActionError(error, "manageDriverApprovalAction");
