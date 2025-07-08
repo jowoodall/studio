@@ -39,8 +39,6 @@ const profileEditFormSchema = z.object({
   bio: z.string().max(500, "Bio cannot exceed 500 characters.").optional(),
   phone: z.string().optional(), 
   
-  prefNotifications: z.string().optional(),
-
   addrStreet: z.string().optional(),
   addrCity: z.string().optional(),
   addrState: z.string().optional(),
@@ -70,7 +68,6 @@ export default function EditProfilePage() {
       dataAiHint: "",
       bio: "",
       phone: "",
-      prefNotifications: "email",
       addrStreet: "",
       addrCity: "",
       addrState: "",
@@ -92,7 +89,6 @@ export default function EditProfilePage() {
             dataAiHint: authUserProfile.dataAiHint || "",
             bio: authUserProfile.bio || "",
             phone: authUserProfile.phone || "",
-            prefNotifications: authUserProfile.preferences?.notifications || "email",
             addrStreet: authUserProfile.address?.street || "",
             addrCity: authUserProfile.address?.city || "",
             addrState: authUserProfile.address?.state || "",
@@ -139,9 +135,7 @@ export default function EditProfilePage() {
         dataAiHint: data.dataAiHint,
         bio: data.bio,
         phone: data.phone,
-        preferences: {
-          notifications: data.prefNotifications,
-        },
+        // Preferences are now managed on the settings page
         address: {
           street: data.addrStreet,
           city: data.addrCity,
@@ -285,26 +279,6 @@ export default function EditProfilePage() {
                 <FormField control={form.control} name="addrZip" render={({ field }) => (<FormItem><FormLabel>Zip Code</FormLabel><FormControl><Input placeholder="90210" {...field} /></FormControl><FormMessage /></FormItem>)} />
               </div>
 
-              <h3 className="text-lg font-semibold pt-4 border-t">Preferences</h3>
-               <FormField
-                control={form.control}
-                name="prefNotifications"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notification Type</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select notification preference" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="push">Push Notifications</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
               <div className="pt-4 border-t">
                 <FormField
                     control={form.control}
@@ -373,7 +347,7 @@ export default function EditProfilePage() {
               )}
 
 
-              <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingContextProfile}>
+              <Button type="submit" className="w-full !mt-8" disabled={isSubmitting || authLoading || isLoadingContextProfile}>
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
                 ) : (

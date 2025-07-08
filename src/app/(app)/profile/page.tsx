@@ -317,13 +317,7 @@ export default function ProfilePage() {
                     <Input id="addressZip" placeholder="Zip" value={localUserProfile.address?.zip || ""} readOnly className="bg-muted/50" />
                 </div>
               </div>
-              <Separator />
-              <h3 className="text-md font-semibold text-muted-foreground">Preferences</h3>
-              <div>
-                <Label htmlFor="notifications">Notification Preferences</Label>
-                <Input id="notifications" value={localUserProfile.preferences?.notifications || "Not set"} readOnly className="mt-1 bg-muted/50" />
-              </div>
-
+              
               <Separator className="my-6" />
 
               {localUserProfile.role === UserRole.PARENT && (
