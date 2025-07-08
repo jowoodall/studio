@@ -1,10 +1,9 @@
-
 "use client"; // Needs to be a client component to include the form
 
 import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { UpdatePasswordForm } from "@/components/auth/update-password-form";
-import { Cog, Loader2 } from "lucide-react";
+import { Cog, Loader2, LinkIcon, ExternalLinkIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +21,14 @@ const notificationSettingsSchema = z.object({
 });
 
 type NotificationSettingsFormValues = z.infer<typeof notificationSettingsSchema>;
+
+const exampleLinkedApps = [
+  { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
+  { id: 'band', name: 'BAND', description: 'Connect with your group calendars.', connected: true, dataAiHint: 'community app logo' },
+  { id: 'googlecalendar', name: 'Google Calendar', description: 'Integrate your personal calendar.', connected: false, dataAiHint: 'calendar logo' },
+  { id: 'outlookcalendar', name: 'Outlook Calendar', description: 'Link your work or personal calendar.', connected: true, dataAiHint: 'office app logo' },
+];
+
 
 export default function SettingsPage() {
   const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
@@ -110,15 +117,27 @@ export default function SettingsPage() {
         
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Other Settings</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <LinkIcon className="h-5 w-5" />
+              Linked Apps
+            </CardTitle>
             <CardDescription>
-              Additional account management options will be available here in the future.
+              Connect MyRydz with other apps you use to sync schedules and events.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mt-4 p-6 border-2 border-dashed border-muted rounded-md text-center text-muted-foreground">
-              <p>Privacy Settings Placeholder</p>
-              <p className="text-sm">Control what information is visible to others.</p>
+            <div className="space-y-4">
+              {exampleLinkedApps.map((app) => (
+                <div key={app.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
+                  <div>
+                    <p className="font-medium">{app.name}</p>
+                    <p className="text-xs text-muted-foreground">{app.description}</p>
+                  </div>
+                  <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> 
+                    {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
+                  </Button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -9,13 +8,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, LinkIcon, ExternalLinkIcon, Loader2, AlertTriangle, MapPin } from "lucide-react";
+import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, Loader2, AlertTriangle, MapPin } from "lucide-react";
 import Link from "next/link";
 import { UserRole, type UserProfileData } from '@/types'; // Import UserProfileData
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch, query, where, getDocs, collection, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { associateStudentWithParentAction, associateParentWithStudentAction } from '@/actions/userActions';
 
@@ -30,14 +29,6 @@ interface AssociatedParentDisplayInfo {
   fullName: string;
   email: string;
 }
-
-
-const exampleLinkedApps = [
-  { id: 'teamsnap', name: 'TeamSnap', description: 'Sync team schedules and events.', connected: false, dataAiHint: 'sports team logo' },
-  { id: 'band', name: 'BAND', description: 'Connect with your group calendars.', connected: true, dataAiHint: 'community app logo' },
-  { id: 'googlecalendar', name: 'Google Calendar', description: 'Integrate your personal calendar.', connected: false, dataAiHint: 'calendar logo' },
-  { id: 'outlookcalendar', name: 'Outlook Calendar', description: 'Link your work or personal calendar.', connected: true, dataAiHint: 'office app logo' },
-];
 
 export default function ProfilePage() {
   const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth(); // Use context
@@ -445,30 +436,6 @@ export default function ProfilePage() {
                   </div>
                 )}
               </div>
-
-              <Separator className="my-6" />
-
-              <div>
-                <div className="flex items-center gap-2 text-muted-foreground mb-4">
-                  <LinkIcon className="h-5 w-5" />
-                  <h4 className="text-base font-medium">Linked Apps</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-4">Connect MyRydz with other apps you use.</p>
-                <div className="space-y-4">
-                  {exampleLinkedApps.map((app) => (
-                    <div key={app.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-md">
-                      <div>
-                        <p className="font-medium">{app.name}</p>
-                        <p className="text-xs text-muted-foreground">{app.description}</p>
-                      </div>
-                      <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> 
-                        {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
             </CardContent>
           </Card>
         </div>
