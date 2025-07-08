@@ -72,11 +72,6 @@ export const navMenuItems: NavItem[] = [
     ]
   },
   {
-    title: 'Map View',
-    href: '/map',
-    icon: MapPin,
-  },
-  {
     title: 'Notifications',
     href: '/notifications',
     icon: Bell,

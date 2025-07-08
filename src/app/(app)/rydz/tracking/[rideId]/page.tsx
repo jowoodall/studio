@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, use, useCallback, useRef } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
-import { InteractiveMap } from "@/components/map/interactive-map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AlertTriangle, Car, Clock, Flag, UserCircle, MessageSquare, Loader2, MapPin as MapPinIcon, Users, CalendarDays, CheckCircle2, XCircle, UserX, ShieldCheck, PlayCircle, Check, Map, Undo2, Ban, Send } from "lucide-react";
@@ -412,10 +411,6 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
     );
   }
 
-  const mapMarkers = [];
-  if (rydDetails.startLocationAddress) mapMarkers.push({id: 'origin', position: {lat: 35.0456, lng: -85.3097}, title: `From: ${rydDetails.startLocationAddress}` });
-  if (rydDetails.finalDestinationAddress) mapMarkers.push({id: 'destination', position: {lat: 35.0550, lng: -85.2900}, title: `To: ${rydDetails.finalDestinationAddress}`});
-
   const proposedDepartureTime = rydDetails.proposedDepartureTime instanceof Timestamp ? rydDetails.proposedDepartureTime.toDate() : null;
   const twoHoursBeforeDeparture = proposedDepartureTime ? subHours(proposedDepartureTime, 2) : null;
   const canStartRyd = twoHoursBeforeDeparture && isAfter(new Date(), twoHoursBeforeDeparture);
@@ -482,341 +477,330 @@ export default function LiveRydTrackingPage({ params: paramsPromise }: { params:
         title={pageTitleElement}
         description={`Follow the progress of this ryd in real-time.`}
       />
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <InteractiveMap
-            className="h-[400px] lg:h-full"
-            markers={mapMarkers}
-            defaultCenterLat={mapMarkers[0]?.position.lat || 35.0456}
-            defaultCenterLng={mapMarkers[0]?.position.lng || -85.3097}
-            defaultZoom={12}
-          />
-        </div>
-        <div className="lg:col-span-1 space-y-6">
-          {isCurrentUserDriver && (
-            <Card className="shadow-lg">
-                <CardHeader>
-                    <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5" /> Driver Controls</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {(rydDetails.status === ARStatus.PLANNING || rydDetails.status === ARStatus.AWAITING_PASSENGERS) && (
-                        <div>
-                            <Button onClick={handleConfirmRyd} disabled={isConfirmingRyd} className="w-full">
-                                {isConfirmingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                                Confirm Ryd Plan
-                            </Button>
-                            <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
-                        </div>
-                    )}
-                    {rydDetails.status === ARStatus.RYD_PLANNED && (
-                      <div className="flex flex-col gap-2">
-                        <Button onClick={handleStartRyd} disabled={isStartingRyd || !canStartRyd} className="w-full bg-blue-600 hover:bg-blue-700" title={!canStartRyd ? "Can be started up to 2 hours before departure" : "Start Ryd"}>
-                            {isStartingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-                            Start Ryd & Begin Pickups
-                        </Button>
-                        <Button onClick={handleRevertToPlanning} disabled={isRevertingToPlanning} variant="outline">
-                            {isRevertingToPlanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
-                            Return to Planning
-                        </Button>
-                      </div>
-                    )}
-                    {rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && (
-                      <Button onClick={handleRevertToRydPlanned} disabled={isRevertingToRydPlanned} variant="outline" className="w-full">
-                          {isRevertingToRydPlanned ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
-                          Pause Ryd & Return to Plan
-                      </Button>
-                    )}
-                    {rydDetails.status === ARStatus.IN_PROGRESS_ROUTE && (
-                        <div>
-                            <Button onClick={handleCompleteRyd} disabled={isCompletingRyd} className="w-full bg-green-600 hover:bg-green-700">
-                                {isCompletingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                                Complete Ryd
-                            </Button>
-                        </div>
-                    )}
-                    {isRydCancellableByDriver && (
-                      <div className="pt-4 border-t">
-                        <Button
-                          variant="destructive"
-                          onClick={handleCancelRydByDriver}
-                          disabled={isCancellingRydByDriver}
-                          className="w-full"
-                        >
-                          {isCancellingRydByDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
-                          Cancel This Entire Ryd
-                        </Button>
-                        <p className="text-xs text-muted-foreground mt-1.5">This will cancel the ryd for all passengers.</p>
-                      </div>
-                    )}
-                    {pendingJoinRequests.length > 0 && (
-                       <div>
-                            <h4 className="text-sm font-medium mb-2">Pending Join Requests ({pendingJoinRequests.length})</h4>
-                            <div className="space-y-3">
-                                {pendingJoinRequests.map(request => {
-                                    const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === request.userId);
-                                    const passengerName = passengerProfile?.fullName || `User ${request.userId.substring(0,6)}...`;
-                                    const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
-                                    const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
-                                    const isLoadingAction = isManagingRequest[request.userId];
-                                    const earliestPickupTimestamp = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
-
-                                    return (
-                                        <div key={request.userId} className="p-3 border rounded-md">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                <Avatar className="h-8 w-8">
-                                                    <AvatarImage src={passengerAvatar} alt={passengerName} data-ai-hint={passengerDataAiHint} />
-                                                    <AvatarFallback>{passengerName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                                                </Avatar>
-                                                <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">{request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
-                                            </div>
-                                            {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
-                                            {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}
-                                            {request.notes && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Notes: "{request.notes}"</p>}
-                                            <div className="flex gap-2 mt-2 justify-end">
-                                                <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
-                                                onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.REJECTED_BY_DRIVER)}
-                                                disabled={isLoadingAction}
-                                                >
-                                                {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />} Reject
-                                                </Button>
-                                                <Button 
-                                                size="sm" 
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.CONFIRMED_BY_DRIVER)}
-                                                disabled={isLoadingAction}
-                                                >
-                                                {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />} Approve
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                       </div>
-                    )}
-                </CardContent>
-            </Card>
-          )}
-
+      <div className="w-full max-w-2xl mx-auto space-y-6">
+        {isCurrentUserDriver && (
           <Card className="shadow-lg">
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <CardTitle>Ryd Details</CardTitle>
-                    <StatusBadge status={rydDetails.status} />
-                </div>
-                <CardDescription>Live and pending details for this carpool.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {rydDetails.driverId && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver</h4>
-                  <div className="flex items-center gap-3">
-                    <Avatar>
-                      <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint} />
-                      <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <Link href={`/profile/view/${rydDetails.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
-                      <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
-                      <p className="text-xs text-muted-foreground">Capacity: {vehiclePassengerCapacity} seats</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {proposedDepartureTime && (
-                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Proposed Departure</h4>
-                  <p className="font-semibold">{format(proposedDepartureTime, "PPP 'at' p")}</p>
-                </div>
-              )}
-              {plannedArrivalTime && (
-                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><CalendarDays className="h-4 w-4 mr-1.5" /> Planned Arrival</h4>
-                  <p className="font-semibold">{format(plannedArrivalTime, "PPP 'at' p")}</p>
-                </div>
-              )}
-              {rydDetails.startLocationAddress && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><MapPinIcon className="h-4 w-4 mr-1.5" /> From (Approx. Origin)</h4>
-                  <p>{rydDetails.startLocationAddress}</p>
-                </div>
-              )}
-              {rydDetails.finalDestinationAddress && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To (Final Destination)</h4>
-                  <p>
-                    {rydDetails.eventName && rydDetails.associatedEventId ? (
-                      <>
-                        <Link href={`/events/${rydDetails.associatedEventId}/rydz`} className="text-primary hover:underline">
-                          {rydDetails.eventName}
-                        </Link>
-                        {rydDetails.finalDestinationAddress ? ` (at ${rydDetails.finalDestinationAddress})` : ''}
-                      </>
-                    ) : (
-                      rydDetails.eventName || rydDetails.finalDestinationAddress
-                    )}
-                  </p>
-                </div>
-              )}
-              {rydDetails.notes && (
-                 <div>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver's Notes for this Ryd</h4>
-                    <p className="text-sm bg-muted/50 p-2 rounded-md whitespace-pre-wrap">{rydDetails.notes}</p>
-                </div>
-              )}
-              {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({activePassengerCount} / {vehiclePassengerCapacity})</h4>
-                  {displayedPassengers.length > 0 ? (
-                    <ul className="space-y-2">
-                      {displayedPassengers.map((manifestItem) => {
-                          const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
-                          const passengerName = passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`;
-                          const isCurrentUserThisPassenger = authUser?.uid === manifestItem.userId;
-                          const canCurrentUserManageThisPassenger = authUser && authUserProfile && authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds?.includes(manifestItem.userId);
-                          const canCancel = (isCurrentUserThisPassenger || canCurrentUserManageThisPassenger);
-                          
-                          const cancellablePassengerStatuses: PassengerManifestStatus[] = [
-                            PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
-                            PassengerManifestStatus.CONFIRMED_BY_DRIVER,
-                            PassengerManifestStatus.AWAITING_PICKUP,
-                          ];
-                          const isPassengerStatusCancellable = cancellablePassengerStatuses.includes(manifestItem.status);
-
-                          const nonCancellableRydStatuses: ARStatus[] = [
-                            ARStatus.COMPLETED, ARStatus.CANCELLED_BY_DRIVER, ARStatus.CANCELLED_BY_SYSTEM,
-                            ARStatus.IN_PROGRESS_ROUTE, ARStatus.IN_PROGRESS_PICKUP 
-                          ];
-                          const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
-                          
-                          const isLoadingPickupAction = isMarkingPickup[manifestItem.userId];
-                          const isLoadingUndoPickupAction = isRevertingPickup[manifestItem.userId];
-
-                          return (
-                            <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col gap-2">
-                              <div className="space-y-0.5"> 
-                                <div>
-                                  <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
-                                      {passengerName}
-                                  </Link>
-                                  <span className="text-xs text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
-                                </div>
-                                {manifestItem.pickupAddress && <p className="text-xs text-muted-foreground">Pickup: {manifestItem.pickupAddress}</p>}
-                                {manifestItem.notes && <p className="text-xs text-muted-foreground">Notes: "{manifestItem.notes}"</p>}
-                              </div>
-                              
-                              <div className="flex justify-end items-center gap-2">
-                                {isCurrentUserDriver && manifestItem.status === PassengerManifestStatus.ON_BOARD && rydDetails.status !== ARStatus.COMPLETED && (
-                                    <Button size="sm" variant="outline" onClick={() => handleRevertPassengerPickup(manifestItem.userId)} disabled={isLoadingUndoPickupAction}>
-                                      {isLoadingUndoPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Undo2 className="mr-2 h-4 w-4" />} Undo Pickup
-                                    </Button>
-                                )}
-                                {isCurrentUserDriver && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
-                                  <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
-                                    {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} Mark Picked Up
-                                  </Button>
-                                )}
-                                {isCurrentUserThisPassenger && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
-                                  <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
-                                    {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} I've Been Picked Up
-                                  </Button>
-                                )}
-                                {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
-                                  <Button
-                                    variant="outline"
-                                    className="px-2 py-1 h-auto text-xs text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
-                                    onClick={() => handleCancelSpot(manifestItem.userId)}
-                                    disabled={isCancellingSpot[manifestItem.userId]}
-                                  >
-                                    {isCancellingSpot[manifestItem.userId] ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
-                                    <span className="ml-1">Cancel Spot</span>
-                                  </Button>
-                                )}
-                              </div>
-                            </li>
-                          );
-                      })}
-                    </ul>
-                  ) : (
-                     <p className="text-xs text-muted-foreground">No active passengers currently listed.</p>
+              <CardHeader>
+                  <CardTitle className="flex items-center"><Car className="mr-2 h-5 w-5" /> Driver Controls</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                  {(rydDetails.status === ARStatus.PLANNING || rydDetails.status === ARStatus.AWAITING_PASSENGERS) && (
+                      <div>
+                          <Button onClick={handleConfirmRyd} disabled={isConfirmingRyd} className="w-full">
+                              {isConfirmingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                              Confirm Ryd Plan
+                          </Button>
+                          <p className="text-xs text-muted-foreground mt-1.5">This will lock the passenger list and prevent new requests.</p>
+                      </div>
                   )}
-                </div>
-              )}
-              {(!rydDetails.passengerManifest || rydDetails.passengerManifest.length === 0) && (
-                  <div>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers</h4>
-                    <p className="text-sm text-muted-foreground">No passengers currently listed for this ryd.</p>
-                  </div>
-              )}
-
-              <Separator />
-               <div className="text-xs text-muted-foreground pt-1">
-                Map and ETA are estimates. Live driver location is a future feature.
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-lg">
-            <CardHeader>
-                <CardTitle className="flex items-center"><MessageSquare className="mr-2 h-5 w-5" /> Ryd Chat</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <ScrollArea className="h-64 pr-4 border rounded-md p-2 flex flex-col">
-                    {(rydDetails.messages && rydDetails.messages.length > 0) ? (
-                        rydDetails.messages.map(msg => {
-                            const isMyMessage = msg.senderId === authUser?.uid;
-                            const senderAvatar = msg.senderAvatar || `https://placehold.co/40x40.png?text=${msg.senderName.split(" ").map(n=>n[0]).join("")}`;
-                            return (
-                                <div key={msg.id} className={cn("flex items-end gap-2 mb-3", isMyMessage && "justify-end")}>
-                                    {!isMyMessage && (
-                                        <Avatar className="h-8 w-8">
-                                            <AvatarImage src={senderAvatar} alt={msg.senderName} />
-                                            <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                                        </Avatar>
-                                    )}
-                                    <div className={cn("max-w-xs rounded-lg px-3 py-2", isMyMessage ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                                        {!isMyMessage && <p className="text-xs font-semibold mb-0.5">{msg.senderName}</p>}
-                                        <p className="text-sm">{msg.text}</p>
-                                        <p className="text-xs text-right mt-1 opacity-70">{format(msg.timestamp.toDate(), 'p')}</p>
-                                    </div>
-                                    {isMyMessage && (
-                                        <Avatar className="h-8 w-8">
-                                            <AvatarImage src={authUserProfile?.avatarUrl || ''} alt={msg.senderName} />
-                                            <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                                        </Avatar>
-                                    )}
-                                </div>
-                            );
-                        })
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                            No messages yet. Start the conversation!
-                        </div>
-                    )}
-                    <div ref={chatEndRef} />
-                </ScrollArea>
-            </CardContent>
-            <CardFooter>
-                <form onSubmit={handleSendMessage} className="flex w-full items-center gap-2">
-                    <Input 
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Type a message..."
-                        disabled={isSendingMessage}
-                    />
-                    <Button type="submit" size="icon" disabled={isSendingMessage || !newMessage.trim()}>
-                        {isSendingMessage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {rydDetails.status === ARStatus.RYD_PLANNED && (
+                    <div className="flex flex-col gap-2">
+                      <Button onClick={handleStartRyd} disabled={isStartingRyd || !canStartRyd} className="w-full bg-blue-600 hover:bg-blue-700" title={!canStartRyd ? "Can be started up to 2 hours before departure" : "Start Ryd"}>
+                          {isStartingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                          Start Ryd & Begin Pickups
+                      </Button>
+                      <Button onClick={handleRevertToPlanning} disabled={isRevertingToPlanning} variant="outline">
+                          {isRevertingToPlanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
+                          Return to Planning
+                      </Button>
+                    </div>
+                  )}
+                  {rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && (
+                    <Button onClick={handleRevertToRydPlanned} disabled={isRevertingToRydPlanned} variant="outline" className="w-full">
+                        {isRevertingToRydPlanned ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                        Pause Ryd & Return to Plan
                     </Button>
-                </form>
-            </CardFooter>
+                  )}
+                  {rydDetails.status === ARStatus.IN_PROGRESS_ROUTE && (
+                      <div>
+                          <Button onClick={handleCompleteRyd} disabled={isCompletingRyd} className="w-full bg-green-600 hover:bg-green-700">
+                              {isCompletingRyd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                              Complete Ryd
+                          </Button>
+                      </div>
+                  )}
+                  {isRydCancellableByDriver && (
+                    <div className="pt-4 border-t">
+                      <Button
+                        variant="destructive"
+                        onClick={handleCancelRydByDriver}
+                        disabled={isCancellingRydByDriver}
+                        className="w-full"
+                      >
+                        {isCancellingRydByDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                        Cancel This Entire Ryd
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-1.5">This will cancel the ryd for all passengers.</p>
+                    </div>
+                  )}
+                  {pendingJoinRequests.length > 0 && (
+                     <div>
+                          <h4 className="text-sm font-medium mb-2">Pending Join Requests ({pendingJoinRequests.length})</h4>
+                          <div className="space-y-3">
+                              {pendingJoinRequests.map(request => {
+                                  const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === request.userId);
+                                  const passengerName = passengerProfile?.fullName || `User ${request.userId.substring(0,6)}...`;
+                                  const passengerAvatar = passengerProfile?.avatarUrl || `https://placehold.co/40x40.png?text=${passengerName.split(" ").map(n=>n[0]).join("")}`;
+                                  const passengerDataAiHint = passengerProfile?.dataAiHint || "person avatar";
+                                  const isLoadingAction = isManagingRequest[request.userId];
+                                  const earliestPickupTimestamp = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+
+                                  return (
+                                      <div key={request.userId} className="p-3 border rounded-md">
+                                          <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2">
+                                              <Avatar className="h-8 w-8">
+                                                  <AvatarImage src={passengerAvatar} alt={passengerName} data-ai-hint={passengerDataAiHint} />
+                                                  <AvatarFallback>{passengerName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                              </Avatar>
+                                              <Link href={`/profile/view/${request.userId}`} className="font-medium text-sm hover:underline">{passengerName}</Link>
+                                              </div>
+                                              <p className="text-xs text-muted-foreground">{request.requestedAt instanceof Timestamp ? format(request.requestedAt.toDate(), 'MMM d, p') : 'N/A'}</p>
+                                          </div>
+                                          {request.pickupAddress && <p className="text-xs text-muted-foreground mt-1 pl-10">Pickup: {request.pickupAddress}</p>}
+                                          {earliestPickupTimestamp && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Earliest Pickup: {format(earliestPickupTimestamp, 'p')}</p>}
+                                          {request.notes && <p className="text-xs text-muted-foreground mt-0.5 pl-10">Notes: "{request.notes}"</p>}
+                                          <div className="flex gap-2 mt-2 justify-end">
+                                              <Button 
+                                              size="sm" 
+                                              variant="outline" 
+                                              className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                                              onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.REJECTED_BY_DRIVER)}
+                                              disabled={isLoadingAction}
+                                              >
+                                              {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />} Reject
+                                              </Button>
+                                              <Button 
+                                              size="sm" 
+                                              className="bg-green-600 hover:bg-green-700"
+                                              onClick={() => handleManageRequest(request.userId, PassengerManifestStatus.CONFIRMED_BY_DRIVER)}
+                                              disabled={isLoadingAction}
+                                              >
+                                              {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />} Approve
+                                              </Button>
+                                          </div>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                     </div>
+                  )}
+              </CardContent>
           </Card>
-        </div>
+        )}
+
+        <Card className="shadow-lg">
+          <CardHeader>
+              <div className="flex items-center justify-between">
+                  <CardTitle>Ryd Details</CardTitle>
+                  <StatusBadge status={rydDetails.status} />
+              </div>
+              <CardDescription>Live and pending details for this carpool.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {rydDetails.driverId && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver</h4>
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint} />
+                    <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <Link href={`/profile/view/${rydDetails.driverId}`} className="font-semibold hover:underline">{driverName}</Link>
+                    <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
+                    <p className="text-xs text-muted-foreground">Capacity: {vehiclePassengerCapacity} seats</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {proposedDepartureTime && (
+               <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Clock className="h-4 w-4 mr-1.5" /> Proposed Departure</h4>
+                <p className="font-semibold">{format(proposedDepartureTime, "PPP 'at' p")}</p>
+              </div>
+            )}
+            {plannedArrivalTime && (
+               <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><CalendarDays className="h-4 w-4 mr-1.5" /> Planned Arrival</h4>
+                <p className="font-semibold">{format(plannedArrivalTime, "PPP 'at' p")}</p>
+              </div>
+            )}
+            {rydDetails.startLocationAddress && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><MapPinIcon className="h-4 w-4 mr-1.5" /> From (Approx. Origin)</h4>
+                <p>{rydDetails.startLocationAddress}</p>
+              </div>
+            )}
+            {rydDetails.finalDestinationAddress && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Flag className="h-4 w-4 mr-1.5" /> To (Final Destination)</h4>
+                <p>
+                  {rydDetails.eventName && rydDetails.associatedEventId ? (
+                    <>
+                      <Link href={`/events/${rydDetails.associatedEventId}/rydz`} className="text-primary hover:underline">
+                        {rydDetails.eventName}
+                      </Link>
+                      {rydDetails.finalDestinationAddress ? ` (at ${rydDetails.finalDestinationAddress})` : ''}
+                    </>
+                  ) : (
+                    rydDetails.eventName || rydDetails.finalDestinationAddress
+                  )}
+                </p>
+              </div>
+            )}
+            {rydDetails.notes && (
+               <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Driver's Notes for this Ryd</h4>
+                  <p className="text-sm bg-muted/50 p-2 rounded-md whitespace-pre-wrap">{rydDetails.notes}</p>
+              </div>
+            )}
+            {rydDetails.passengerManifest && rydDetails.passengerManifest.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers on this Ryd ({activePassengerCount} / {vehiclePassengerCapacity})</h4>
+                {displayedPassengers.length > 0 ? (
+                  <ul className="space-y-2">
+                    {displayedPassengers.map((manifestItem) => {
+                        const passengerProfile = rydDetails.passengerProfiles?.find(p => p.uid === manifestItem.userId);
+                        const passengerName = passengerProfile?.fullName || `User ${manifestItem.userId.substring(0,6)}...`;
+                        const isCurrentUserThisPassenger = authUser?.uid === manifestItem.userId;
+                        const canCurrentUserManageThisPassenger = authUser && authUserProfile && authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds?.includes(manifestItem.userId);
+                        const canCancel = (isCurrentUserThisPassenger || canCurrentUserManageThisPassenger);
+                        
+                        const cancellablePassengerStatuses: PassengerManifestStatus[] = [
+                          PassengerManifestStatus.PENDING_DRIVER_APPROVAL,
+                          PassengerManifestStatus.CONFIRMED_BY_DRIVER,
+                          PassengerManifestStatus.AWAITING_PICKUP,
+                        ];
+                        const isPassengerStatusCancellable = cancellablePassengerStatuses.includes(manifestItem.status);
+
+                        const nonCancellableRydStatuses: ARStatus[] = [
+                          ARStatus.COMPLETED, ARStatus.CANCELLED_BY_DRIVER, ARStatus.CANCELLED_BY_SYSTEM,
+                          ARStatus.IN_PROGRESS_ROUTE, ARStatus.IN_PROGRESS_PICKUP 
+                        ];
+                        const isRydStatusCancellable = !nonCancellableRydStatuses.includes(rydDetails.status);
+                        
+                        const isLoadingPickupAction = isMarkingPickup[manifestItem.userId];
+                        const isLoadingUndoPickupAction = isRevertingPickup[manifestItem.userId];
+
+                        return (
+                          <li key={manifestItem.userId} className="p-3 border rounded-md bg-muted/20 flex flex-col gap-2">
+                            <div className="space-y-0.5"> 
+                              <div>
+                                <Link href={`/profile/view/${manifestItem.userId}`} className="hover:underline text-sm font-medium">
+                                    {passengerName}
+                                </Link>
+                                <span className="text-xs text-muted-foreground/80 ml-1 capitalize">({manifestItem.status.replace(/_/g, ' ')})</span>
+                              </div>
+                              {manifestItem.pickupAddress && <p className="text-xs text-muted-foreground">Pickup: {manifestItem.pickupAddress}</p>}
+                              {manifestItem.notes && <p className="text-xs text-muted-foreground">Notes: "{manifestItem.notes}"</p>}
+                            </div>
+                            
+                            <div className="flex justify-end items-center gap-2">
+                              {isCurrentUserDriver && manifestItem.status === PassengerManifestStatus.ON_BOARD && rydDetails.status !== ARStatus.COMPLETED && (
+                                  <Button size="sm" variant="outline" onClick={() => handleRevertPassengerPickup(manifestItem.userId)} disabled={isLoadingUndoPickupAction}>
+                                    {isLoadingUndoPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Undo2 className="mr-2 h-4 w-4" />} Undo Pickup
+                                  </Button>
+                              )}
+                              {isCurrentUserDriver && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
+                                <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
+                                  {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} Mark Picked Up
+                                </Button>
+                              )}
+                              {isCurrentUserThisPassenger && rydDetails.status === ARStatus.IN_PROGRESS_PICKUP && manifestItem.status === PassengerManifestStatus.CONFIRMED_BY_DRIVER && (
+                                <Button size="sm" onClick={() => handleUpdatePassengerPickup(manifestItem.userId)} disabled={isLoadingPickupAction}>
+                                  {isLoadingPickupAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4" />} I've Been Picked Up
+                                </Button>
+                              )}
+                              {canCancel && isPassengerStatusCancellable && isRydStatusCancellable && (
+                                <Button
+                                  variant="outline"
+                                  className="px-2 py-1 h-auto text-xs text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => handleCancelSpot(manifestItem.userId)}
+                                  disabled={isCancellingSpot[manifestItem.userId]}
+                                >
+                                  {isCancellingSpot[manifestItem.userId] ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
+                                  <span className="ml-1">Cancel Spot</span>
+                                </Button>
+                              )}
+                            </div>
+                          </li>
+                        );
+                    })}
+                  </ul>
+                ) : (
+                   <p className="text-xs text-muted-foreground">No active passengers currently listed.</p>
+                )}
+              </div>
+            )}
+            {(!rydDetails.passengerManifest || rydDetails.passengerManifest.length === 0) && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center"><Users className="h-4 w-4 mr-1.5" /> Passengers</h4>
+                  <p className="text-sm text-muted-foreground">No passengers currently listed for this ryd.</p>
+                </div>
+            )}
+
+            <Separator />
+             <div className="text-xs text-muted-foreground pt-1">
+              Live driver location is a future feature.
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="shadow-lg">
+          <CardHeader>
+              <CardTitle className="flex items-center"><MessageSquare className="mr-2 h-5 w-5" /> Ryd Chat</CardTitle>
+          </CardHeader>
+          <CardContent>
+              <ScrollArea className="h-64 pr-4 border rounded-md p-2 flex flex-col">
+                  {(rydDetails.messages && rydDetails.messages.length > 0) ? (
+                      rydDetails.messages.map(msg => {
+                          const isMyMessage = msg.senderId === authUser?.uid;
+                          const senderAvatar = msg.senderAvatar || `https://placehold.co/40x40.png?text=${msg.senderName.split(" ").map(n=>n[0]).join("")}`;
+                          return (
+                              <div key={msg.id} className={cn("flex items-end gap-2 mb-3", isMyMessage && "justify-end")}>
+                                  {!isMyMessage && (
+                                      <Avatar className="h-8 w-8">
+                                          <AvatarImage src={senderAvatar} alt={msg.senderName} />
+                                          <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                      </Avatar>
+                                  )}
+                                  <div className={cn("max-w-xs rounded-lg px-3 py-2", isMyMessage ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                                      {!isMyMessage && <p className="text-xs font-semibold mb-0.5">{msg.senderName}</p>}
+                                      <p className="text-sm">{msg.text}</p>
+                                      <p className="text-xs text-right mt-1 opacity-70">{format(msg.timestamp.toDate(), 'p')}</p>
+                                  </div>
+                                  {isMyMessage && (
+                                      <Avatar className="h-8 w-8">
+                                          <AvatarImage src={authUserProfile?.avatarUrl || ''} alt={msg.senderName} />
+                                          <AvatarFallback>{msg.senderName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                      </Avatar>
+                                  )}
+                              </div>
+                          );
+                      })
+                  ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                          No messages yet. Start the conversation!
+                      </div>
+                  )}
+                  <div ref={chatEndRef} />
+              </ScrollArea>
+          </CardContent>
+          <CardFooter>
+              <form onSubmit={handleSendMessage} className="flex w-full items-center gap-2">
+                  <Input 
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Type a message..."
+                      disabled={isSendingMessage}
+                  />
+                  <Button type="submit" size="icon" disabled={isSendingMessage || !newMessage.trim()}>
+                      {isSendingMessage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+              </form>
+          </CardFooter>
+        </Card>
       </div>
     </>
   );

@@ -19,7 +19,6 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import type { SavedLocation } from '@/types';
 import Link from 'next/link';
-import { InteractiveMap } from '@/components/map/interactive-map';
 import { cn } from '@/lib/utils';
 
 const locationFormSchema = z.object({
@@ -49,20 +48,13 @@ export default function MyLocationsPage() {
   const [currentLocation, setCurrentLocation] = useState<SavedLocation | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const [selectedLocation, setSelectedLocation] = useState<SavedLocation | null>(null);
-
   useEffect(() => {
     if (userProfile?.savedLocations) {
-      const saved = userProfile.savedLocations;
-      setLocations(saved);
-      if (saved.length > 0 && !selectedLocation) {
-        setSelectedLocation(saved[0]);
-      }
+      setLocations(userProfile.savedLocations);
     } else {
       setLocations([]);
-      setSelectedLocation(null);
     }
-  }, [userProfile, selectedLocation]);
+  }, [userProfile]);
 
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationFormSchema),
@@ -115,9 +107,6 @@ export default function MyLocationsPage() {
     const success = await handleDatabaseUpdate(updatedLocations);
     if (success) {
       toast({ title: "Location Removed", description: "The location has been successfully removed." });
-      if (selectedLocation?.id === locationId) {
-        setSelectedLocation(updatedLocations.length > 0 ? updatedLocations[0] : null);
-      }
     }
   };
 
@@ -126,14 +115,12 @@ export default function MyLocationsPage() {
     let success = false;
 
     if (isEditMode && currentLocation) {
-      const newUpdatedLocation = { ...currentLocation, name: data.name, icon: data.icon, address: data.address };
       updatedLocations = locations.map(loc =>
-        loc.id === currentLocation.id ? newUpdatedLocation : loc
+        loc.id === currentLocation.id ? { ...currentLocation, name: data.name, icon: data.icon, address: data.address } : loc
       );
       success = await handleDatabaseUpdate(updatedLocations);
       if (success) {
         toast({ title: "Location Updated", description: `"${data.name}" has been updated.` });
-        setSelectedLocation(newUpdatedLocation);
       }
     } else {
       const newLocation: SavedLocation = {
@@ -146,7 +133,6 @@ export default function MyLocationsPage() {
       success = await handleDatabaseUpdate(updatedLocations);
       if (success) {
         toast({ title: "Location Added", description: `"${data.name}" has been added to your locations.` });
-        setSelectedLocation(newLocation);
       }
     }
 
@@ -181,7 +167,7 @@ export default function MyLocationsPage() {
     <>
       <PageHeader
         title="My Locations"
-        description="Manage your frequently used addresses. Click a location to see it on the map."
+        description="Manage your frequently used addresses for faster ryd requests."
         actions={
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -263,46 +249,34 @@ export default function MyLocationsPage() {
       />
 
       {locations.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-4">
-            {locations.map((location) => {
-              const IconComponent = iconMap[location.icon] || MapPin;
-              return (
-                <Card 
-                  key={location.id} 
-                  className={cn(
-                    "shadow-md cursor-pointer transition-all hover:shadow-lg hover:border-primary/50",
-                    selectedLocation?.id === location.id && "border-primary shadow-lg ring-2 ring-primary/50"
-                  )}
-                  onClick={() => setSelectedLocation(location)}
-                >
-                  <CardHeader className="flex flex-row items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      <IconComponent className="h-6 w-6 text-primary" />
-                      <div>
-                        <CardTitle className="font-headline text-base">{location.name}</CardTitle>
-                        <p className="text-xs text-muted-foreground">{formatAddress(location.address)}</p>
-                      </div>
+        <div className="max-w-2xl mx-auto space-y-4">
+          {locations.map((location) => {
+            const IconComponent = iconMap[location.icon] || MapPin;
+            return (
+              <Card 
+                key={location.id} 
+                className={cn("shadow-md transition-all hover:shadow-lg")}
+              >
+                <CardHeader className="flex flex-row items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <IconComponent className="h-6 w-6 text-primary" />
+                    <div>
+                      <CardTitle className="font-headline text-base">{location.name}</CardTitle>
+                      <p className="text-xs text-muted-foreground">{formatAddress(location.address)}</p>
                     </div>
-                    <div className="flex items-center gap-0">
-                       <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(location); }} aria-label="Edit location">
-                         <Edit3 className="h-4 w-4" />
-                       </Button>
-                       <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleDeleteLocation(location.id); }} className="text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete location">
-                         <Trash2 className="h-4 w-4" />
-                       </Button>
-                    </div>
-                  </CardHeader>
-                </Card>
-              );
-            })}
-          </div>
-          <div className="lg:col-span-2">
-            <InteractiveMap 
-              className="h-[400px] lg:h-full w-full rounded-lg" 
-              centerAddress={selectedLocation?.address || null}
-            />
-          </div>
+                  </div>
+                  <div className="flex items-center gap-0">
+                      <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(location); }} aria-label="Edit location">
+                        <Edit3 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon_sm" onClick={(e) => { e.stopPropagation(); handleDeleteLocation(location.id); }} className="text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete location">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                  </div>
+                </CardHeader>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card className="text-center py-12 shadow-md">
