@@ -45,13 +45,13 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mb-8">
-        <UpcomingSchedule />
+        <WhatsNewFeed />
       </div>
       
       <Separator className="my-8" />
       
-      <div className="grid gap-6">
-        <WhatsNewFeed />
+      <div className="mb-8">
+        <UpcomingSchedule />
       </div>
     </>
   );
