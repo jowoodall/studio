@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { BellRing, CheckCheck, AlertTriangle, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
-import { getNotificationsAction, markAllNotificationsAsReadAction } from '@/actions/notificationActions';
+import { getNotificationsAction, markAllNotificationsAsReadAction, markNotificationAsReadAction } from '@/actions/notificationActions';
 import { type NotificationData, NotificationType } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
@@ -58,6 +58,32 @@ export default function NotificationsPage() {
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  const handleNotificationClick = useCallback(async (notificationId: string) => {
+    const notification = notifications.find(n => n.id === notificationId);
+    if (!user || !notification || notification.read) return;
+
+    // Optimistically update the UI
+    setNotifications(prev => 
+      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+    );
+
+    // Call the server action in the background
+    try {
+      await markNotificationAsReadAction(user.uid, notificationId);
+    } catch (error: any) {
+      console.error("Failed to mark notification as read:", error);
+      toast({
+        title: "Update Failed",
+        description: "Could not save read status to the server.",
+        variant: "destructive"
+      });
+      // Revert UI change on failure
+      setNotifications(prev => 
+        prev.map(n => n.id === notificationId ? { ...n, read: false } : n)
+      );
+    }
+  }, [user, notifications, toast]);
 
   const handleMarkAllAsRead = async () => {
     if (!user) return;
@@ -115,8 +141,9 @@ export default function NotificationsPage() {
       <div className="space-y-4">
         {notifications.map((notification) => {
           const { icon: IconComponent, colorClass, bgClass } = iconMap[notification.type];
+          
           const notificationCard = (
-            <Card key={notification.id} className={cn("shadow-md transition-all", !notification.read && 'border-primary border-2')}>
+            <Card className={cn("shadow-md transition-all", !notification.read && 'border-primary border-2')}>
               <CardHeader className="flex flex-row items-start gap-4 pb-3 pt-4">
                 <div className={cn("p-2 rounded-full", bgClass)}>
                     <IconComponent className={cn("h-5 w-5", colorClass)} />
@@ -136,11 +163,30 @@ export default function NotificationsPage() {
           );
           
           return notification.link ? (
-            <Link href={notification.link} key={notification.id} className="block hover:opacity-90">
+            <Link 
+              href={notification.link} 
+              key={notification.id} 
+              className="block hover:opacity-90 focus:outline-none" 
+              aria-label={`View notification: ${notification.title}`}
+              onClick={() => handleNotificationClick(notification.id)}
+            >
               {notificationCard}
             </Link>
           ) : (
-            notificationCard
+            <div 
+              key={notification.id} 
+              onClick={() => handleNotificationClick(notification.id)}
+              className={cn(!notification.read && "cursor-pointer")}
+              role={!notification.read ? "button" : undefined}
+              tabIndex={!notification.read ? 0 : -1}
+              onKeyDown={(e) => {
+                  if((e.key === 'Enter' || e.key === ' ') && !notification.read) {
+                      handleNotificationClick(notification.id);
+                  }
+              }}
+            >
+              {notificationCard}
+            </div>
           );
         })}
       </div>

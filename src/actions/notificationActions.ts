@@ -103,3 +103,38 @@ export async function markAllNotificationsAsReadAction(
     return { success: false, message: `Failed to mark notifications as read: ${error.message}` };
   }
 }
+
+// Action to mark a single notification as read
+export async function markNotificationAsReadAction(
+  userId: string,
+  notificationId: string
+): Promise<{ success: boolean; message: string }> {
+  if (!userId || !notificationId) {
+    return { success: false, message: 'User ID and Notification ID are required.' };
+  }
+  try {
+    const notificationRef = db.collection('notifications').doc(notificationId);
+    const notificationDoc = await notificationRef.get();
+
+    if (!notificationDoc.exists) {
+      return { success: false, message: 'Notification not found.' };
+    }
+    
+    const notificationData = notificationDoc.data();
+
+    // Security check: ensure the notification belongs to the user making the request
+    if (notificationData?.userId !== userId) {
+        return { success: false, message: 'You are not authorized to update this notification.' };
+    }
+
+    // Only update if it's currently unread to avoid unnecessary writes
+    if (notificationData?.read === false) {
+        await notificationRef.update({ read: true });
+    }
+
+    return { success: true, message: 'Notification marked as read.' };
+  } catch (error: any) {
+    console.error('[Action: markNotificationAsReadAction] Error:', error);
+    return { success: false, message: `Failed to mark notification as read: ${error.message}` };
+  }
+}
