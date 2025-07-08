@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Edit, Loader2, Save, CalendarIcon, ArrowLeft, Users, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, Edit, Loader2, Save, CalendarIcon, ArrowLeft, Users, UserPlus, XCircle, X, Check } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import { EventStatus, type EventData, type UserProfileData } from "@/types";
+import { EventStatus, type EventData, type UserProfileData, type GroupData } from "@/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,9 @@ import { format, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 
 const eventEditFormSchema = z.object({
@@ -37,6 +40,7 @@ const eventEditFormSchema = z.object({
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
   status: z.nativeEnum(EventStatus, { errorMap: () => ({ message: "Please select a status."})}),
+  selectedGroups: z.array(z.string()).optional(),
 });
 
 type EventEditFormValues = z.infer<typeof eventEditFormSchema>;
@@ -63,9 +67,15 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
   const [error, setError] = useState<string | null>(null);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
 
+  const [availableGroups, setAvailableGroups] = useState<GroupData[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
+  const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
+  const [groupSearchTerm, setGroupSearchTerm] = useState("");
+
+
   const form = useForm<EventEditFormValues>({
     resolver: zodResolver(eventEditFormSchema),
-    defaultValues: {},
+    defaultValues: { selectedGroups: [] },
   });
 
   useEffect(() => {
@@ -101,6 +111,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             status: data.status,
             eventDate: eventDate,
             eventTime: format(eventDate, "HH:mm"),
+            selectedGroups: data.associatedGroupIds || [],
           });
 
           if (data.managerIds && data.managerIds.length > 0) {
@@ -130,6 +141,33 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
 
   }, [eventId, form, toast, authLoading, authUser]);
   
+  useEffect(() => {
+    if (authLoading || !userProfile) return;
+
+    const fetchUserGroups = async () => {
+        setIsLoadingGroups(true);
+        try {
+            const userJoinedGroupIds = userProfile.joinedGroupIds || [];
+            if (userJoinedGroupIds.length > 0) {
+                // Firestore 'in' query is limited to 30 elements
+                const groupsQuery = query(collection(db, "groups"), where("__name__", "in", userJoinedGroupIds.slice(0, 30)));
+                const querySnapshot = await getDocs(groupsQuery);
+                const userGroups = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupData));
+                setAvailableGroups(userGroups);
+            } else {
+                setAvailableGroups([]);
+            }
+        } catch (e) {
+            console.error("Failed to fetch user groups:", e);
+            toast({ title: "Error", description: "Could not load your groups for selection.", variant: "destructive" });
+        } finally {
+            setIsLoadingGroups(false);
+        }
+    };
+    fetchUserGroups();
+  }, [authLoading, userProfile, toast]);
+
+
   const handleAddManager = async () => {
     if (!newManagerEmail.trim()) {
       toast({ title: "Email required", description: "Please enter an email to add a manager.", variant: "destructive" });
@@ -198,6 +236,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
         status: data.status,
         eventTimestamp: eventFirestoreTimestamp,
         managerIds: managerIds,
+        associatedGroupIds: data.selectedGroups || [],
         updatedAt: Timestamp.now(),
       };
 
@@ -254,6 +293,17 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       </div>
     );
   }
+
+  const handleGroupSelection = (groupId: string) => {
+    const field = form.getFieldState("selectedGroups");
+    const currentSelection = field.value || [];
+    const newSelection = currentSelection.includes(groupId)
+        ? currentSelection.filter((id: string) => id !== groupId)
+        : [...currentSelection, groupId];
+    form.setValue("selectedGroups", newSelection, { shouldValidate: true });
+  };
+  const filteredGroupsForPopover = availableGroups.filter(group => group.name.toLowerCase().includes(groupSearchTerm.toLowerCase()));
+  const currentSelectedGroups = form.watch("selectedGroups") || [];
 
   return (
     <>
@@ -452,7 +502,77 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
                     </Button>
                 </div>
               </div>
+              
+              <Separator />
 
+              {/* Associated Groups Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Associated Groups</h3>
+                </div>
+                <FormDescription>Link groups to this event. Only groups you are a member of are shown.</FormDescription>
+                
+                <FormField
+                    control={form.control}
+                    name="selectedGroups"
+                    render={({ field }) => (
+                    <FormItem>
+                        <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between"
+                                disabled={isLoadingGroups}
+                            >
+                            {isLoadingGroups ? "Loading your groups..." : (currentSelectedGroups.length > 0 ? `${currentSelectedGroups.length} group(s) selected` : "Select groups to associate...")}
+                            <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                            <Command>
+                            <CommandInput placeholder="Search your groups..." value={groupSearchTerm} onValueChange={setGroupSearchTerm} />
+                            <CommandList>
+                                <ScrollArea className="h-48">
+                                <CommandEmpty>No groups found.</CommandEmpty>
+                                <CommandGroup>
+                                    {filteredGroupsForPopover.map(group => (
+                                    <CommandItem
+                                        key={group.id}
+                                        value={group.name}
+                                        onSelect={() => handleGroupSelection(group.id)}
+                                    >
+                                        <Check className={cn("mr-2 h-4 w-4", currentSelectedGroups.includes(group.id) ? "opacity-100" : "opacity-0")} />
+                                        {group.name}
+                                    </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                                </ScrollArea>
+                            </CommandList>
+                            </Command>
+                        </PopoverContent>
+                        </Popover>
+                        {currentSelectedGroups.length > 0 && (
+                            <div className="pt-2 space-x-1 space-y-1">
+                            {currentSelectedGroups.map(groupId => {
+                                const group = availableGroups.find(g => g.id === groupId);
+                                return group ? (
+                                <Badge key={groupId} variant="secondary">
+                                    {group.name}
+                                    <button type="button" className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2" onClick={() => handleGroupSelection(groupId)}>
+                                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                    </button>
+                                </Badge>
+                                ) : null;
+                            })}
+                            </div>
+                        )}
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+              </div>
 
               <Button type="submit" className="w-full !mt-8" disabled={isSubmitting || isLoading}>
                 {isSubmitting ? (

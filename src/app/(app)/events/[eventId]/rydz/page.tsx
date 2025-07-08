@@ -63,11 +63,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [isLoadingRydRequests, setIsLoadingRydRequests] = useState<boolean>(true);
   const [rydRequestsError, setRydRequestsError] = useState<string | null>(null);
 
-  const [currentAssociatedGroups, setCurrentAssociatedGroups] = useState<string[]>([]);
-  const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
-  const [groupSearchTerm, setGroupSearchTerm] = useState("");
-  const [isUpdatingGroups, setIsUpdatingGroups] = useState(false);
-
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
   const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
 
@@ -93,7 +88,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       if (eventDocSnap.exists()) {
         const data = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
         setEventDetails(data);
-        setCurrentAssociatedGroups(data.associatedGroupIds || []);
         
         if (data.managerIds && data.managerIds.length > 0) {
             const managerPromises = data.managerIds.map(id => getDoc(doc(db, "users", id)));
@@ -341,42 +335,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }, [eventId, eventDetails, isLoadingEvent, eventError, fetchActiveRydzForEvent, fetchRydRequestsForEvent]);
 
 
-  const handleGroupSelection = async (groupIdToToggle: string) => {
-    if (!eventDetails || !authUser) {
-      toast({ title: "Error", description: "Event details not loaded or user not authenticated.", variant: "destructive" });
-      return;
-    }
-    if (eventDetails.createdBy !== authUser.uid) {
-        toast({ title: "Permission Denied", description: "Only the event creator can manage associated groups.", variant: "destructive"});
-        return;
-    }
-
-    setIsUpdatingGroups(true);
-    const newSelectedGroups = currentAssociatedGroups.includes(groupIdToToggle)
-      ? currentAssociatedGroups.filter(id => id !== groupIdToToggle)
-      : [...currentAssociatedGroups, groupIdToToggle];
-
-    try {
-      const eventDocRef = doc(db, "events", eventDetails.id);
-      await updateDoc(eventDocRef, { associatedGroupIds: newSelectedGroups });
-      setCurrentAssociatedGroups(newSelectedGroups);
-      setEventDetails(prev => prev ? { ...prev, associatedGroupIds: newSelectedGroups } : null);
-      toast({
-        title: "Groups Updated",
-        description: 'Event groups have been updated.',
-      });
-    } catch (error) {
-      console.error("Error updating associated groups:", error);
-      toast({ title: "Update Failed", description: "Could not update associated groups for the event.", variant: "destructive" });
-    } finally {
-      setIsUpdatingGroups(false);
-    }
-  };
-
-  const filteredGroupsForPopover = allFetchedGroups.filter(group =>
-    group.name.toLowerCase().includes(groupSearchTerm.toLowerCase())
-  );
-
   const handleRequestSeatForUser = useCallback(async (activeRydId: string, userId: string, userName: string) => {
     if (!authUser) {
       toast({ title: "Not Logged In", description: "You need to be logged in to request a ryd.", variant: "destructive" });
@@ -536,86 +494,33 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       <Card className="mb-6 shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Associated Groups</CardTitle>
-          <CardDescription>Groups linked to this event. Rydz might be prioritized for members. (Event creator can manage)</CardDescription>
+          <CardDescription>Groups linked to this event. Rydz might be prioritized for members.</CardDescription>
         </CardHeader>
         <CardContent>
-          {currentAssociatedGroups.length > 0 ? (
+          {isLoadingAllGroups ? (
+             <div className="flex items-center justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : eventDetails.associatedGroupIds && eventDetails.associatedGroupIds.length > 0 ? (
             <div className="flex flex-wrap gap-2 mb-4">
-              {currentAssociatedGroups.map(groupId => {
+              {eventDetails.associatedGroupIds.map(groupId => {
                 const group = allFetchedGroups.find(g => g.id === groupId);
                 return group ? (
-                  <Badge key={groupId} variant="secondary">
-                    {group.name}
-                    <button
-                        type="button"
-                        className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                        onClick={() => handleGroupSelection(groupId)}
-                        aria-label={'Remove ' + group.name}
-                        disabled={isUpdatingGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
-                    >
-                        <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                    </button>
-                  </Badge>
-                ) : <Badge key={groupId} variant="outline">Loading Group... ({groupId.substring(0,6)}...)</Badge>;
+                   <Link key={groupId} href={`/groups/${group.id}`}>
+                      <Badge variant="secondary" className="hover:bg-muted/80">{group.name}</Badge>
+                  </Link>
+                ) : <Badge key={groupId} variant="outline">Loading...</Badge>;
               })}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground mb-4">No groups are currently associated with this event.</p>
+            <p className="text-sm text-muted-foreground">No groups are currently associated with this event.</p>
           )}
-
-          <Popover open={groupPopoverOpen} onOpenChange={setGroupPopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={groupPopoverOpen}
-                className="w-full sm:w-auto"
-                disabled={isUpdatingGroups || isLoadingAllGroups || (authUser && eventDetails.createdBy !== authUser.uid)}
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                {isLoadingAllGroups ? "Loading Groups..." : (currentAssociatedGroups.length > 0 ? "Manage Associated Groups" : "Associate Groups")}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-              <Command>
-                <CommandInput
-                  placeholder="Search groups..."
-                  value={groupSearchTerm}
-                  onValueChange={setGroupSearchTerm}
-                />
-                <CommandList>
-                  <ScrollArea className="h-48">
-                    {isLoadingAllGroups && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
-                    {!isLoadingAllGroups && filteredGroupsForPopover.length === 0 && <CommandEmpty>No groups found.</CommandEmpty>}
-                    {!isLoadingAllGroups && <CommandGroup>
-                      {filteredGroupsForPopover.map((group) => (
-                        <CommandItem
-                          key={group.id}
-                          value={group.id}
-                          onSelect={() => {
-                            handleGroupSelection(group.id);
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              currentAssociatedGroups.includes(group.id)
-                                ? "opacity-100"
-                                : "opacity-0"
-                            )}
-                          />
-                          {group.name}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>}
-                  </ScrollArea>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          {authUser && eventDetails.createdBy !== authUser.uid && (
-            <p className="text-xs text-muted-foreground mt-2">Only the event creator can manage associated groups.</p>
+          {isEventManager && (
+             <p className="text-xs text-muted-foreground mt-2">
+                You can manage associated groups on the{' '}
+                <Link href={`/events/${eventId}/edit`} className="underline hover:text-primary">
+                    Edit Event
+                </Link>
+                {' '}page.
+            </p>
           )}
         </CardContent>
       </Card>
