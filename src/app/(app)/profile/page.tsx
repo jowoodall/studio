@@ -17,6 +17,7 @@ import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, arrayUnion, Timestamp, writeBatch, query, where, getDocs, collection, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { associateStudentWithParentAction, associateParentWithStudentAction } from '@/actions/userActions';
 
 interface ManagedStudentDisplayInfo {
   uid: string;
@@ -133,61 +134,18 @@ export default function ProfilePage() {
 
     setIsAddingStudent(true);
     try {
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", studentEmailToAdd));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        toast({ title: "Student Not Found", description: `No user found with email: ${studentEmailToAdd}.`, variant: "destructive" });
-        setIsAddingStudent(false); return;
-      }
-      if (querySnapshot.docs.length > 1) {
-        toast({ title: "Multiple Accounts Found", description: `Multiple accounts for email: ${studentEmailToAdd}. Contact support.`, variant: "destructive" });
-        setIsAddingStudent(false); return;
-      }
-
-      const studentDocSnap = querySnapshot.docs[0];
-      const studentIdToAdd = studentDocSnap.id;
-      const studentData = studentDocSnap.data() as UserProfileData;
-
-      if (studentData.role !== UserRole.STUDENT) {
-        toast({ title: "Invalid Role", description: `${studentEmailToAdd} is not a student. Role: ${studentData.role}.`, variant: "destructive" });
-        setIsAddingStudent(false); return;
-      }
-      
-      const isAlreadyManagedByCurrentUser = managedStudents.some(s => s.uid === studentIdToAdd);
-      if (isAlreadyManagedByCurrentUser) {
-        toast({ title: "Already Managed", description: `${studentData.fullName || 'Student'} is already managed.` });
-        setStudentEmailInput(""); setIsAddingStudent(false); return;
-      }
-      
-      const batch = writeBatch(db);
-      const parentDocRef = doc(db, "users", authUser.uid);
-      // Automatically approve the parent to drive the student they are adding
-      batch.update(parentDocRef, { 
-        managedStudentIds: arrayUnion(studentIdToAdd),
-        [`approvedDrivers.${authUser.uid}`]: arrayUnion(studentIdToAdd),
-      });
-      const studentDocRef = doc(db, "users", studentIdToAdd);
-      batch.update(studentDocRef, { associatedParentIds: arrayUnion(authUser.uid) });
-      await batch.commit();
-
-      setManagedStudents(prev => [...prev, { uid: studentIdToAdd, fullName: studentData.fullName, email: studentData.email }]);
-      setLocalUserProfile(prev => {
-        if (!prev) return null;
-        const newApprovedDrivers = { ...(prev.approvedDrivers || {}) };
-        const currentApprovals = newApprovedDrivers[authUser.uid] || [];
-        newApprovedDrivers[authUser.uid] = [...new Set([...currentApprovals, studentIdToAdd])];
-        
-        return { 
-          ...prev, 
-          managedStudentIds: [...(prev.managedStudentIds || []), studentIdToAdd],
-          approvedDrivers: newApprovedDrivers,
-        };
+      const result = await associateStudentWithParentAction({
+        parentUid: authUser.uid,
+        studentEmail: studentEmailToAdd,
       });
 
-      setStudentEmailInput("");
-      toast({ title: "Student Associated", description: `${studentData.fullName || studentEmailToAdd} linked. You have been auto-approved to drive this student.` });
+      if (result.success) {
+        toast({ title: "Student Associated", description: result.message });
+        setStudentEmailInput("");
+        // A page refresh would be needed to see the updated list.
+      } else {
+        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
+      }
     } catch (error: any) {
       console.error("handleAddStudent Error:", error);
       toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
@@ -208,46 +166,17 @@ export default function ProfilePage() {
     }
     setIsAddingParent(true);
     try {
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", parentEmailToAdd));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        toast({ title: "Parent Not Found", description: `No user with email: ${parentEmailToAdd}.`, variant: "destructive" });
-        setIsAddingParent(false); return;
-      }
-      const parentDocSnap = querySnapshot.docs[0];
-      const parentIdToAdd = parentDocSnap.id;
-      const parentData = parentDocSnap.data() as UserProfileData;
-
-      if (parentData.role !== UserRole.PARENT && parentData.role !== UserRole.ADMIN) {
-         toast({ title: "Invalid Role", description: `${parentEmailToAdd} is not a parent/admin.`, variant: "destructive" });
-         setIsAddingParent(false); return;
-      }
-      
-      const isAlreadyAssociated = displayedAssociatedParents.some(p => p.uid === parentIdToAdd);
-      if (isAlreadyAssociated) {
-        toast({ title: "Already Associated", description: `${parentData.fullName || 'Parent'} is already associated.` });
-        setParentIdentifierInput(""); setIsAddingParent(false); return;
-      }
-      
-      const batch = writeBatch(db);
-      // Student's document update
-      const studentDocRef = doc(db, "users", authUser.uid);
-      batch.update(studentDocRef, { associatedParentIds: arrayUnion(parentIdToAdd) });
-      
-      // Parent's document update
-      const parentDocRefToUpdate = doc(db, "users", parentIdToAdd);
-      batch.update(parentDocRefToUpdate, { 
-          managedStudentIds: arrayUnion(authUser.uid),
-          [`approvedDrivers.${parentIdToAdd}`]: arrayUnion(authUser.uid),
+       const result = await associateParentWithStudentAction({
+        studentUid: authUser.uid,
+        parentEmail: parentEmailToAdd,
       });
-      await batch.commit();
-      
-      setDisplayedAssociatedParents(prev => [...prev, {uid: parentIdToAdd, fullName: parentData.fullName, email: parentData.email}]);
-      setLocalUserProfile(prev => prev ? ({ ...prev, associatedParentIds: [...(prev.associatedParentIds || []), parentIdToAdd] }) : null);
-      setParentIdentifierInput("");
-      toast({ title: "Parent/Guardian Associated", description: `${parentData.fullName || parentEmailToAdd} linked. They are now an approved driver for you.` });
+
+      if (result.success) {
+        toast({ title: "Parent/Guardian Associated", description: result.message });
+        setParentIdentifierInput("");
+      } else {
+        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
+      }
     } catch (error: any) {
         console.error("handleAddParent Error:", error);
         toast({ title: "Association Failed", description: error.message || "Could not associate parent.", variant: "destructive" });
