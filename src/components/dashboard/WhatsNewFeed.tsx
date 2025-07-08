@@ -20,11 +20,11 @@ const iconMap: Record<NotificationType, React.ElementType> = {
 
 export function WhatsNewFeed() {
   const { user, loading: authLoading } = useAuth();
-  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState<NotificationData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (authLoading) return; // Wait for auth state to be resolved
+    if (authLoading) return; 
     if (!user) {
       setIsLoading(false);
       return;
@@ -33,32 +33,32 @@ export function WhatsNewFeed() {
       setIsLoading(true);
       const result = await getNotificationsAction(user.uid);
       if (result.success && result.notifications) {
-        setNotifications((result.notifications as any).slice(0, 4)); // Get top 4
+        // Filter for unread notifications
+        const unread = result.notifications.filter(n => !n.read);
+        setUnreadNotifications(unread);
       }
       setIsLoading(false);
     };
     fetchNotifications();
   }, [user, authLoading]);
 
+  // While loading, or if there are no unread notifications, render nothing.
+  if (isLoading || unreadNotifications.length === 0) {
+    return null;
+  }
+  
+  // Display only up to 4 of the most recent unread notifications
+  const displayedNotifications = unreadNotifications.slice(0, 4);
+
   return (
     <Card className="shadow-lg flex flex-col">
       <CardHeader>
         <CardTitle>What's New</CardTitle>
-        <CardDescription>A summary of your recent activity and notifications.</CardDescription>
+        <CardDescription>A summary of your recent unread notifications.</CardDescription>
       </CardHeader>
       <CardContent className="flex-grow">
-        {isLoading ? (
-          <div className="flex justify-center items-center py-4 h-40">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : notifications.length === 0 ? (
-          <div className="text-center text-muted-foreground py-4 h-40 flex flex-col items-center justify-center">
-            <BellRing className="mx-auto h-8 w-8 mb-2" />
-            <p>No new activity to show.</p>
-          </div>
-        ) : (
           <ul className="space-y-4">
-            {notifications.map(notification => {
+            {displayedNotifications.map(notification => {
               const IconComponent = iconMap[notification.type] || BellRing;
               const link = notification.link || '/notifications';
               const timeAgo = formatDistanceToNow(new Date(notification.createdAt as string), { addSuffix: true });
@@ -79,7 +79,6 @@ export function WhatsNewFeed() {
               );
             })}
           </ul>
-        )}
       </CardContent>
       <CardFooter className="border-t pt-4 mt-auto">
         <Button variant="outline" className="w-full" asChild>
