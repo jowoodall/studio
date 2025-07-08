@@ -1,8 +1,5 @@
 
 import { PageHeader } from "@/components/shared/page-header";
-import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
-import Link from "next/link";
 import type { Metadata } from 'next';
 import { MyNextRyd } from "@/components/dashboard/MyNextRyd";
 import { updateStaleEventsAction, updateStaleRydzAction } from "@/actions/systemActions";
@@ -24,20 +21,11 @@ export default async function DashboardPage() {
     console.error("Error initiating background jobs on dashboard:", e);
   }
 
-  const redirectUrl = "/dashboard";
-
   return (
     <>
       <PageHeader
         title="Welcome to MyRydz!"
         description="Manage your rydz, groups, and events all in one place."
-        actions={
-          <Button asChild>
-            <Link href={`/rydz/request?redirectUrl=${encodeURIComponent(redirectUrl)}`}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Request a New Ryd
-            </Link>
-          </Button>
-        }
       />
       
       <div className="mb-8">
