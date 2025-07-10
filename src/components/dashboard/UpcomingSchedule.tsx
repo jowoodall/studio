@@ -99,7 +99,7 @@ export function UpcomingSchedule() {
   const dayKeys = Object.keys(groupedByDay).sort();
 
   return (
-    <Card className="shadow-lg">
+    <Card className="shadow-lg w-full">
       <CardHeader>
         <CardTitle>Upcoming Schedule</CardTitle>
         <CardDescription>Your rydz and events for the next 14 days.</CardDescription>
@@ -121,14 +121,16 @@ export function UpcomingSchedule() {
             <p>Your schedule is clear for the next two weeks.</p>
           </div>
         ) : (
-          <ScrollArea className="w-full whitespace-nowrap rounded-md pb-4">
-            <div className="flex space-x-4">
-              {dayKeys.map(day => (
-                <ScheduleDayColumn key={day} day={day} items={groupedByDay[day]} />
-              ))}
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          <div className="w-full max-w-full">
+            <ScrollArea className="w-full whitespace-nowrap rounded-md pb-4">
+              <div className="flex space-x-4">
+                {dayKeys.map(day => (
+                  <ScheduleDayColumn key={day} day={day} items={groupedByDay[day]} />
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          </div>
         )}
       </CardContent>
     </Card>
