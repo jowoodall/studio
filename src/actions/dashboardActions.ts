@@ -5,7 +5,7 @@ import admin from '@/lib/firebaseAdmin';
 import type { DashboardRydData, ActiveRyd, UserProfileData, ScheduleItem, RydData, EventData } from '@/types';
 import { UserRole, ActiveRydStatus, EventStatus } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
-import { addDays, isWithinInterval } from 'date-fns';
+import { addDays, isWithinInterval, startOfDay } from 'date-fns';
 
 // This function converts a document from Firestore's REST API format
 // into a plain JavaScript object, similar to what the SDK provides.
@@ -193,8 +193,8 @@ export async function getUpcomingScheduleAction({ idToken }: { idToken: string }
       uidsToQuery.push(...userProfile.managedStudentIds);
     }
 
-    const now = new Date();
-    const fourteenDaysLater = addDays(now, 14);
+    const todayStart = startOfDay(new Date());
+    const fourteenDaysLater = addDays(todayStart, 14);
 
     const scheduleItemsMap = new Map<string, ScheduleItem>();
     
@@ -225,7 +225,7 @@ export async function getUpcomingScheduleAction({ idToken }: { idToken: string }
     for (const ryd of allActiveRydz) {
       const activeRyd = ryd as ActiveRyd;
       const timestamp = (activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime) as Timestamp | undefined;
-      if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater })) {
+      if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
         const relevantUserUid = uidsToQuery.find(uid => uid === activeRyd.driverId || activeRyd.passengerUids?.includes(uid));
         const relevantUser = await admin.firestore().collection('users').doc(relevantUserUid!).get().then(snap => snap.data() as UserProfileData);
         let subtitle: string;
@@ -250,7 +250,7 @@ export async function getUpcomingScheduleAction({ idToken }: { idToken: string }
     for (const req of rydRequests) {
       const rydRequest = req as RydData;
       const timestamp = rydRequest.rydTimestamp as Timestamp | undefined;
-       if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater }) && ['requested', 'searching_driver'].includes(rydRequest.status)) {
+       if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater }) && ['requested', 'searching_driver'].includes(rydRequest.status)) {
         scheduleItemsMap.set(`request-${rydRequest.id}`, {
           id: `request-${rydRequest.id}`,
           type: 'request',
@@ -266,7 +266,7 @@ export async function getUpcomingScheduleAction({ idToken }: { idToken: string }
     for (const ev of allEvents) {
         const event = ev as EventData;
         const timestamp = event.eventTimestamp as Timestamp | undefined;
-        if (timestamp && isWithinInterval(timestamp.toDate(), { start: now, end: fourteenDaysLater }) && event.status === EventStatus.ACTIVE) {
+        if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater }) && event.status === EventStatus.ACTIVE) {
             scheduleItemsMap.set(`event-${event.id}`, {
                 id: `event-${event.id}`,
                 type: 'event',
