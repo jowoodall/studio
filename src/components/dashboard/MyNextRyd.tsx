@@ -92,6 +92,10 @@ export function MyNextRyd() {
   }
   
   const rydTime = nextRyd.eventTimestamp ? new Date(nextRyd.eventTimestamp) : undefined;
+  const badgeText = nextRyd.isDriver 
+    ? (nextRyd.rydFor.relation === 'self' ? 'You are Driving' : `Driving for ${nextRyd.rydFor.name}`)
+    : (nextRyd.rydFor.relation === 'self' ? 'You are a Passenger' : `Passenger: ${nextRyd.rydFor.name}`);
+
 
   return (
     <Card className="shadow-lg">
@@ -102,7 +106,7 @@ export function MyNextRyd() {
                     <CardDescription>Your next upcoming ryd.</CardDescription>
                 </div>
                 <Badge variant={nextRyd.isDriver ? "default" : "secondary"}>
-                    {nextRyd.isDriver ? 'You are Driving' : `Passenger: ${nextRyd.rydFor.name}`}
+                    {badgeText}
                 </Badge>
             </div>
         </CardHeader>

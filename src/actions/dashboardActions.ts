@@ -91,18 +91,22 @@ export async function getMyNextRydAction({ idToken }: { idToken: string }): Prom
     }
     const userProfile = userProfileSnap.data() as UserProfileData;
 
+    const uidsToQuery = [userId];
+    if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
+        uidsToQuery.push(...userProfile.managedStudentIds);
+    }
 
     // Define queries for Firestore REST API
     const drivingQuery = {
       from: [{ collectionId: 'activeRydz' }],
       where: {
-        fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } }
+        fieldFilter: { field: { fieldPath: 'driverId' }, op: 'IN', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } }
       },
     };
     const passengerQuery = {
       from: [{ collectionId: 'activeRydz' }],
       where: {
-        fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS', value: { stringValue: userId } }
+        fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } }
       },
     };
     
@@ -142,13 +146,28 @@ export async function getMyNextRydAction({ idToken }: { idToken: string }): Prom
     }
     
     const nextRyd = upcomingRydz[0];
-    const isDriver = nextRyd.driverId === userId;
+    const isDriver = uidsToQuery.includes(nextRyd.driverId);
     
-    const rydFor = { name: userProfile.fullName, relation: 'self' as const, uid: userId };
+    let rydFor = { name: 'Unknown User', relation: 'self' as const, uid: '' };
+
+    if (isDriver) {
+        const driverOfRyd = await admin.firestore().collection('users').doc(nextRyd.driverId).get().then(snap => snap.data() as UserProfileData);
+        rydFor = { name: driverOfRyd.fullName, relation: 'self', uid: driverOfRyd.uid };
+    } else {
+        const passengerUid = uidsToQuery.find(uid => nextRyd.passengerUids?.includes(uid));
+        if (passengerUid) {
+            const passengerOfRyd = await admin.firestore().collection('users').doc(passengerUid).get().then(snap => snap.data() as UserProfileData);
+            rydFor = { 
+                name: passengerOfRyd.fullName, 
+                relation: passengerUid === userId ? 'self' : 'student',
+                uid: passengerUid
+            };
+        }
+    }
     
     let driverProfileData: UserProfileData | undefined = undefined;
     if (isDriver) {
-        driverProfileData = userProfile;
+        driverProfileData = await admin.firestore().collection('users').doc(nextRyd.driverId).get().then(snap => snap.data() as UserProfileData);
     } else if (nextRyd.driverId) {
         const driverSnap = await admin.firestore().collection('users').doc(nextRyd.driverId).get();
         if (driverSnap.exists) driverProfileData = driverSnap.data() as UserProfileData;
