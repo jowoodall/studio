@@ -121,14 +121,16 @@ export function UpcomingSchedule() {
             <p>Your schedule is clear for the next two weeks.</p>
           </div>
         ) : (
-          <ScrollArea className="w-full max-w-full whitespace-nowrap rounded-md pb-4">
-            <div className="flex w-max space-x-4">
-              {dayKeys.map(day => (
-                <ScheduleDayColumn key={day} day={day} items={groupedByDay[day]} />
-              ))}
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          <div className="w-full max-w-full">
+            <ScrollArea className="whitespace-nowrap rounded-md pb-4">
+              <div className="flex w-max space-x-4">
+                {dayKeys.map(day => (
+                  <ScheduleDayColumn key={day} day={day} items={groupedByDay[day]} />
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          </div>
         )}
       </CardContent>
     </Card>
