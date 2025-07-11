@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { FamilyData } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
@@ -24,40 +24,47 @@ export default function MyFamilyPage() {
 
   const fetchFamilies = useCallback(async () => {
     if (!userProfile) {
-      setIsLoading(false);
-      setFamilies([]);
+      if (!authLoading && !isLoadingProfile) setIsLoading(false);
       return;
     }
     
-    // This is the key fix: if familyIds is empty or doesn't exist, we don't query.
-    if (!userProfile.familyIds || userProfile.familyIds.length === 0) {
-      setIsLoading(false);
+    const familyIds = userProfile.familyIds || [];
+    if (familyIds.length === 0) {
       setFamilies([]);
+      setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
-      const familiesQuery = query(collection(db, "families"), where("__name__", "in", userProfile.familyIds));
-      const querySnapshot = await getDocs(familiesQuery);
-      const fetchedFamilies: FamilyData[] = [];
-      querySnapshot.forEach(doc => {
-        fetchedFamilies.push({ id: doc.id, ...doc.data() } as FamilyData);
+      // Fetch each family document individually by its ID
+      // This is more robust against security rules that check for user ID in the document
+      const familyPromises = familyIds.map(async (id) => {
+        const familyDocRef = doc(db, "families", id);
+        const docSnap = await getDoc(familyDocRef);
+        if (docSnap.exists()) {
+          return { id: docSnap.id, ...docSnap.data() } as FamilyData;
+        }
+        console.warn(`Family with ID ${id} listed in user profile but not found in collection.`);
+        return null;
       });
+
+      const fetchedFamilies = (await Promise.all(familyPromises)).filter(Boolean) as FamilyData[];
       setFamilies(fetchedFamilies);
+
     } catch (e: any) {
-      console.error("Error fetching families:", e); // This will log the full error to the server console
+      console.error("Error fetching families:", e);
       let detailedError = "Failed to load your families. Please try again.";
-      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required to load your families. Please check your server console for a link to create it.";
+      if (e.code === 'permission-denied') {
+        detailedError = "You do not have permission to view these families. Please check Firestore security rules.";
       }
       setError(detailedError);
       toast({ title: "Error Loading Families", description: detailedError, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  }, [userProfile, toast]);
+  }, [userProfile, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
     if (!authLoading && !isLoadingProfile) {
