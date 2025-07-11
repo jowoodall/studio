@@ -84,31 +84,43 @@ export default function ParentApprovalsPage() {
       const studentIds = freshUserProfile.managedStudentIds || [];
       let fetchedApprovals: ApprovalRequest[] = [];
       if (studentIds.length > 0) {
-        const activeRydzRef = collection(db, "activeRydz");
-        const q = query(activeRydzRef, where("uidsPendingParentalApproval", "array-contains-any", studentIds));
-        const querySnapshot = await getDocs(q);
-        const approvalPromises = querySnapshot.docs.flatMap(docSnap => {
-          const rydData = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-          const relevantPassengers = rydData.passengerManifest.filter(p => studentIds.includes(p.userId) && p.status === PassengerManifestStatus.PENDING_PARENT_APPROVAL);
-          return relevantPassengers.map(async (passenger) => {
-            try {
-              const [driverDoc, studentDoc] = await Promise.all([
-                getDoc(doc(db, "users", rydData.driverId)),
-                getDoc(doc(db, "users", passenger.userId))
-              ]);
-              if (!driverDoc.exists() || !studentDoc.exists()) return null;
-              const driverData = driverDoc.data() as UserProfileData;
-              const studentData = studentDoc.data() as UserProfileData;
-              return {
-                activeRydId: rydData.id,
-                student: { uid: studentData.uid, fullName: studentData.fullName },
-                driver: { uid: driverData.uid, fullName: driverData.fullName, avatarUrl: driverData.avatarUrl, dataAiHint: driverData.dataAiHint },
-                rydDetails: { eventName: rydData.eventName || 'Unnamed Ryd', destination: rydData.finalDestinationAddress || 'N/A' },
-              };
-            } catch (e) { console.error("Error processing an approval request:", e); return null; }
-          });
-        });
-        fetchedApprovals = (await Promise.all(approvalPromises)).filter(Boolean) as ApprovalRequest[];
+        // This query is now wrapped in a more specific try/catch block
+        try {
+            const activeRydzRef = collection(db, "activeRydz");
+            const q = query(activeRydzRef, where("uidsPendingParentalApproval", "array-contains-any", studentIds));
+            const querySnapshot = await getDocs(q);
+            const approvalPromises = querySnapshot.docs.flatMap(docSnap => {
+              const rydData = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+              const relevantPassengers = rydData.passengerManifest.filter(p => studentIds.includes(p.userId) && p.status === PassengerManifestStatus.PENDING_PARENT_APPROVAL);
+              return relevantPassengers.map(async (passenger) => {
+                try {
+                  const [driverDoc, studentDoc] = await Promise.all([
+                    getDoc(doc(db, "users", rydData.driverId)),
+                    getDoc(doc(db, "users", passenger.userId))
+                  ]);
+                  if (!driverDoc.exists() || !studentDoc.exists()) return null;
+                  const driverData = driverDoc.data() as UserProfileData;
+                  const studentData = studentDoc.data() as UserProfileData;
+                  return {
+                    activeRydId: rydData.id,
+                    student: { uid: studentData.uid, fullName: studentData.fullName },
+                    driver: { uid: driverData.uid, fullName: driverData.fullName, avatarUrl: driverData.avatarUrl, dataAiHint: driverData.dataAiHint },
+                    rydDetails: { eventName: rydData.eventName || 'Unnamed Ryd', destination: rydData.finalDestinationAddress || 'N/A' },
+                  };
+                } catch (e) { console.error("Error processing an individual approval request:", e); return null; }
+              });
+            });
+            fetchedApprovals = (await Promise.all(approvalPromises)).filter(Boolean) as ApprovalRequest[];
+        } catch (queryError: any) {
+            console.error("[ParentApprovalsPage] Error during Firestore query for pending approvals:", queryError);
+            let detailedError = "A server error occurred while fetching pending requests.";
+            if (queryError.code === 5 || (queryError.message && (queryError.message.toLowerCase().includes("index") || queryError.message.toLowerCase().includes("missing a composite index")))) {
+                detailedError = "A Firestore index is required to load approval requests. Please check the browser's console for a link to create it.";
+            } else if (queryError.message && queryError.message.includes('permission')) {
+                detailedError = "A permissions error occurred. This could be a security rule issue or a server authentication problem. Please refresh and try again.";
+            }
+            throw new Error(detailedError); // Throw a new, more descriptive error to be caught by the outer catch
+        }
       }
       setPendingApprovals(fetchedApprovals);
 
@@ -138,13 +150,9 @@ export default function ParentApprovalsPage() {
       setManagedStudents(studentList);
 
     } catch (e: any) {
-      console.error("Error fetching approvals/lists:", e);
-      let detailedError = "Failed to load data. This can happen if the required Firestore index has not been created.";
-      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required. Please check the browser's console for a link to create it.";
-      }
-      setError(detailedError);
-      toast({ title: "Error Loading Data", description: detailedError, variant: "destructive", duration: 9000 });
+      console.error("Error in fetchAllData on ParentApprovalsPage:", e);
+      setError(e.message || "An unexpected error occurred while loading page data.");
+      toast({ title: "Error Loading Data", description: e.message || "Could not load all page data.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
