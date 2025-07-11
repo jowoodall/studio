@@ -20,6 +20,7 @@ import {
   UserCog, // For Manage Drivers
 } from 'lucide-react';
 import type { NavItem } from '@/types';
+import { UserRole } from '@/types';
 
 export const siteConfig = {
   name: 'MyRydz',
@@ -64,7 +65,7 @@ export const navMenuItems: NavItem[] = [
     title: 'Driver Portal',
     href: '/driver/dashboard', // Example specific to drivers
     icon: DollarSign, // Using DollarSign as a placeholder for driver earnings/management
-    roles: ['driver'],
+    roles: [UserRole.DRIVER],
     collapsible: true,
     items: [
         { title: 'My Schedule', href: '/driver/schedule', icon: CalendarDays },
@@ -85,7 +86,7 @@ export const navMenuItems: NavItem[] = [
     title: 'Parental Controls',
     href: '/parent/approvals', // Example specific to parents
     icon: ShieldCheck,
-    roles: ['parent'], // Example role-based visibility
+    roles: [UserRole.PARENT], // Example role-based visibility
   },
   {
     title: 'Utilities',
@@ -105,13 +106,13 @@ export const userAccountMenu: NavItem[] = [
     title: 'My Family',
     href: '/family',
     icon: ClipboardList, 
-    roles: ['parent'], 
+    roles: [UserRole.PARENT, UserRole.STUDENT], 
   },
   {
     title: 'Driver Approvals',
     href: '/parent/approvals',
     icon: ShieldCheck,
-    roles: ['parent'],
+    roles: [UserRole.PARENT],
   },
   {
     title: 'My Locations',
