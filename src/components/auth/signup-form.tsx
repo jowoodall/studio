@@ -136,7 +136,8 @@ export function SignupForm() {
           associatedParentIds: [],
           approvedDrivers: {},
           declinedDriverIds: [],
-          joinedGroupIds: [], 
+          joinedGroupIds: [],
+          familyIds: [],
         };
         
         await setDoc(userRef, userProfileData);

@@ -16,6 +16,12 @@ export enum EventStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum SubscriptionTier {
+    FREE = 'free',
+    PREMIUM = 'premium',
+    ORGANIZATION = 'organization',
+}
+
 export type NavItem = {
   title: string;
   href: string;
@@ -41,6 +47,19 @@ export interface NotificationPreferences {
   groupActivity?: { email?: boolean; text?: boolean };
   parentalApprovals?: { email?: boolean; text?: boolean };
   chatMessages?: { email?: boolean; text?: boolean };
+}
+
+export interface FamilyData {
+    id: string;
+    name: string;
+    subscriptionTier: SubscriptionTier;
+    subscriptionStartDate?: Timestamp;
+    subscriptionEndDate?: Timestamp;
+    stripeCustomerId?: string;
+    memberIds: string[];
+    adminIds: string[];
+    createdAt: Timestamp;
+    updatedAt?: Timestamp;
 }
 
 export interface UserProfileData {
@@ -75,6 +94,7 @@ export interface UserProfileData {
   approvedDrivers?: { [driverId: string]: string[] };
   declinedDriverIds?: string[];
   joinedGroupIds?: string[]; 
+  familyIds?: string[];
   createdAt?: Timestamp;
 }
 
