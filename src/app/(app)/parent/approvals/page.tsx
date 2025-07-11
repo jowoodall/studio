@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan, PlusCircle, Check } from "lucide-react";
+import { CheckCircle, XCircle, ShieldCheck, UserCircle, Car, Loader2, AlertTriangle, UserCog, Trash2, ShieldBan, PlusCircle, Check, Users } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { type UserProfileData, type ActiveRyd, UserRole, PassengerManifestStatus } from '@/types';
 import { manageDriverApprovalAction, type ManageDriverApprovalInput, updateDriverListAction, addApprovedDriverByEmailAction } from '@/actions/parentActions';
+import { associateStudentWithParentAction } from '@/actions/userActions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -57,6 +58,10 @@ export default function ParentApprovalsPage() {
   const [driverToAdd, setDriverToAdd] = useState<{ id: string; email: string; name: string } | null>(null);
   const [selectedStudentsForApproval, setSelectedStudentsForApproval] = useState<Record<string, boolean>>({});
 
+  // State for adding students
+  const [studentEmailInput, setStudentEmailInput] = useState("");
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
+
 
   const fetchAllData = useCallback(async () => {
     if (!authUser) {
@@ -67,7 +72,6 @@ export default function ParentApprovalsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      // --- FIX: Fetch the parent's profile directly to get the latest data ---
       const parentDocRef = doc(db, "users", authUser.uid);
       const parentDocSnap = await getDoc(parentDocRef);
       if (!parentDocSnap.exists() || parentDocSnap.data().role !== UserRole.PARENT) {
@@ -76,10 +80,7 @@ export default function ParentApprovalsPage() {
         return;
       }
       const freshUserProfile = parentDocSnap.data() as UserProfileData;
-      // --- END FIX ---
 
-
-      // Fetch Pending Approvals
       const studentIds = freshUserProfile.managedStudentIds || [];
       let fetchedApprovals: ApprovalRequest[] = [];
       if (studentIds.length > 0) {
@@ -111,7 +112,6 @@ export default function ParentApprovalsPage() {
       }
       setPendingApprovals(fetchedApprovals);
 
-      // Fetch Driver and Student Lists
       const fetchProfiles = async (ids: string[]): Promise<UserDisplayInfo[]> => {
         if (ids.length === 0) return [];
         const profilePromises = ids.map(async (id) => {
@@ -170,7 +170,7 @@ export default function ParentApprovalsPage() {
         });
         if(result.success) {
             toast({ title: "Decision Submitted", description: result.message });
-            fetchAllData(); // Refresh all data
+            fetchAllData(); 
         } else {
             toast({ title: "Action Failed", description: result.message, variant: "destructive" });
         }
@@ -189,7 +189,7 @@ export default function ParentApprovalsPage() {
         const result = await updateDriverListAction({ parentUserId: authUser.uid, driverId, list, action: 'remove' });
         if (result.success) {
             toast({ title: "List Updated", description: result.message });
-            fetchAllData(); // Refresh all data
+            fetchAllData(); 
         } else {
             toast({ title: "Update Failed", description: result.message, variant: "destructive" });
         }
@@ -273,6 +273,42 @@ export default function ParentApprovalsPage() {
 
   const handleStudentCheckboxChange = (studentId: string, checked: boolean) => {
     setSelectedStudentsForApproval(prev => ({ ...prev, [studentId]: checked }));
+  };
+  
+  const handleAddStudent = async () => {
+    if (!authUser) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    const studentEmailToAdd = studentEmailInput.trim().toLowerCase();
+    if (studentEmailToAdd === "") {
+      toast({ title: "Input Required", description: "Please enter the student's email address.", variant: "destructive" });
+      return;
+    }
+    if (studentEmailToAdd === authUser.email?.toLowerCase()) {
+      toast({ title: "Invalid Action", description: "You cannot add yourself as a managed student.", variant: "destructive" });
+      return;
+    }
+
+    setIsAddingStudent(true);
+    try {
+      const result = await associateStudentWithParentAction({
+        parentUid: authUser.uid,
+        studentEmail: studentEmailToAdd,
+      });
+
+      if (result.success) {
+        toast({ title: "Student Associated", description: result.message });
+        setStudentEmailInput("");
+        fetchAllData(); 
+      } else {
+        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
+    } finally {
+      setIsAddingStudent(false);
+    }
   };
 
 
@@ -367,11 +403,11 @@ export default function ParentApprovalsPage() {
   return (
     <>
       <PageHeader
-        title="Driver Approvals & Management"
-        description="Review pending requests and manage your permanent lists of approved or declined drivers."
+        title="Parental Controls"
+        description="Review pending requests, manage your driver lists, and add students."
       />
       
-      <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Pending Requests</h2>
+      <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Pending Driver Requests</h2>
       {pendingApprovals.length > 0 ? (
         <div className="space-y-6">
           {pendingApprovals.map((request) => {
@@ -429,33 +465,75 @@ export default function ParentApprovalsPage() {
       )}
 
       <Separator className="my-8" />
-      <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Driver Lists</h2>
-
-      <Card className="shadow-lg mb-6">
-        <CardHeader>
-          <CardTitle>Add or Edit an Approved Driver</CardTitle>
-          <CardDescription>
-            Proactively approve a driver you trust by entering their email address. You can select which of your students they are approved to drive.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-2 items-start">
-              <Input
-                type="email"
-                placeholder="driver@example.com"
-                value={addDriverEmail}
-                onChange={(e) => setAddDriverEmail(e.target.value)}
-                className="flex-grow"
-                disabled={isAddingDriver}
-              />
-              <Button onClick={() => handleFindDriverByEmail()} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
-                {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                Add / Edit Driver
-              </Button>
-          </div>
-        </CardContent>
-      </Card>
       
+      <div className="grid md:grid-cols-2 gap-8">
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary"/>Manage My Students</CardTitle>
+            <CardDescription>Link students you are responsible for by entering their email address.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <Input
+                    type="email"
+                    placeholder="Enter Student's Email Address"
+                    value={studentEmailInput}
+                    onChange={(e) => setStudentEmailInput(e.target.value)}
+                    className="flex-grow"
+                    />
+                    <Button onClick={handleAddStudent} variant="outline" className="w-full sm:w-auto" disabled={isAddingStudent}>
+                        {isAddingStudent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Add Student
+                    </Button>
+                </div>
+                {managedStudents.length > 0 && (
+                    <div className="pt-4">
+                        <h5 className="font-medium text-sm text-muted-foreground mb-2">My Managed Students:</h5>
+                        <ul className="space-y-2">
+                            {managedStudents.map((student) => (
+                                <li key={student.uid} className="text-sm flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+                                  <Avatar className="h-8 w-8">
+                                      <AvatarImage src={student.avatarUrl} alt={student.fullName} data-ai-hint={student.dataAiHint} />
+                                      <AvatarFallback>{student.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <span className="font-medium">{student.fullName}</span>
+                                    <p className="text-xs text-muted-foreground">{student.email}</p>
+                                  </div>
+                                </li> 
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Add or Edit an Approved Driver</CardTitle>
+            <CardDescription>Proactively approve a driver you trust by entering their email.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2 items-start">
+                <Input
+                  type="email"
+                  placeholder="driver@example.com"
+                  value={addDriverEmail}
+                  onChange={(e) => setAddDriverEmail(e.target.value)}
+                  className="flex-grow"
+                  disabled={isAddingDriver}
+                />
+                <Button onClick={() => handleFindDriverByEmail()} disabled={isAddingDriver || !addDriverEmail.trim()} className="w-full sm:w-auto">
+                  {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Add/Edit Driver
+                </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Separator className="my-8" />
+      <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Driver Lists</h2>
       <Tabs defaultValue="approved" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="approved"><ShieldCheck className="mr-2 h-4 w-4"/>Approved Drivers ({approvedDrivers.length})</TabsTrigger>
