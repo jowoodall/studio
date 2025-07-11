@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { Loader2, Car, CalendarDays, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -12,44 +12,23 @@ import { getUpcomingScheduleAction } from '@/actions/dashboardActions';
 import type { ScheduleItem } from '@/types';
 import { format, isToday, isTomorrow, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
 
 // --- Subcomponents defined within the same file ---
 
 const ScheduleItemCard = ({ item }: { item: ScheduleItem }) => {
   const Icon = item.type === 'ryd' || item.type === 'request' ? Car : CalendarDays;
   return (
-    <Link href={item.href} className="block hover:bg-muted/50 rounded-lg transition-colors">
-      <Card className="shadow-none border-l-4" style={{ borderLeftColor: item.type === 'event' ? 'hsl(var(--secondary))' : 'hsl(var(--primary))' }}>
-        <CardContent className="p-3">
-          <div className="flex items-start gap-3">
-            <Icon className="h-5 w-5 mt-1 text-muted-foreground flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-semibold text-sm leading-tight">{item.title}</p>
-              {item.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{item.subtitle}</p>}
-              <p className="text-xs text-muted-foreground mt-1">{format(parseISO(item.timestamp), 'p')}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-};
-
-const ScheduleDayColumn = ({ day, items }: { day: string; items: ScheduleItem[] }) => {
-  const dayDate = parseISO(day);
-  let dayLabel = format(dayDate, 'EEE, MMM d');
-  if (isToday(dayDate)) dayLabel = "Today";
-  if (isTomorrow(dayDate)) dayLabel = "Tomorrow";
-
-  return (
-    <div className="flex flex-col w-72 flex-shrink-0 snap-start">
-      <h3 className="font-semibold px-3 pb-2 sticky top-0 bg-background/95 backdrop-blur-sm z-10">{dayLabel}</h3>
-      <div className="space-y-2 px-1">
-        {items.map(item => (
-          <ScheduleItemCard key={item.id} item={item} />
-        ))}
+    <Link href={item.href} className="block hover:bg-muted/50 rounded-lg transition-colors -mx-2 px-2 py-2">
+      <div className="flex items-start gap-3">
+        <Icon className="h-5 w-5 mt-1 text-muted-foreground flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm leading-tight truncate">{item.title}</p>
+          {item.subtitle && <p className="text-xs text-muted-foreground mt-0.5 truncate">{item.subtitle}</p>}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 whitespace-nowrap">{format(parseISO(item.timestamp), 'p')}</p>
       </div>
-    </div>
+    </Link>
   );
 };
 
@@ -100,37 +79,49 @@ export function UpcomingSchedule() {
 
   return (
     <Card className="shadow-lg w-full">
-      <CardHeader>
-        <CardTitle>Upcoming Schedule</CardTitle>
-        <CardDescription>Your rydz and events for the next 14 days.</CardDescription>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-lg sm:text-xl">Upcoming Schedule</CardTitle>
+        <CardDescription className="text-sm">Your rydz and events for the next 14 days.</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="flex items-center justify-center h-48">
+          <div className="flex items-center justify-center h-96">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center h-48 text-center text-destructive bg-destructive/10 p-4 rounded-md">
+          <div className="flex flex-col items-center justify-center h-96 text-center text-destructive bg-destructive/10 p-4 rounded-md">
             <AlertTriangle className="h-8 w-8 mb-2" />
             <p className="font-semibold">Could not load schedule</p>
             <p className="text-xs mt-1">{error}</p>
           </div>
         ) : dayKeys.length === 0 ? (
-          <div className="text-center text-muted-foreground h-48 flex flex-col items-center justify-center">
+          <div className="text-center text-muted-foreground h-96 flex flex-col items-center justify-center px-4 sm:px-0">
             <CalendarDays className="h-8 w-8 mb-2" />
             <p>Your schedule is clear for the next two weeks.</p>
           </div>
         ) : (
-          <div className="w-full max-w-full">
-            <ScrollArea className="whitespace-nowrap rounded-md pb-4">
-              <div className="flex w-max space-x-4">
-                {dayKeys.map(day => (
-                  <ScheduleDayColumn key={day} day={day} items={groupedByDay[day]} />
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          </div>
+          <ScrollArea className="h-[400px]">
+            <div className="space-y-4 pr-4">
+              {dayKeys.map((day, index) => {
+                const dayDate = parseISO(day);
+                let dayLabel = format(dayDate, 'EEEE, MMMM d');
+                if (isToday(dayDate)) dayLabel = "Today";
+                if (isTomorrow(dayDate)) dayLabel = "Tomorrow";
+                
+                return (
+                  <div key={day}>
+                    {index > 0 && <Separator className="my-3" />}
+                    <h3 className="font-semibold text-sm sm:text-base mb-2 sticky top-0 bg-background/95 py-1 z-10">{dayLabel}</h3>
+                    <div className="space-y-1">
+                      {groupedByDay[day].map(item => (
+                        <ScheduleItemCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>
