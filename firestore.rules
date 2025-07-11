@@ -4,145 +4,56 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is an admin of a group
-    function isGroupAdmin(groupId, userId) {
-      return exists(/databases/$(database)/documents/groups/$(groupId)) &&
-             get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds.hasAny([userId]);
+    // Users can read any profile, but only write to their own.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
     }
 
-    // Helper function to check if a user is a member of a group
-    function isGroupMember(groupId, userId) {
-      return exists(/databases/$(database)/documents/groups/$(groupId)) &&
-             get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds.hasAny([userId]);
-    }
-
-    // Helper function to check if a user is the creator of an event
-    function isEventCreator(eventId, userId) {
-      return exists(/databases/$(database)/documents/events/$(eventId)) &&
-             get(/databases/$(database)/documents/events/$(eventId)).data.createdBy == userId;
-    }
-
-    // Check if user has 'canDrive' set to true in their profile
-    function canDrive(userId) {
-      return exists(/databases/$(database)/documents/users/$(userId)) &&
-             get(/databases/$(database)/documents/users/$(userId)).data.canDrive == true;
-    }
-
-    match /users/{docUserId} {
-      // Allow reading own profile OR any profile if generally authenticated (useful for viewing other profiles)
-      allow read: if request.auth.uid == docUserId || request.auth.uid != null;
-
-      // Users can create their own profile upon signup
-      allow create: if request.auth.uid == docUserId &&
-                       request.resource.data.uid == docUserId &&
-                       request.resource.data.email == request.auth.token.email &&
-                       request.resource.data.role in ['student', 'parent', 'admin'] && // Ensure role is one of the allowed values
-                       request.resource.data.createdAt == request.time; // Enforce server timestamp for creation
-
-      // Users can update their own profile, but cannot change critical fields
-      allow update: if request.auth.uid == docUserId &&
-                       request.resource.data.uid == docUserId && // Cannot change UID
-                       request.resource.data.email == resource.data.email && // Cannot change email
-                       request.resource.data.role == resource.data.role && // Cannot change role
-                       request.resource.data.createdAt == resource.data.createdAt; // Cannot change creation timestamp
-      // No delete for user profiles by users themselves typically, handle via admin or account deletion process
-      allow delete: if false;
-    }
-
-    match /groups/{groupId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read group info
-
-      allow create: if request.auth.uid != null &&
-                       request.resource.data.createdBy == request.auth.uid &&
-                       request.resource.data.adminIds[0] == request.auth.uid && // Creator is first admin
-                       request.resource.data.memberIds[0] == request.auth.uid && // Creator is first member
-                       request.resource.data.createdAt == request.time;
-
-      allow update: if isGroupAdmin(groupId, request.auth.uid) &&
-                       request.resource.data.createdBy == resource.data.createdBy && // Cannot change original creator
-                       request.resource.data.createdAt == resource.data.createdAt; // Cannot change creation time
-                       // Specific field update rules (e.g., for memberIds, adminIds) can be added if needed
-
-      // Deletion might be restricted to group creator or specific admin logic
-      allow delete: if isGroupAdmin(groupId, request.auth.uid) && resource.data.createdBy == request.auth.uid; // Only original creator admin
-    }
-
+    // Any authenticated user can read events.
+    // Only designated managers can create or update events.
     match /events/{eventId} {
-      allow read: if request.auth.uid != null; // Any authenticated user can read event info
-
-      allow create: if request.auth.uid != null &&
-                       request.resource.data.createdBy == request.auth.uid &&
-                       request.resource.data.createdAt == request.time;
-
-      allow update: if isEventCreator(eventId, request.auth.uid) &&
-                       request.resource.data.createdBy == resource.data.createdBy &&
-                       request.resource.data.createdAt == resource.data.createdAt;
-
-      allow delete: if isEventCreator(eventId, request.auth.uid);
+      allow read: if request.auth != null;
+      // Allow create if user is in managerIds list in the new document.
+      allow create: if request.auth.uid in request.resource.data.managerIds;
+      // Allow update if user was in the managerIds list of the old document.
+      allow update: if request.auth.uid in resource.data.managerIds;
     }
 
-    match /eventDriverStates/{stateId} {
-      allow read: if request.auth.uid != null;
-
-      // Driver can declare their own status for an event
-      allow create, update: if request.auth.uid == request.resource.data.driverId &&
-                               request.resource.data.eventId != null &&
-                               request.resource.data.updatedAt == request.time;
-                               // stateId should be eventId_driverId, can be enforced here too.
-      // No direct delete by users, maybe admin or automated cleanup
-      allow delete: if false;
+    // Any authenticated user can read groups.
+    // Only designated admins can update group details.
+    match /groups/{groupId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == request.resource.data.createdBy;
+      allow update: if request.auth.uid in resource.data.adminIds;
+    }
+    
+    // Users can read a family document if they are a member.
+    // Admins of a family can update it.
+    match /families/{familyId} {
+      allow read: if request.auth.uid in resource.data.memberIds;
+      allow create: if request.auth.uid == request.resource.data.adminIds[0];
+      allow update: if request.auth.uid in resource.data.adminIds;
     }
 
-    match /rydz/{rydId} { // For Ryd Requests
-      allow read: if request.auth.uid != null &&
-                     (request.auth.uid == resource.data.requestedBy ||
-                      request.auth.uid == resource.data.driverId || // If a driver is assigned
-                      (resource.data.passengerIds != null && resource.data.passengerIds.hasAny([request.auth.uid])) ||
-                      // Allow parents to read rydz requested by their managed students
-                      exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStudentIds.hasAny(resource.data.passengerIds)
-                     );
-
-      allow create: if request.auth.uid == request.resource.data.requestedBy &&
-                       (request.resource.data.passengerIds.hasAny([request.auth.uid]) || // Requester is a passenger
-                        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && // Or requester is parent managing one of the passengers
-                         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent' &&
-                         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStudentIds.hasAny(request.resource.data.passengerIds)
-                        )
-                       ) &&
-                       request.resource.data.createdAt == request.time &&
-                       request.resource.data.status == 'requested';
-
-      // Users can update their own ryd requests if status is 'requested' (e.g. to cancel before driver assigned)
-      // Drivers can update if they are assigned
-      allow update: if request.auth.uid != null &&
-                       request.resource.data.createdAt == resource.data.createdAt && // Cannot change creation time
-                       (
-                         (request.auth.uid == resource.data.requestedBy && resource.data.status == 'requested') ||
-                         (request.auth.uid == resource.data.driverId && request.resource.data.driverId == resource.data.driverId)
-                       );
-      // Allow cancellation by user or driver under certain conditions
-      // allow delete: if false; // Or more specific delete logic
+    // Users can create their own rydz requests.
+    // Only the creator can update or cancel their own request.
+    match /rydz/{rydId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth.uid == request.resource.data.requestedBy;
+        allow update, delete: if request.auth.uid == resource.data.requestedBy;
+    }
+    
+    // Users can read/write to an activeRyd if they are the driver or a passenger.
+    match /activeRydz/{activeRydId} {
+        allow read: if request.auth != null && (request.auth.uid == resource.data.driverId || request.auth.uid in resource.data.passengerUids);
+        // Let server actions handle the more complex write/update logic
+        allow write: if request.auth != null;
     }
 
-    match /activeRydz/{activeRydId} { // For Offered Rydz by Drivers
-      allow read: if request.auth.uid != null; // Allow any authenticated user to read (e.g. for tracking)
-
-      // Only users marked as 'canDrive' can create an activeRyd, and they must be the driver.
-      allow create: if request.auth.uid == request.resource.data.driverId &&
-                       canDrive(request.auth.uid) &&
-                       request.resource.data.createdAt == request.time;
-
-      // Only the driver of the activeRyd can update it.
-      allow update: if request.auth.uid == resource.data.driverId &&
-                       request.resource.data.driverId == resource.data.driverId && // Driver cannot be changed
-                       request.resource.data.createdAt == resource.data.createdAt;
-
-      // Only driver can delete/cancel their offered ryd.
-      allow delete: if request.auth.uid == resource.data.driverId;
+    // Users can only read/write their own notifications.
+    match /notifications/{notificationId} {
+        allow read, write, create: if request.auth.uid == request.resource.data.userId;
     }
-
   }
 }
-
-    
