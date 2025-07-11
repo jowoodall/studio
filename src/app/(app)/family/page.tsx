@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Loader2, AlertTriangle, Users, PlusCircle, UserCog } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
@@ -126,11 +126,13 @@ export default function MyFamilyPage() {
                     </p>
                   )}
                 </CardContent>
-                <CardContent>
-                   <Button className="w-full" disabled>
-                     <UserCog className="mr-2 h-4 w-4" /> Manage Family (Coming Soon)
+                <CardFooter>
+                   <Button className="w-full" asChild>
+                     <Link href={`/family/${family.id}/manage`}>
+                        <UserCog className="mr-2 h-4 w-4" /> Manage Family
+                     </Link>
                   </Button>
-                </CardContent>
+                </CardFooter>
               </Card>
             );
           })}
