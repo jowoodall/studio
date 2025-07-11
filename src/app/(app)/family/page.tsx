@@ -5,16 +5,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, AlertTriangle, Users, PlusCircle, Badge, UserCog } from "lucide-react";
+import { Loader2, AlertTriangle, Users, PlusCircle, UserCog } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import type { FamilyData } from '@/types';
+import { Badge } from '@/components/ui/badge';
 
 export default function MyFamilyPage() {
-  const { user: authUser, userProfile, loading: authLoading } = useAuth();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
   const { toast } = useToast();
 
   const [families, setFamilies] = useState<FamilyData[]>([]);
@@ -42,7 +43,7 @@ export default function MyFamilyPage() {
       console.error("Error fetching families:", e);
       let detailedError = "Failed to load your families. Please try again.";
       if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required. Please check your browser's console for a link to create it.";
+        detailedError = "A Firestore index is required to load your families. Please check your browser's console for a link to create it.";
       }
       setError(detailedError);
       toast({ title: "Error Loading Families", description: detailedError, variant: "destructive" });
@@ -52,12 +53,14 @@ export default function MyFamilyPage() {
   }, [userProfile, toast]);
 
   useEffect(() => {
-    if (!authLoading) {
+    if (!authLoading && !isLoadingProfile) {
       fetchFamilies();
     }
-  }, [authLoading, fetchFamilies]);
+  }, [authLoading, isLoadingProfile, fetchFamilies]);
 
-  if (isLoading || authLoading) {
+  const isLoadingPage = authLoading || isLoadingProfile || isLoading;
+
+  if (isLoadingPage) {
     return (
       <>
         <PageHeader title="My Family" description="Manage your family units and subscriptions." />
@@ -92,8 +95,8 @@ export default function MyFamilyPage() {
         title="My Family"
         description="Manage your family units, members, and subscriptions."
         actions={
-          <Button>
-            <PlusCircle className="mr-2 h-4 w-4" /> Create New Family
+          <Button disabled>
+            <PlusCircle className="mr-2 h-4 w-4" /> Create New Family (Coming Soon)
           </Button>
         }
       />
