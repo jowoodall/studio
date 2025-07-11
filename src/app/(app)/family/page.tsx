@@ -103,7 +103,7 @@ export default function MyFamilyPage() {
         description="Manage your family units, members, and subscriptions."
         actions={
           <Button asChild>
-            <Link href="/family/create">
+            <Link href="/family/create" passHref>
                 <PlusCircle className="mr-2 h-4 w-4" /> Create New Family
             </Link>
           </Button>
@@ -137,7 +137,7 @@ export default function MyFamilyPage() {
                 </CardContent>
                 <CardFooter>
                    <Button className="w-full" asChild>
-                     <Link href={`/family/${family.id}/manage`}>
+                     <Link href={`/family/${family.id}/manage`} passHref>
                         <UserCog className="mr-2 h-4 w-4" /> Manage Family
                      </Link>
                   </Button>
@@ -157,7 +157,7 @@ export default function MyFamilyPage() {
               You are not yet part of any family. Create one to get started.
             </CardDescription>
             <Button asChild className="mt-4">
-              <Link href="/family/create">
+              <Link href="/family/create" passHref>
                 <PlusCircle className="mr-2 h-4 w-4" /> Create Family
               </Link>
             </Button>
