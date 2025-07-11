@@ -212,7 +212,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
 
   async function onSubmit(data: OfferDriveFormValues) {
-    console.log("[OfferDrivePage] onSubmit triggered. Client form data:", data);
+    // console.log("[OfferDrivePage] onSubmit triggered. Client form data:", data);
 
     if (!authUser || !userProfile) {
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
@@ -234,7 +234,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     try {
       idToken = await authUser.getIdToken();
     } catch (error) {
-      console.error("[OfferDrivePage] Error getting ID token:", error);
+      // console.error("[OfferDrivePage] Error getting ID token:", error);
       toast({ title: "Authentication Error", description: "Could not get user ID token. Please try logging in again.", variant: "destructive" });
       setIsSubmitting(false);
       return;
@@ -246,7 +246,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       payload.passengersToFulfill = originalRydRequest.passengerIds;
     }
 
-    console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
+    // console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch('/api/offer-drive', {
@@ -262,7 +262,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
           const result = await response.json();
-          console.log("[OfferDrivePage] API route response:", result);
+          // console.log("[OfferDrivePage] API route response:", result);
 
           if (result.success) {
             toast({
