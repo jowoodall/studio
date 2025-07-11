@@ -50,8 +50,7 @@ export function UpcomingSchedule() {
       setIsLoading(true);
       setError(null);
       try {
-        const idToken = await user.getIdToken();
-        const result = await getUpcomingScheduleAction({ idToken });
+        const result = await getUpcomingScheduleAction({ userId: user.uid });
         if (result.success && result.schedule) {
           setSchedule(result.schedule);
         } else {
