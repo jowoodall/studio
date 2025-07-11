@@ -9,12 +9,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft, User, Case, School } from "lucide-react";
+import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft, User, School } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { useAuth } from '@/context/AuthContext';
-import type { FamilyData, UserProfileData, UserRole } from "@/types";
+import { UserRole, type FamilyData, type UserProfileData } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { manageFamilyMemberAction } from "@/actions/familyActions";
 import { cn } from "@/lib/utils";
@@ -295,4 +295,3 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
     </>
   );
 }
-
