@@ -302,3 +302,39 @@ export interface ScheduleItem {
   subtitle?: string;
   href: string;
 }
+
+// Added for route optimization types
+export interface RouteWaypoint {
+  id: string;
+  address: string;
+  position: { lat: number; lng: number };
+  type: 'driver_start' | 'passenger_pickup' | 'event_destination';
+  passengerId?: string;
+  passengerName?: string;
+  estimatedArrivalTime?: Date;
+  estimatedDepartureTime?: Date;
+  actualArrivalTime?: Date;
+  actualDepartureTime?: Date;
+}
+
+export interface OptimizedRoute {
+  waypoints: RouteWaypoint[];
+  totalDistance: number; // in meters
+  totalDuration: number; // in seconds
+  optimizedOrder: number[]; // indices of original waypoints array
+  polyline: string;
+  bounds: google.maps.LatLngBounds;
+}
+
+export interface RouteOptimizationRequest {
+  driverStartLocation: { address: string; position?: { lat: number; lng: number } };
+  passengerPickups: Array<{
+    id: string;
+    address: string;
+    position?: { lat: number; lng: number };
+    passengerName: string;
+  }>;
+  eventDestination: { address: string; position?: { lat: number; lng: number } };
+  departureTime: Date;
+  bufferTimeMinutes?: number; // Time buffer for each pickup
+}
