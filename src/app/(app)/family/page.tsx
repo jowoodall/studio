@@ -23,7 +23,14 @@ export default function MyFamilyPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchFamilies = useCallback(async () => {
-    if (!userProfile || !userProfile.familyIds || userProfile.familyIds.length === 0) {
+    if (!userProfile) {
+      setIsLoading(false);
+      setFamilies([]);
+      return;
+    }
+    
+    // This is the key fix: if familyIds is empty or doesn't exist, we don't query.
+    if (!userProfile.familyIds || userProfile.familyIds.length === 0) {
       setIsLoading(false);
       setFamilies([]);
       return;

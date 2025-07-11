@@ -25,7 +25,7 @@ type CreateFamilyFormValues = z.infer<typeof createFamilyFormSchema>;
 
 export default function CreateFamilyPage() {
   const { toast } = useToast();
-  const { user: authUser } = useAuth();
+  const { user: authUser, refreshUserProfile } = useAuth(); // Get refreshUserProfile from context
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -58,6 +58,7 @@ export default function CreateFamilyPage() {
           title: "Family Created!",
           description: result.message,
         });
+        await refreshUserProfile(); // Refresh the profile data in the context
         router.push(`/family/${result.familyId}/manage`);
       } else {
         toast({
