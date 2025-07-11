@@ -26,7 +26,7 @@ interface AssociatedParentDisplayInfo {
 }
 
 export default function ProfilePage() {
-  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth();
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } from useAuth();
   const { toast } = useToast();
   const [localUserProfile, setLocalUserProfile] = useState<UserProfileData | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
