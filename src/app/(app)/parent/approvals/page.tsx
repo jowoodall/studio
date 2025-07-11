@@ -84,7 +84,6 @@ export default function ParentApprovalsPage() {
       const studentIds = freshUserProfile.managedStudentIds || [];
       let fetchedApprovals: ApprovalRequest[] = [];
       if (studentIds.length > 0) {
-        // This query is now wrapped in a more specific try/catch block
         try {
             const activeRydzRef = collection(db, "activeRydz");
             const q = query(activeRydzRef, where("uidsPendingParentalApproval", "array-contains-any", studentIds));
@@ -112,14 +111,14 @@ export default function ParentApprovalsPage() {
             });
             fetchedApprovals = (await Promise.all(approvalPromises)).filter(Boolean) as ApprovalRequest[];
         } catch (queryError: any) {
-            console.error("[ParentApprovalsPage] Error during Firestore query for pending approvals:", queryError);
-            let detailedError = "A server error occurred while fetching pending requests.";
-            if (queryError.code === 5 || (queryError.message && (queryError.message.toLowerCase().includes("index") || queryError.message.toLowerCase().includes("missing a composite index")))) {
-                detailedError = "A Firestore index is required to load approval requests. Please check the browser's console for a link to create it.";
-            } else if (queryError.message && queryError.message.includes('permission')) {
-                detailedError = "A permissions error occurred. This could be a security rule issue or a server authentication problem. Please refresh and try again.";
+            console.error("[ParentApprovalsPage] Error during Firestore query for pending approvals. FULL ERROR:", queryError);
+            let detailedError = "A server error occurred while fetching pending requests. Please try again.";
+            if (queryError.code === 'failed-precondition' || (queryError.message && (queryError.message.toLowerCase().includes("index") || queryError.message.toLowerCase().includes("missing a composite index")))) {
+                detailedError = "A Firestore index is required to load approval requests. Please check your server terminal logs for the full error message, which contains a link to create the necessary index automatically.";
+            } else if (queryError.code === 'permission-denied') {
+                detailedError = "A permissions error occurred. This could be a security rule issue.";
             }
-            throw new Error(detailedError); // Throw a new, more descriptive error to be caught by the outer catch
+            throw new Error(detailedError);
         }
       }
       setPendingApprovals(fetchedApprovals);
@@ -401,7 +400,7 @@ export default function ParentApprovalsPage() {
      return (
        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Error</h2>
+        <h2 className="text-xl font-semibold mb-2">Error Loading Page Data</h2>
         <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
         <Button onClick={fetchAllData} className="mt-4">Try Again</Button>
       </div>
