@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { UpdatePasswordForm } from "@/components/auth/update-password-form";
-import { Cog, Loader2, LinkIcon, ExternalLinkIcon } from "lucide-react";
+import { Cog, Loader2, LinkIcon, ExternalLinkIcon, CreditCard } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { db } from "@/lib/firebase";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserRole } from "@/types";
+import Link from "next/link";
 
 const notificationSettingsSchema = z.object({
   rydUpdates: z.object({
@@ -109,6 +110,23 @@ export default function SettingsPage() {
         description="Manage your password and notification preferences."
       />
       <div className="max-w-xl mx-auto space-y-8">
+        <Card className="shadow-lg">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Subscription & Billing
+                </CardTitle>
+                <CardDescription>View and manage your current subscription plan and payment details.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Button asChild className="w-full">
+                    <Link href="/settings/subscription">
+                        Manage Subscription
+                    </Link>
+                </Button>
+            </CardContent>
+        </Card>
+
         <Card className="shadow-lg">
             <CardHeader>
                 <CardTitle>Notification Preferences</CardTitle>
