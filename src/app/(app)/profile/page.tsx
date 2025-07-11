@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -10,19 +11,13 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { User, Mail, Phone, Edit3, Shield, LogOut, Settings, CarIcon, Users, UserCog, Loader2, AlertTriangle, MapPin } from "lucide-react";
 import Link from "next/link";
-import { UserRole, type UserProfileData } from '@/types'; // Import UserProfileData
+import { UserRole, type UserProfileData } from '@/types'; 
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { associateStudentWithParentAction, associateParentWithStudentAction } from '@/actions/userActions';
-
-interface ManagedStudentDisplayInfo {
-  uid: string;
-  fullName: string;
-  email: string;
-}
+import { associateParentWithStudentAction } from '@/actions/userActions';
 
 interface AssociatedParentDisplayInfo {
   uid: string;
@@ -31,15 +26,10 @@ interface AssociatedParentDisplayInfo {
 }
 
 export default function ProfilePage() {
-  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth(); // Use context
+  const { user: authUser, userProfile: authUserProfile, loading: authLoading, isLoadingProfile: isLoadingContextProfile } = useAuth();
   const { toast } = useToast();
-  // Local state for profile details, initialized from context or fetched if context is still loading/empty
   const [localUserProfile, setLocalUserProfile] = useState<UserProfileData | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
-  
-  const [studentEmailInput, setStudentEmailInput] = useState("");
-  const [isAddingStudent, setIsAddingStudent] = useState(false);
-  const [managedStudents, setManagedStudents] = useState<ManagedStudentDisplayInfo[]>([]); 
 
   const [parentIdentifierInput, setParentIdentifierInput] = useState("");
   const [displayedAssociatedParents, setDisplayedAssociatedParents] = useState<AssociatedParentDisplayInfo[]>([]);
@@ -48,27 +38,8 @@ export default function ProfilePage() {
   useEffect(() => {
     async function processProfileData() {
       if (!isLoadingContextProfile && authUserProfile) {
-        console.log("ProfilePage: Using profile from context:", authUserProfile);
         setLocalUserProfile(authUserProfile);
         setProfileError(null);
-
-        if (authUserProfile.role === UserRole.PARENT && authUserProfile.managedStudentIds && authUserProfile.managedStudentIds.length > 0) {
-          const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
-            try {
-              const studentDocRef = doc(db, "users", studentId);
-              const studentDocSnap = await getDoc(studentDocRef);
-              if (studentDocSnap.exists()) {
-                const studentData = studentDocSnap.data() as UserProfileData;
-                return { uid: studentId, fullName: studentData.fullName, email: studentData.email };
-              }
-              return null;
-            } catch (e) { console.error(e); return null; }
-          });
-          const resolvedStudents = (await Promise.all(studentPromises)).filter(Boolean) as ManagedStudentDisplayInfo[];
-          setManagedStudents(resolvedStudents);
-        } else {
-          setManagedStudents([]);
-        }
 
         if (authUserProfile.role === UserRole.STUDENT && authUserProfile.associatedParentIds && authUserProfile.associatedParentIds.length > 0) {
            const parentPromises = authUserProfile.associatedParentIds.map(async (parentId) => {
@@ -89,61 +60,18 @@ export default function ProfilePage() {
         }
 
       } else if (!authLoading && !isLoadingContextProfile && !authUserProfile && authUser) {
-        // This case implies the user is authenticated by Firebase Auth, but their profile didn't load from context
-        // (e.g., Firestore document missing, or initial context profile load failed).
-        // We might attempt a direct fetch here as a fallback, or guide the user.
         console.warn("ProfilePage: Auth user exists but no profile in context. UID:", authUser.uid);
         setProfileError("Profile data is not available. It might be a new account or an issue fetching data.");
-        // Optionally, try to create/initialize if truly new and identifiable (e.g. from signupForm)
-        // For now, just indicate an error.
-        setLocalUserProfile(null); // Ensure local profile is also null
+        setLocalUserProfile(null); 
       } else if (!authLoading && !authUser) {
-        // Not logged in at all
         setLocalUserProfile(null);
-        setProfileError(null); // Or "Please log in"
+        setProfileError(null); 
       }
     }
 
     processProfileData();
   }, [authUser, authUserProfile, authLoading, isLoadingContextProfile]);
 
-
-  const handleAddStudent = async () => {
-    if (!authUser || !localUserProfile || localUserProfile.role !== UserRole.PARENT) {
-      toast({ title: "Error", description: "Only parents can add students.", variant: "destructive" });
-      return;
-    }
-    const studentEmailToAdd = studentEmailInput.trim().toLowerCase();
-    if (studentEmailToAdd === "") {
-      toast({ title: "Input Required", description: "Please enter the student's email address.", variant: "destructive" });
-      return;
-    }
-    if (studentEmailToAdd === authUser.email?.toLowerCase()) {
-      toast({ title: "Invalid Action", description: "You cannot add yourself as a managed student.", variant: "destructive" });
-      return;
-    }
-
-    setIsAddingStudent(true);
-    try {
-      const result = await associateStudentWithParentAction({
-        parentUid: authUser.uid,
-        studentEmail: studentEmailToAdd,
-      });
-
-      if (result.success) {
-        toast({ title: "Student Associated", description: result.message });
-        setStudentEmailInput("");
-        // A page refresh would be needed to see the updated list.
-      } else {
-        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
-      }
-    } catch (error: any) {
-      console.error("handleAddStudent Error:", error);
-      toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
-    } finally {
-      setIsAddingStudent(false);
-    }
-  };
 
   const handleAddParent = async () => {
     if (!authUser || !localUserProfile || localUserProfile.role !== UserRole.STUDENT) {
@@ -177,7 +105,7 @@ export default function ProfilePage() {
   };
   
 
-  if (authLoading || isLoadingContextProfile) { // Combined loading state from context
+  if (authLoading || isLoadingContextProfile) { 
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -199,7 +127,7 @@ export default function ProfilePage() {
     )
   }
   
-  if (!authUser || !localUserProfile) { // If still no authUser or localUserProfile after loading
+  if (!authUser || !localUserProfile) { 
     return (
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
             <p className="text-muted-foreground">Please log in to view your profile.</p>
@@ -276,45 +204,6 @@ export default function ProfilePage() {
                 </div>
               
               <Separator className="my-6" />
-
-              {localUserProfile.role === UserRole.PARENT && (
-                <div className="space-y-6 pl-4 border-l-2 border-accent/40 ml-2 pt-4 pb-4 animate-accordion-down">
-                  <div className="flex items-center gap-2 text-accent mb-2">
-                      <Users className="h-5 w-5" />
-                      <h4 className="font-semibold">Manage My Students</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Link students you are responsible for by entering their email address. This will allow you to manage their ryd approvals if they also link you as a parent.</p>
-                  <div className="flex flex-col gap-2">
-                      <Label htmlFor="studentEmailInput" className="sr-only">Student's Email Address</Label>
-                      <Input
-                      id="studentEmailInput"
-                      type="email"
-                      placeholder="Enter Student's Email Address"
-                      value={studentEmailInput}
-                      onChange={(e) => setStudentEmailInput(e.target.value)}
-                      className="mt-1"
-                      />
-                      <Button onClick={handleAddStudent} variant="outline" className="mt-1 self-start" disabled={isAddingStudent}>
-                        {isAddingStudent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Add Student
-                      </Button>
-                  </div>
-                  {managedStudents.length > 0 ? (
-                      <div>
-                      <h5 className="font-medium text-sm text-muted-foreground mt-4 mb-2">My Managed Students:</h5>
-                      <ul className="list-disc list-inside space-y-2 bg-muted/30 p-3 rounded-md">
-                          {managedStudents.map((student) => (
-                          <li key={student.uid} className="text-sm">
-                            <span className="font-medium">{student.fullName}</span> ({student.email})
-                          </li> 
-                          ))}
-                      </ul>
-                      </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground mt-2">No students are currently managed by you in the system.</p>
-                  )}
-                </div>
-              )}
 
               {localUserProfile.role === UserRole.STUDENT && (
                 <div className="space-y-6 pl-4 border-l-2 border-blue-500/40 ml-2 pt-4 pb-4 animate-accordion-down">
