@@ -3,7 +3,7 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { UserProfileData, FamilyData } from '@/types';
+import type { UserProfileData, FamilyData, SubscriptionTier } from '@/types';
 
 const db = admin.firestore();
 
@@ -100,6 +100,47 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
 
     } catch (error: any) {
         console.error(`Error in manageFamilyMemberAction (action: ${action}):`, error);
+        return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+    }
+}
+
+interface CreateFamilyInput {
+    creatorId: string;
+    familyName: string;
+}
+
+export async function createFamilyAction(input: CreateFamilyInput): Promise<{ success: boolean; message: string; familyId?: string }> {
+    const { creatorId, familyName } = input;
+
+    if (!creatorId || !familyName) {
+        return { success: false, message: "Creator ID and family name are required." };
+    }
+
+    const batch = db.batch();
+    const newFamilyRef = db.collection('families').doc(); // Create a ref with a new auto-generated ID
+
+    const newFamilyData: Omit<FamilyData, 'id'> = {
+        name: familyName,
+        subscriptionTier: 'free' as SubscriptionTier.FREE,
+        memberIds: [creatorId],
+        adminIds: [creatorId],
+        createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+    };
+    
+    // 1. Set the new family document in the batch
+    batch.set(newFamilyRef, newFamilyData);
+
+    // 2. Update the creator's user profile to include the new family ID
+    const userRef = db.collection('users').doc(creatorId);
+    batch.update(userRef, {
+        familyIds: FieldValue.arrayUnion(newFamilyRef.id)
+    });
+
+    try {
+        await batch.commit();
+        return { success: true, message: `Family "${familyName}" created successfully.`, familyId: newFamilyRef.id };
+    } catch (error: any) {
+        console.error("Error in createFamilyAction:", error);
         return { success: false, message: `An unexpected server error occurred: ${error.message}` };
     }
 }
