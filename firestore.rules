@@ -1,59 +1,85 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can read any profile, but only write to their own.
+    // Helper function to check if a user is an admin of a group
+    function isGroupAdmin(groupId, userId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds.hasAny([userId]);
+    }
+    
+    // USERS collection
     match /users/{userId} {
+      // Anyone can read a user's public profile data
       allow read: if request.auth != null;
+      // A user can only write to their own document
       allow write: if request.auth.uid == userId;
     }
 
-    // Any authenticated user can read events.
-    // Only designated managers can create or update events.
-    match /events/{eventId} {
-      allow read: if request.auth != null;
-      // Allow create if user is in managerIds list in the new document.
-      allow create: if request.auth.uid in request.resource.data.managerIds;
-      // Allow update if user was in the managerIds list of the old document.
-      allow update: if request.auth.uid in resource.data.managerIds;
-    }
-
-    // Any authenticated user can read groups.
-    // Only designated admins can update group details.
+    // GROUPS collection
     match /groups/{groupId} {
+      // Allow read access to any authenticated user (for discovery)
       allow read: if request.auth != null;
-      allow create: if request.auth.uid == request.resource.data.createdBy;
-      allow update: if request.auth.uid in resource.data.adminIds;
+      // Allow write access only to group admins
+      allow write: if request.auth.uid in resource.data.adminIds;
     }
     
-    // Users can read a family document if they are a member.
-    // Admins of a family can update it.
+    // FAMILIES collection
     match /families/{familyId} {
+      // Allow a user to read a family document if they are a member
       allow read: if request.auth.uid in resource.data.memberIds;
-      allow create: if request.auth.uid == request.resource.data.adminIds[0];
-      allow update: if request.auth.uid in resource.data.adminIds;
+      // Allow write access only to family admins
+      allow write: if request.auth.uid in resource.data.adminIds;
     }
-
-    // Users can create their own rydz requests.
-    // Only the creator can update or cancel their own request.
+    
+    // EVENTS collection
+    match /events/{eventId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update: if request.auth.uid in resource.data.managerIds;
+        allow delete: if request.auth.uid in resource.data.managerIds;
+    }
+    
+    // RYD REQUESTS ('rydz') collection
     match /rydz/{rydId} {
         allow read: if request.auth != null;
         allow create: if request.auth.uid == request.resource.data.requestedBy;
-        allow update, delete: if request.auth.uid == resource.data.requestedBy;
+        allow update: if request.auth.uid == resource.data.requestedBy || request.auth.uid == resource.data.driverId;
+        allow delete: if request.auth.uid == resource.data.requestedBy;
     }
     
-    // Users can read/write to an activeRyd if they are the driver or a passenger.
-    match /activeRydz/{activeRydId} {
-        allow read: if request.auth != null && (request.auth.uid == resource.data.driverId || request.auth.uid in resource.data.passengerUids);
-        // Let server actions handle the more complex write/update logic
-        allow write: if request.auth != null;
+    // ACTIVE RYDZ ('activeRydz') collection
+    match /activeRydz/{rydId} {
+    	// Allow read if user is the driver, a passenger, or a parent of a passenger
+      allow read: if request.auth != null && (
+      	request.auth.uid == resource.data.driverId ||
+        request.auth.uid in resource.data.passengerUids ||
+        // Check if any of the user's managed students are in the passenger list
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managedStudentIds.hasAny(resource.data.passengerUids))
+      );
+      
+      // Allow anyone authenticated to create an ActiveRyd (server actions will validate)
+      allow create: if request.auth != null;
+      
+      // Allow updates only by the driver or a passenger (for cancelling)
+      // Server-side actions provide more granular control.
+      allow update: if request.auth != null && (
+      	request.auth.uid == resource.data.driverId ||
+        request.auth.uid in resource.data.passengerUids
+      );
+      
+      // Only the driver can delete (cancel) an ActiveRyd
+      allow delete: if request.auth != null && request.auth.uid == resource.data.driverId;
+    }
+    
+    // NOTIFICATIONS collection
+    match /notifications/{notificationId} {
+    	// User can only read and write (update/delete) their own notifications
+    	allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      // Disallow creation from client-side for security, should be done via server actions
+      allow create: if false;
     }
 
-    // Users can only read/write their own notifications.
-    match /notifications/{notificationId} {
-        allow read, write, create: if request.auth.uid == request.resource.data.userId;
-    }
   }
 }
