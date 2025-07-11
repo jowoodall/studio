@@ -102,7 +102,7 @@ export const userAccountMenu: NavItem[] = [
     icon: UserCircle,
   },
   {
-    title: 'My Students',
+    title: 'My Family',
     href: '/parent/my-students',
     icon: ClipboardList, 
     roles: ['parent'], 
