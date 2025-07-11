@@ -47,10 +47,10 @@ export default function MyFamilyPage() {
       });
       setFamilies(fetchedFamilies);
     } catch (e: any) {
-      console.error("Error fetching families:", e);
+      console.error("Error fetching families:", e); // This will log the full error to the server console
       let detailedError = "Failed to load your families. Please try again.";
       if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required to load your families. Please check your browser's console for a link to create it.";
+        detailedError = "A Firestore index is required to load your families. Please check your server console for a link to create it.";
       }
       setError(detailedError);
       toast({ title: "Error Loading Families", description: detailedError, variant: "destructive" });
