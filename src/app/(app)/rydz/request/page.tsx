@@ -1,4 +1,5 @@
 
+
 "use client"; 
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"; 
@@ -29,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter, useSearchParams } from "next/navigation"; 
 import Link from "next/link";
 import { submitPassengerDetailsForActiveRydAction } from "@/actions/activeRydActions";
+import { Checkbox } from "@/components/ui/checkbox";
 
 
 interface ManagedStudentSelectItem {
@@ -41,6 +43,7 @@ const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: bo
   eventName: z.string().optional(),
   destination: z.string().min(1, "Destination address is required."), 
   pickupLocation: z.string().min(3, "Pickup location must be at least 3 characters."),
+  isPickupFlexible: z.boolean().default(false),
   date: z.date({ required_error: "Date of ryd is required." }).optional().nullable(),
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
   earliestPickupTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
@@ -121,6 +124,7 @@ export default function RydRequestPage() {
       eventName: "",
       destination: "",
       pickupLocation: "",
+      isPickupFlexible: false,
       date: undefined, 
       time: "09:00", 
       earliestPickupTime: "08:00",
@@ -365,11 +369,13 @@ export default function RydRequestPage() {
              return;
         }
 
+        const finalPickupLocation = data.isPickupFlexible ? "Pickup to be coordinated" : data.pickupLocation.trim();
+
         try {
             const result = await submitPassengerDetailsForActiveRydAction({
                 activeRydId: activeRydIdForUpdate,
                 passengerUserId: passengerIdForUpdate,
-                pickupLocation: data.pickupLocation.trim(),
+                pickupLocation: finalPickupLocation,
                 earliestPickupTimeStr: data.earliestPickupTime,
                 eventDate: eventDateForAction,
                 notes: data.notes ? data.notes.trim() : "",
@@ -397,6 +403,8 @@ export default function RydRequestPage() {
           toast({ title: "Role Error", description: "Your user role does not permit ryd requests.", variant: "destructive" });
           setIsSubmitting(false); return;
         }
+        
+        const finalPickupLocation = data.isPickupFlexible ? "Pickup to be coordinated" : data.pickupLocation.trim();
 
         const [eventHours, eventMinutes] = data.time.split(':').map(Number);
         const eventStartDateTime = new Date(data.date);
@@ -417,7 +425,7 @@ export default function RydRequestPage() {
         const rydRequestPayload: Partial<RydData> = { 
           requestedBy: authUser.uid,
           destination: data.destination.trim(),
-          pickupLocation: data.pickupLocation.trim(),
+          pickupLocation: finalPickupLocation,
           rydTimestamp: eventStartFirestoreTimestamp,
           earliestPickupTimestamp: earliestPickupFirestoreTimestamp,
           notes: data.notes ? data.notes.trim() : "",
@@ -450,6 +458,7 @@ export default function RydRequestPage() {
   }
 
   const selectedEventId = form.watch("eventId");
+  const isPickupFlexible = form.watch("isPickupFlexible");
 
   useEffect(() => {
     if (isJoinOfferContext) return; 
@@ -635,8 +644,10 @@ export default function RydRequestPage() {
                           const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
                           if (selectedLoc) {
                             form.setValue("pickupLocation", selectedLoc.address);
+                            form.setValue("isPickupFlexible", false);
                           }
                         }}
+                        disabled={isPickupFlexible}
                       >
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Or use a saved location for pickup..." />
@@ -651,9 +662,28 @@ export default function RydRequestPage() {
                       </Select>
                     )}
                     <FormControl>
-                      <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} />
+                      <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupFlexible}/>
                     </FormControl>
                     <FormMessage />
+                     <FormField
+                        control={form.control}
+                        name="isPickupFlexible"
+                        render={({ field: flexibleField }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
+                            <FormControl>
+                                <Checkbox
+                                    checked={flexibleField.value}
+                                    onCheckedChange={flexibleField.onChange}
+                                />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                            <FormLabel className="text-sm font-normal cursor-pointer">
+                                My pickup location is flexible (I can meet the driver).
+                            </FormLabel>
+                            </div>
+                        </FormItem>
+                        )}
+                      />
                   </FormItem>
                 )}
               />
@@ -820,3 +850,4 @@ export default function RydRequestPage() {
     </>
   );
 }
+
