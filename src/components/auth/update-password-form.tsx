@@ -27,8 +27,7 @@ const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters long.")
   .regex(/[a-z]/, "Password must contain at least one lowercase letter.")
   .regex(/[A-Z]/, "Password must contain at least one uppercase letter.")
-  .regex(/\d/, "Password must contain at least one number.")
-  .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character.");
+  .regex(/\d/, "Password must contain at least one number.");
 
 const updatePasswordSchema = z.object({
   currentPassword: z.string().min(1, { message: "Current password is required." }),
@@ -47,7 +46,6 @@ function PasswordStrength({ password = "" }) {
     { requirement: "Contains a lowercase letter (a-z)", fulfilled: /[a-z]/.test(password) },
     { requirement: "Contains an uppercase letter (A-Z)", fulfilled: /[A-Z]/.test(password) },
     { requirement: "Contains a number (0-9)", fulfilled: /\d/.test(password) },
-    { requirement: "Contains a special character (!@#$...)", fulfilled: /[^a-zA-Z0-9]/.test(password) },
   ];
 
   return (
