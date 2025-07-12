@@ -20,12 +20,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
-import { Loader2 } from "lucide-react";
+import { Loader2, Check, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+const passwordSchema = z.string()
+  .min(8, "Password must be at least 8 characters long.")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter.")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter.")
+  .regex(/\d/, "Password must contain at least one number.")
+  .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character.");
 
 const updatePasswordSchema = z.object({
   currentPassword: z.string().min(1, { message: "Current password is required." }),
-  newPassword: z.string().min(8, { message: "New password must be at least 8 characters." }),
+  newPassword: passwordSchema,
   confirmPassword: z.string(),
 }).refine(data => data.newPassword === data.confirmPassword, {
   message: "New passwords do not match.",
@@ -33,6 +40,27 @@ const updatePasswordSchema = z.object({
 });
 
 type UpdatePasswordFormValues = z.infer<typeof updatePasswordSchema>;
+
+function PasswordStrength({ password = "" }) {
+  const checks = [
+    { requirement: "At least 8 characters long", fulfilled: password.length >= 8 },
+    { requirement: "Contains a lowercase letter (a-z)", fulfilled: /[a-z]/.test(password) },
+    { requirement: "Contains an uppercase letter (A-Z)", fulfilled: /[A-Z]/.test(password) },
+    { requirement: "Contains a number (0-9)", fulfilled: /\d/.test(password) },
+    { requirement: "Contains a special character (!@#$...)", fulfilled: /[^a-zA-Z0-9]/.test(password) },
+  ];
+
+  return (
+    <ul className="space-y-1 text-xs text-muted-foreground mt-2">
+      {checks.map((check, index) => (
+        <li key={index} className="flex items-center gap-2">
+          {check.fulfilled ? <Check className="h-4 w-4 text-green-500" /> : <X className="h-4 w-4 text-destructive" />}
+          <span>{check.requirement}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function UpdatePasswordForm() {
   const { toast } = useToast();
@@ -46,7 +74,10 @@ export function UpdatePasswordForm() {
       newPassword: "",
       confirmPassword: "",
     },
+    mode: "onBlur",
   });
+
+  const newPasswordValue = form.watch("newPassword");
 
   async function onSubmit(data: UpdatePasswordFormValues) {
     if (!user || !user.email) {
@@ -59,7 +90,6 @@ export function UpdatePasswordForm() {
       const credential = EmailAuthProvider.credential(user.email, data.currentPassword);
       await reauthenticateWithCredential(user, credential);
       
-      // If re-authentication is successful, update the password
       await updatePassword(user, data.newPassword);
       
       toast({
@@ -75,6 +105,8 @@ export function UpdatePasswordForm() {
         errorMessage = "The current password you entered is incorrect.";
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = "Too many failed attempts. Please try again later.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "The new password is too weak. Please ensure it meets all requirements.";
       }
       toast({
         title: "Update Failed",
@@ -120,6 +152,7 @@ export function UpdatePasswordForm() {
                     <Input type="password" {...field} />
                   </FormControl>
                   <FormMessage />
+                  <PasswordStrength password={newPasswordValue} />
                 </FormItem>
               )}
             />

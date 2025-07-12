@@ -30,15 +30,23 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { UserRole } from "@/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Check, X } from "lucide-react";
 
 import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 import { verifyRecaptcha } from '@/actions/recaptchaActions';
+import { cn } from "@/lib/utils";
+
+const passwordSchema = z.string()
+  .min(8, "Password must be at least 8 characters long.")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter.")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter.")
+  .regex(/\d/, "Password must contain at least one number.")
+  .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character.");
 
 const signupFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Please enter a valid email." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  password: passwordSchema,
   confirmPassword: z.string(),
   role: z.nativeEnum(UserRole, { errorMap: () => ({ message: "Please select a role."})}),
 }).refine(data => data.password === data.confirmPassword, {
@@ -47,6 +55,28 @@ const signupFormSchema = z.object({
 });
 
 type SignupFormValues = z.infer<typeof signupFormSchema>;
+
+function PasswordStrength({ password = "" }) {
+  const checks = [
+    { requirement: "At least 8 characters long", fulfilled: password.length >= 8 },
+    { requirement: "Contains a lowercase letter (a-z)", fulfilled: /[a-z]/.test(password) },
+    { requirement: "Contains an uppercase letter (A-Z)", fulfilled: /[A-Z]/.test(password) },
+    { requirement: "Contains a number (0-9)", fulfilled: /\d/.test(password) },
+    { requirement: "Contains a special character (!@#$...)", fulfilled: /[^a-zA-Z0-9]/.test(password) },
+  ];
+
+  return (
+    <ul className="space-y-1 text-xs text-muted-foreground mt-2">
+      {checks.map((check, index) => (
+        <li key={index} className="flex items-center gap-2">
+          {check.fulfilled ? <Check className="h-4 w-4 text-green-500" /> : <X className="h-4 w-4 text-destructive" />}
+          <span>{check.requirement}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 
 export function SignupForm() {
   const { toast } = useToast();
@@ -63,7 +93,10 @@ export function SignupForm() {
       confirmPassword: "",
       role: UserRole.STUDENT, 
     },
+    mode: "onBlur",
   });
+
+  const passwordValue = form.watch("password");
 
   async function onSubmit(data: SignupFormValues) {
     setIsLoading(true);
@@ -154,7 +187,7 @@ export function SignupForm() {
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email address is already in use.";
       } else if (error.code === "auth/weak-password") {
-        errorMessage = "The password is too weak. It must be at least 8 characters long.";
+        errorMessage = "The password is too weak. Please ensure it meets all requirements.";
       } else if (error.code === 'permission-denied' || (error.message && error.message.toLowerCase().includes('permission denied')) || (error.message && error.message.toLowerCase().includes('missing or insufficient permissions'))) {
         errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore security rules to ensure all fields being written are allowed and have correct types. Detailed error: " + error.message;
       } else if (error.code && error.code.startsWith('firestore/')) {
@@ -211,6 +244,7 @@ export function SignupForm() {
                 <Input type="password" placeholder="••••••••" {...field} />
               </FormControl>
               <FormMessage />
+              <PasswordStrength password={passwordValue} />
             </FormItem>
           )}
         />
