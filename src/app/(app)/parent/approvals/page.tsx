@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -518,11 +519,11 @@ export default function ParentApprovalsPage() {
 
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Add or Edit an Approved Driver</CardTitle>
+            <CardTitle>My Driver Lists</CardTitle>
             <CardDescription>Proactively approve a driver you trust by entering their email.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-2 items-start">
+            <div className="flex flex-col sm:flex-row gap-2 items-start mb-4">
                 <Input
                   type="email"
                   placeholder="driver@example.com"
@@ -535,30 +536,27 @@ export default function ParentApprovalsPage() {
                   {isAddingDriver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Add/Edit Driver
                 </Button>
             </div>
+             <Tabs defaultValue="approved" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="approved"><ShieldCheck className="mr-2 h-4 w-4"/>Approved ({approvedDrivers.length})</TabsTrigger>
+                    <TabsTrigger value="declined"><ShieldBan className="mr-2 h-4 w-4"/>Declined ({declinedDrivers.length})</TabsTrigger>
+                </TabsList>
+                <TabsContent value="approved">
+                    <Card>
+                        <CardHeader className="p-4"><CardDescription>These drivers are approved for the students listed below.</CardDescription></CardHeader>
+                        <CardContent className="p-4">{renderDriverList(approvedDrivers, 'approved')}</CardContent>
+                    </Card>
+                </TabsContent>
+                <TabsContent value="declined">
+                    <Card>
+                        <CardHeader className="p-4"><CardDescription>These drivers are blocked from driving your students.</CardDescription></CardHeader>
+                        <CardContent className="p-4">{renderDriverList(declinedDrivers, 'declined')}</CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
-
-      <Separator className="my-8" />
-      <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Driver Lists</h2>
-      <Tabs defaultValue="approved" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="approved"><ShieldCheck className="mr-2 h-4 w-4"/>Approved Drivers ({approvedDrivers.length})</TabsTrigger>
-          <TabsTrigger value="declined"><ShieldBan className="mr-2 h-4 w-4"/>Declined Drivers ({declinedDrivers.length})</TabsTrigger>
-        </TabsList>
-        <TabsContent value="approved">
-          <Card>
-            <CardHeader><CardTitle>Approved Driver List</CardTitle><CardDescription>These drivers are approved for the students listed below.</CardDescription></CardHeader>
-            <CardContent>{renderDriverList(approvedDrivers, 'approved')}</CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="declined">
-          <Card>
-            <CardHeader><CardTitle>Declined Driver List</CardTitle><CardDescription>These drivers are blocked from driving your students.</CardDescription></CardHeader>
-            <CardContent>{renderDriverList(declinedDrivers, 'declined')}</CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
 
       <Dialog open={isStudentSelectDialogOpen} onOpenChange={setIsStudentSelectDialogOpen}>
         <DialogContent>
