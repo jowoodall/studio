@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -15,8 +16,10 @@ import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
-import type { GroupData, UserProfileData, UserRole as GlobalUserRole } from "@/types";
+import type { GroupData, UserProfileData, UserRole as GlobalUserRole, NotificationType } from "@/types";
+import { NotificationType as NotificationTypeEnum } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { createNotification } from "@/actions/notificationActions";
 
 
 type MemberRoleInGroup = "admin" | "member";
@@ -231,7 +234,15 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         const groupDocRef = doc(db, "groups", groupId);
         await updateDoc(groupDocRef, { memberIds: arrayUnion(newMemberId) });
         
-        // No update to newMemberData.joinedGroupIds by the admin here. User must accept.
+        // --- Create Notification ---
+        await createNotification(
+            newMemberId,
+            `Group Invitation`,
+            `You have been invited to join the group "${group.name}".`,
+            NotificationTypeEnum.INFO,
+            '/groups'
+        );
+        // --- End Create Notification ---
         
         const hasAlreadyAccepted = (newMemberData.joinedGroupIds || []).includes(groupId);
 
@@ -423,3 +434,4 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     
 
     
+
