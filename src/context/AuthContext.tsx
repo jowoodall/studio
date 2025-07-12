@@ -2,12 +2,11 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { onAuthStateChanged, signInWithCustomToken as firebaseSignInWithCustomToken, type User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { type UserProfileData, UserRole } from '@/types';
-import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -15,7 +14,6 @@ interface AuthContextType {
   loading: boolean;
   isLoadingProfile: boolean;
   refreshUserProfile: () => Promise<void>;
-  signInWithCustomToken: (token: string) => Promise<void>; // Added for impersonation
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,7 +23,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-  const router = useRouter();
 
   const fetchUserProfile = useCallback(async (firebaseUser: FirebaseUser | null) => {
     if (firebaseUser) {
@@ -57,16 +54,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user, fetchUserProfile]);
 
-  const signInWithCustomToken = useCallback(async (token: string) => {
-    try {
-      await firebaseSignInWithCustomToken(auth, token);
-      // onAuthStateChanged will handle the rest of the state updates.
-      router.push('/dashboard');
-    } catch (error) {
-      console.error("Custom sign-in error:", error);
-      throw error; // Let the calling component handle UI feedback
-    }
-  }, [router]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -79,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [fetchUserProfile]);
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile, refreshUserProfile, signInWithCustomToken }}>
+    <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile, refreshUserProfile }}>
       {children}
     </AuthContext.Provider>
   );
