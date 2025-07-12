@@ -74,3 +74,51 @@ export async function purgeAllActiveRydzAction(): Promise<{ success: boolean; me
       return { success: false, message: `Failed to purge active rydz: ${error.message}` };
     }
 }
+
+
+interface ImpersonateUserInput {
+  impersonatorEmail: string;
+  targetEmail: string;
+}
+
+export async function impersonateUserAction(
+  input: ImpersonateUserInput
+): Promise<{ success: boolean; message: string; customToken?: string }> {
+  const { impersonatorEmail, targetEmail } = input;
+  console.log(`[Action: impersonateUserAction] Received request from ${impersonatorEmail} to impersonate ${targetEmail}.`);
+
+  const ALLOWED_IMPERSONATOR_EMAIL = 'joey.woodall@gmail.com';
+
+  // CRITICAL: Verify the user attempting the action is authorized.
+  if (impersonatorEmail !== ALLOWED_IMPERSONATOR_EMAIL) {
+    console.warn(`[Action: impersonateUserAction] Unauthorized impersonation attempt by ${impersonatorEmail}.`);
+    return { success: false, message: "Unauthorized: You do not have permission to impersonate users." };
+  }
+
+  try {
+    const targetUserRecord = await admin.auth().getUserByEmail(targetEmail);
+    if (!targetUserRecord) {
+      return { success: false, message: `Target user with email ${targetEmail} not found.` };
+    }
+
+    const targetUid = targetUserRecord.uid;
+    console.log(`[Action: impersonateUserAction] Found target user UID: ${targetUid}. Generating custom token.`);
+    
+    // Generate a custom token for the target user.
+    const customToken = await admin.auth().createCustomToken(targetUid);
+    
+    console.log(`[Action: impersonateUserAction] Custom token generated successfully for ${targetEmail}.`);
+    return {
+      success: true,
+      message: `Custom token created for ${targetUserRecord.displayName || targetEmail}.`,
+      customToken,
+    };
+
+  } catch (error: any) {
+    console.error(`[Action: impersonateUserAction] Error:`, error);
+    if (error.code === 'auth/user-not-found') {
+      return { success: false, message: `User with email ${targetEmail} not found.` };
+    }
+    return { success: false, message: `An unexpected error occurred: ${error.message}` };
+  }
+}

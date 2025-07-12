@@ -2,18 +2,20 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signInWithCustomToken as firebaseSignInWithCustomToken, type User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
-import { type UserProfileData, UserRole } from '@/types'; // Import UserProfileData and UserRole
+import { type UserProfileData, UserRole } from '@/types';
+import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
   user: FirebaseUser | null;
-  userProfile: UserProfileData | null; // Added userProfile
-  loading: boolean; // Overall auth loading (Firebase auth state)
-  isLoadingProfile: boolean; // Specific loading for Firestore profile
-  refreshUserProfile: () => Promise<void>; // Added refresh function
+  userProfile: UserProfileData | null;
+  loading: boolean;
+  isLoadingProfile: boolean;
+  refreshUserProfile: () => Promise<void>;
+  signInWithCustomToken: (token: string) => Promise<void>; // Added for impersonation
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,8 +23,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
-  const [loading, setLoading] = useState(true); // For Firebase auth
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true); // For Firestore profile fetch
+  const [loading, setLoading] = useState(true);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const router = useRouter();
 
   const fetchUserProfile = useCallback(async (firebaseUser: FirebaseUser | null) => {
     if (firebaseUser) {
@@ -33,7 +36,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (userDocSnap.exists()) {
           setUserProfile(userDocSnap.data() as UserProfileData);
         } else {
-          setUserProfile(null); 
+          setUserProfile(null);
           console.warn("User exists in Auth but no profile in Firestore for UID:", firebaseUser.uid);
         }
       } catch (error) {
@@ -47,14 +50,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingProfile(false);
     }
   }, []);
-  
+
   const refreshUserProfile = useCallback(async () => {
     if (user) {
-        console.log("Refreshing user profile...");
-        await fetchUserProfile(user);
+      await fetchUserProfile(user);
     }
   }, [user, fetchUserProfile]);
 
+  const signInWithCustomToken = useCallback(async (token: string) => {
+    try {
+      await firebaseSignInWithCustomToken(auth, token);
+      // onAuthStateChanged will handle the rest of the state updates.
+      router.push('/dashboard');
+    } catch (error) {
+      console.error("Custom sign-in error:", error);
+      throw error; // Let the calling component handle UI feedback
+    }
+  }, [router]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -63,12 +75,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await fetchUserProfile(firebaseUser);
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [fetchUserProfile]);
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile, refreshUserProfile }}>
+    <AuthContext.Provider value={{ user, userProfile, loading, isLoadingProfile, refreshUserProfile, signInWithCustomToken }}>
       {children}
     </AuthContext.Provider>
   );
