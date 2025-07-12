@@ -1,3 +1,4 @@
+
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
@@ -16,7 +17,7 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
       return { success: false, message: `Permission denied. You might not have the correct role for this action.` };
     }
     
-    return { success: false, message: `An unexpected server error occurred: ${errorMessage}` };
+    return { success: false, message: `An unexpected error occurred: ${errorMessage}` };
 };
 
 

@@ -104,7 +104,7 @@ export function SignupForm() {
         const userProfileData = {
           uid: userCredential.user.uid,
           fullName: data.fullName,
-          email: data.email,
+          email: data.email.trim().toLowerCase(), // Normalized email
           role: data.role,
           createdAt: serverTimestamp(),
           avatarUrl: userCredential.user.photoURL || "",
