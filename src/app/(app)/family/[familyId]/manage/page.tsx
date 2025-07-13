@@ -11,12 +11,10 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft, User, School } from "lucide-react";
 import Link from "next/link";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { useAuth } from '@/context/AuthContext';
 import { UserRole, type FamilyData, type UserProfileData } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { manageFamilyMemberAction } from "@/actions/familyActions";
+import { manageFamilyMemberAction, getFamilyManagementDataAction } from "@/actions/familyActions";
 import { cn } from "@/lib/utils";
 
 type MemberRoleInFamily = "admin" | "member";
@@ -58,63 +56,35 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
   const [error, setError] = useState<string | null>(null);
 
   const fetchFamilyAndMembersData = useCallback(async () => {
-    if (!familyId) {
-      setError("Family ID is missing.");
+    if (!familyId || !authUser) {
+      setError("Family ID or user authentication is missing.");
       setIsLoadingPage(false);
       return;
     }
     setIsLoadingPage(true);
     setError(null);
     try {
-      const familyDocRef = doc(db, "families", familyId);
-      const familyDocSnap = await getDoc(familyDocRef);
-
-      if (!familyDocSnap.exists()) {
-        setError(`Family with ID "${familyId}" not found.`);
-        setFamily(null);
-        setMembers([]);
-        setIsLoadingPage(false);
-        return;
-      }
-
-      const familyData = { id: familyDocSnap.id, ...familyDocSnap.data() } as FamilyData;
-      setFamily(familyData);
-
-      if (familyData.memberIds && familyData.memberIds.length > 0) {
-        const memberPromises = familyData.memberIds.map(async (memberUid) => {
-          const userDocRef = doc(db, "users", memberUid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            const userData = userDocSnap.data() as UserProfileData;
-            return {
-              id: userDocSnap.id,
-              name: userData.fullName,
-              avatarUrl: userData.avatarUrl,
-              dataAiHint: userData.dataAiHint,
-              roleInFamily: familyData.adminIds.includes(memberUid) ? "admin" : "member",
-              email: userData.email,
-              userRole: userData.role,
-            };
-          }
-          return null;
-        });
-        const fetchedMembers = (await Promise.all(memberPromises)).filter(Boolean) as DisplayFamilyMember[];
-        setMembers(fetchedMembers);
+      const result = await getFamilyManagementDataAction(familyId, authUser.uid);
+      if (result.success && result.data) {
+        setFamily(result.data.family);
+        setMembers(result.data.members);
       } else {
-        setMembers([]);
+        throw new Error(result.message || "Failed to load family data.");
       }
     } catch (e: any) {
       console.error("Error fetching family/members data:", e);
-      setError("Failed to load family or member data. " + (e.message || ""));
-      toast({ title: "Error", description: "Could not load family/member information.", variant: "destructive" });
+      setError(e.message);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setIsLoadingPage(false);
     }
-  }, [familyId, toast]);
+  }, [familyId, authUser, toast]);
 
   useEffect(() => {
-    fetchFamilyAndMembersData();
-  }, [fetchFamilyAndMembersData]);
+    if (authUser) {
+      fetchFamilyAndMembersData();
+    }
+  }, [authUser, fetchFamilyAndMembersData]);
 
   const handleAction = async (
     action: 'add' | 'remove' | 'promote' | 'demote',

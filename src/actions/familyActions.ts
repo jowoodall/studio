@@ -8,6 +8,23 @@ import { UserRole } from '@/types';
 
 const db = admin.firestore();
 
+// --- Serialization Helper ---
+// This function ensures that any object with Firestore Timestamps is converted
+// to an object with ISO date strings before being sent to the client.
+const toSerializableObject = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Timestamp) return obj.toDate().toISOString();
+    if (Array.isArray(obj)) return obj.map(toSerializableObject);
+    if (typeof obj === 'object') {
+        const newObj: { [key: string]: any } = {};
+        for (const key in obj) {
+            newObj[key] = toSerializableObject(obj[key]);
+        }
+        return newObj;
+    }
+    return obj;
+};
+
 const handleActionError = (error: any, actionName: string): { success: boolean; message: string } => {
     console.error(`[Action: ${actionName}] Error:`, error);
     const errorMessage = error.message || "An unknown server error occurred.";
@@ -45,13 +62,7 @@ export async function getFamilyDataAction(userId: string): Promise<{ success: bo
         } as FamilyData));
         
         // This is necessary because Timestamps are not directly serializable to the client.
-        const serializableFamilies = families.map(family => ({
-            ...family,
-            createdAt: family.createdAt.toDate().toISOString(),
-            updatedAt: family.updatedAt ? family.updatedAt.toDate().toISOString() : undefined,
-            subscriptionStartDate: family.subscriptionStartDate ? family.subscriptionStartDate.toDate().toISOString() : undefined,
-            subscriptionEndDate: family.subscriptionEndDate ? family.subscriptionEndDate.toDate().toISOString() : undefined,
-        }));
+        const serializableFamilies = families.map(family => toSerializableObject(family));
 
         return { success: true, families: serializableFamilies as any };
 
@@ -196,5 +207,77 @@ export async function createFamilyAction(input: CreateFamilyInput): Promise<{ su
     } catch (error: any) {
         console.error("Error in createFamilyAction:", error);
         return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+    }
+}
+
+interface DisplayFamilyMember {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  dataAiHint?: string;
+  roleInFamily: "admin" | "member";
+  email?: string;
+  userRole: UserRole;
+}
+
+interface FamilyManagementData {
+    family: FamilyData;
+    members: DisplayFamilyMember[];
+}
+
+export async function getFamilyManagementDataAction(
+    familyId: string, 
+    actingUserId: string
+): Promise<{ success: boolean; data?: FamilyManagementData; message?: string }> {
+    if (!familyId || !actingUserId) {
+        return { success: false, message: "Family ID and User ID are required." };
+    }
+
+    try {
+        const familyDocRef = db.collection('families').doc(familyId);
+        const familyDocSnap = await familyDocRef.get();
+
+        if (!familyDocSnap.exists) {
+            return { success: false, message: `Family with ID "${familyId}" not found.` };
+        }
+
+        const familyData = { id: familyDocSnap.id, ...familyDocSnap.data() } as FamilyData;
+
+        // Authorization: Ensure the user requesting is part of the family
+        if (!familyData.memberIds.includes(actingUserId)) {
+            return { success: false, message: "You are not authorized to view this family." };
+        }
+        
+        let members: DisplayFamilyMember[] = [];
+        if (familyData.memberIds && familyData.memberIds.length > 0) {
+            const memberPromises = familyData.memberIds.map(async (memberUid) => {
+              const userDocRef = db.collection('users').doc(memberUid);
+              const userDocSnap = await userDocRef.get();
+              if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as UserProfileData;
+                return {
+                  id: userDocSnap.id,
+                  name: userData.fullName,
+                  avatarUrl: userData.avatarUrl,
+                  dataAiHint: userData.dataAiHint,
+                  roleInFamily: familyData.adminIds.includes(memberUid) ? "admin" : "member",
+                  email: userData.email,
+                  userRole: userData.role,
+                };
+              }
+              return null;
+            });
+            members = (await Promise.all(memberPromises)).filter(Boolean) as DisplayFamilyMember[];
+        }
+
+        const data: FamilyManagementData = {
+            family: toSerializableObject(familyData) as FamilyData,
+            members: members,
+        };
+        
+        return { success: true, data };
+
+    } catch (error: any) {
+        return handleActionError(error, 'getFamilyManagementDataAction');
     }
 }
