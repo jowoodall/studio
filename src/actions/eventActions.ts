@@ -79,7 +79,7 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
         // 1. Fetch Event Details and Managers
         const eventDocRef = db.collection('events').doc(eventId);
         const eventDocSnap = await eventDocRef.get();
-        if (!eventDocSnap.exists()) {
+        if (!eventDocSnap.exists) { // remove exists()
             return { success: false, message: `Event with ID "${eventId}" not found.` };
         }
         const eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
