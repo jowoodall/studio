@@ -2,10 +2,64 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { UserProfileData, FamilyData, SubscriptionTier } from '@/types';
+import { UserRole } from '@/types';
 
 const db = admin.firestore();
+
+const handleActionError = (error: any, actionName: string): { success: boolean; message: string } => {
+    console.error(`[Action: ${actionName}] Error:`, error);
+    const errorMessage = error.message || "An unknown server error occurred.";
+
+    if (error.code === 5 || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
+        return { success: false, message: `A Firestore index is required for this query. Please check your server terminal logs for an error message from Firestore that contains a link to create the necessary index automatically.` };
+    }
+    
+    if (errorMessage.includes('Could not refresh access token') || error.code === 'DEADLINE_EXCEEDED') {
+       return {
+        success: false,
+        message: `A server authentication or timeout error occurred during '${actionName}'. This is likely a temporary issue with the prototype environment's connection to Google services. Please try again in a moment.`,
+       };
+    }
+    return { success: false, message: `An unexpected error occurred in ${actionName}: ${errorMessage}` };
+};
+
+
+export async function getFamilyDataAction(userId: string): Promise<{ success: boolean; families?: FamilyData[]; message?: string; }> {
+    if (!userId) {
+        return { success: false, message: "User ID is required." };
+    }
+
+    try {
+        const familiesQuery = db.collection('families').where('memberIds', 'array-contains', userId);
+        const querySnapshot = await familiesQuery.get();
+
+        if (querySnapshot.empty) {
+            return { success: true, families: [] };
+        }
+
+        const families = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        } as FamilyData));
+        
+        // This is necessary because Timestamps are not directly serializable to the client.
+        const serializableFamilies = families.map(family => ({
+            ...family,
+            createdAt: family.createdAt.toDate().toISOString(),
+            updatedAt: family.updatedAt ? family.updatedAt.toDate().toISOString() : undefined,
+            subscriptionStartDate: family.subscriptionStartDate ? family.subscriptionStartDate.toDate().toISOString() : undefined,
+            subscriptionEndDate: family.subscriptionEndDate ? family.subscriptionEndDate.toDate().toISOString() : undefined,
+        }));
+
+        return { success: true, families: serializableFamilies as any };
+
+    } catch (error: any) {
+        return handleActionError(error, 'getFamilyDataAction');
+    }
+}
+
 
 interface ManageFamilyMemberInput {
     actingUserId: string;

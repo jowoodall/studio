@@ -9,13 +9,12 @@ import { Loader2, AlertTriangle, Users, PlusCircle, UserCog } from "lucide-react
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getFamilyDataAction } from '@/actions/familyActions'; // Updated import
 import type { FamilyData } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
 export default function MyFamilyPage() {
-  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user: authUser, loading: authLoading, isLoadingProfile } = useAuth();
   const { toast } = useToast();
 
   const [families, setFamilies] = useState<FamilyData[]>([]);
@@ -34,29 +33,19 @@ export default function MyFamilyPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const familiesQuery = query(
-        collection(db, "families"),
-        where("memberIds", "array-contains", authUser.uid)
-      );
+      const result = await getFamilyDataAction(authUser.uid);
       
-      const querySnapshot = await getDocs(familiesQuery);
-      const fetchedFamilies: FamilyData[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedFamilies.push({ id: doc.id, ...doc.data() } as FamilyData);
-      });
-      
-      setFamilies(fetchedFamilies);
+      if (result.success && result.families) {
+        setFamilies(result.families);
+      } else {
+        setError(result.message || "An unknown error occurred while fetching families.");
+        toast({ title: "Error Loading Families", description: result.message, variant: "destructive", duration: 9000 });
+      }
 
     } catch (e: any) {
       console.error("Error fetching families:", e);
-      let detailedError = "Failed to load your families. Please try again.";
-      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes("permission denied"))) {
-        detailedError = "You do not have permission to view these families. Please check Firestore security rules.";
-      } else if (e.code === 'failed-precondition' || (e.message && e.message.toLowerCase().includes("index"))) {
-          detailedError = "A Firestore index is required to query families. Please check the Firestore console for an error message with a link to create the necessary composite index.";
-      }
-      setError(detailedError);
-      toast({ title: "Error Loading Families", description: detailedError, variant: "destructive", duration: 9000 });
+      setError("An unexpected client-side error occurred.");
+      toast({ title: "Client Error", description: "Could not fetch your families.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
