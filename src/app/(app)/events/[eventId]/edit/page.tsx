@@ -295,13 +295,16 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
   }
 
   const handleGroupSelection = (groupId: string) => {
-    const field = form.getFieldState("selectedGroups");
-    const currentSelection = field.value || [];
+    // Use form.getValues() instead of form.getFieldState()
+    const currentSelection = form.getValues("selectedGroups") || [];
+    
     const newSelection = currentSelection.includes(groupId)
-        ? currentSelection.filter((id: string) => id !== groupId)
-        : [...currentSelection, groupId];
+      ? currentSelection.filter((id: string) => id !== groupId)
+      : [...currentSelection, groupId];
+      
     form.setValue("selectedGroups", newSelection, { shouldValidate: true });
   };
+  
   const filteredGroupsForPopover = availableGroups.filter(group => group.name.toLowerCase().includes(groupSearchTerm.toLowerCase()));
   const currentSelectedGroups = form.watch("selectedGroups") || [];
 
