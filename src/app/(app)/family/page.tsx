@@ -23,48 +23,44 @@ export default function MyFamilyPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchFamilies = useCallback(async () => {
-    if (!userProfile) {
-      if (!authLoading && !isLoadingProfile) setIsLoading(false);
-      return;
-    }
-    
-    const familyIds = userProfile.familyIds || [];
-    if (familyIds.length === 0) {
-      setFamilies([]);
-      setIsLoading(false);
+    if (!authUser) {
+      if (!authLoading && !isLoadingProfile) {
+          setFamilies([]);
+          setIsLoading(false);
+      }
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch each family document individually by its ID
-      // This is more robust against security rules that check for user ID in the document
-      const familyPromises = familyIds.map(async (id) => {
-        const familyDocRef = doc(db, "families", id);
-        const docSnap = await getDoc(familyDocRef);
-        if (docSnap.exists()) {
-          return { id: docSnap.id, ...docSnap.data() } as FamilyData;
-        }
-        console.warn(`Family with ID ${id} listed in user profile but not found in collection.`);
-        return null;
+      const familiesQuery = query(
+        collection(db, "families"),
+        where("memberIds", "array-contains", authUser.uid)
+      );
+      
+      const querySnapshot = await getDocs(familiesQuery);
+      const fetchedFamilies: FamilyData[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedFamilies.push({ id: doc.id, ...doc.data() } as FamilyData);
       });
-
-      const fetchedFamilies = (await Promise.all(familyPromises)).filter(Boolean) as FamilyData[];
+      
       setFamilies(fetchedFamilies);
 
     } catch (e: any) {
       console.error("Error fetching families:", e);
       let detailedError = "Failed to load your families. Please try again.";
-      if (e.code === 'permission-denied') {
+      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes("permission denied"))) {
         detailedError = "You do not have permission to view these families. Please check Firestore security rules.";
+      } else if (e.code === 'failed-precondition' || (e.message && e.message.toLowerCase().includes("index"))) {
+          detailedError = "A Firestore index is required to query families. Please check the Firestore console for an error message with a link to create the necessary composite index.";
       }
       setError(detailedError);
-      toast({ title: "Error Loading Families", description: detailedError, variant: "destructive" });
+      toast({ title: "Error Loading Families", description: detailedError, variant: "destructive", duration: 9000 });
     } finally {
       setIsLoading(false);
     }
-  }, [userProfile, toast, authLoading, isLoadingProfile]);
+  }, [authUser, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
     if (!authLoading && !isLoadingProfile) {
@@ -95,7 +91,7 @@ export default function MyFamilyPage() {
             <CardTitle className="text-destructive-foreground">Error Loading Families</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription className="text-destructive-foreground/90">{error}</CardDescription>
+            <CardDescription className="text-destructive-foreground/90 whitespace-pre-line">{error}</CardDescription>
             <Button onClick={fetchFamilies} variant="secondary" className="mt-4">Try Again</Button>
           </CardContent>
         </Card>
