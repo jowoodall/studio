@@ -20,27 +20,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
-import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem } from "@/types";
+import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
+import { getEventRydzPageDataAction } from "@/actions/eventActions";
 import { useRouter } from "next/navigation";
 
 interface ResolvedPageParams { eventId: string; }
-
-interface DisplayActiveRyd extends ActiveRyd {
-  driverProfile?: UserProfileData;
-  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[];
-  eventName?: string;
-}
-
-interface DisplayRydRequestData extends RydData {
-  id: string;
-  requesterProfile?: UserProfileData;
-  passengerUserProfiles?: UserProfileData[];
-  eventName?: string;
-}
 
 export default function EventRydzPage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const resolvedParams = use(paramsPromise);
@@ -50,18 +38,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const router = useRouter();
 
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
-  const [isLoadingEvent, setIsLoadingEvent] = useState(true);
-  const [eventError, setEventError] = useState<string | null>(null);
-  
   const [eventManagers, setEventManagers] = useState<UserProfileData[]>([]);
-
   const [activeRydzList, setActiveRydzList] = useState<DisplayActiveRyd[]>([]);
-  const [isLoadingActiveRydz, setIsLoadingActiveRydz] = useState<boolean>(true);
-  const [activeRydzError, setActiveRydzError] = useState<string | null>(null);
-
   const [rydRequestsList, setRydRequestsList] = useState<DisplayRydRequestData[]>([]);
-  const [isLoadingRydRequests, setIsLoadingRydRequests] = useState<boolean>(true);
-  const [rydRequestsError, setRydRequestsError] = useState<string | null>(null);
+  
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
   const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
@@ -74,42 +56,30 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [isAddingPassenger, setIsAddingPassenger] = useState<Record<string, boolean>>({});
 
 
-  const fetchEventDetails = useCallback(async () => {
+  const fetchPageData = useCallback(async () => {
     if (!eventId) {
-      setEventError("Event ID is missing.");
-      setIsLoadingEvent(false);
+      setPageError("Event ID is missing.");
+      setIsLoadingPage(false);
       return;
     }
-    setIsLoadingEvent(true);
-    setEventError(null);
+    setIsLoadingPage(true);
+    setPageError(null);
     try {
-      const eventDocRef = doc(db, "events", eventId);
-      const eventDocSnap = await getDoc(eventDocRef);
-      if (eventDocSnap.exists()) {
-        const data = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
-        setEventDetails(data);
-        
-        if (data.managerIds && data.managerIds.length > 0) {
-            const managerPromises = data.managerIds.map(id => getDoc(doc(db, "users", id)));
-            const managerDocs = await Promise.all(managerPromises);
-            const managerProfiles = managerDocs
-              .filter(doc => doc.exists())
-              .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfileData));
-            setEventManagers(managerProfiles);
-        } else {
-            setEventManagers([]);
-        }
-
+      const result = await getEventRydzPageDataAction(eventId);
+      if (result.success && result.data) {
+        setEventDetails(result.data.eventDetails);
+        setEventManagers(result.data.eventManagers);
+        setActiveRydzList(result.data.activeRydzList);
+        setRydRequestsList(result.data.rydRequestsList);
       } else {
-        setEventError('Event with ID "' + eventId + '" not found.');
-        setEventDetails(null);
+        throw new Error(result.message || "Failed to load event page data.");
       }
-    } catch (e) {
-      console.error("Error fetching event details:", e);
-      setEventError("Failed to load event details.");
+    } catch (e: any) {
+      console.error("Error fetching event page data:", e);
+      setPageError("Failed to load event data. " + (e.message || ""));
       toast({ title: "Error", description: "Could not load event information.", variant: "destructive" });
     } finally {
-      setIsLoadingEvent(false);
+      setIsLoadingPage(false);
     }
   }, [eventId, toast]);
 
@@ -158,182 +128,11 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     }
   }, [authUserProfile, toast]);
 
-  const fetchActiveRydzForEvent = useCallback(async (currentEventId: string) => {
-    if (!currentEventId) {
-      setActiveRydzError("Event ID is missing for ActiveRydz fetch.");
-      setIsLoadingActiveRydz(false);
-      setActiveRydzList([]);
-      return;
-    }
-    setIsLoadingActiveRydz(true);
-    setActiveRydzError(null);
-    try {
-      const activeRydzCollectionRef = collection(db, "activeRydz");
-      const q = query(
-        activeRydzCollectionRef,
-        where("associatedEventId", "==", currentEventId),
-        orderBy("createdAt", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const fetchedActiveRydzPromises: Promise<DisplayActiveRyd | null>[] = [];
-
-      querySnapshot.forEach((docSnap) => {
-        const activeRyd = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
-
-        const promise = async (): Promise<DisplayActiveRyd | null> => {
-          let driverProfile: UserProfileData | undefined = undefined;
-          if (activeRyd.driverId) {
-            try {
-              const driverDocRef = doc(db, "users", activeRyd.driverId);
-              const driverDocSnap = await getDoc(driverDocRef);
-              if (driverDocSnap.exists()) {
-                driverProfile = driverDocSnap.data() as UserProfileData;
-              }
-            } catch (e) {
-              console.warn('Failed to fetch driver profile for ' + activeRyd.driverId, e);
-            }
-          }
-
-          let passengerProfiles: (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[] = [];
-          if (activeRyd.passengerManifest && activeRyd.passengerManifest.length > 0) {
-            const profilesPromises = activeRyd.passengerManifest.map(async (item) => {
-              try {
-                const userDocRef = doc(db, "users", item.userId);
-                const userDocSnap = await getDoc(userDocRef);
-                if (userDocSnap.exists()) {
-                  return { ...(userDocSnap.data() as UserProfileData), manifestStatus: item.status };
-                }
-                return null;
-              } catch (e) {
-                console.warn('Failed to fetch passenger profile for ' + item.userId, e);
-                return null;
-              }
-            });
-            passengerProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as (UserProfileData & { manifestStatus?: PassengerManifestItem['status'] })[];
-          }
-
-          return { ...activeRyd, id: docSnap.id, driverProfile, passengerProfiles, eventName: eventDetails?.name };
-        };
-        fetchedActiveRydzPromises.push(promise());
-      });
-
-      const resolvedActiveRydz = (await Promise.all(fetchedActiveRydzPromises)).filter(Boolean) as DisplayActiveRyd[];
-      setActiveRydzList(resolvedActiveRydz);
-
-    } catch (e: any) {
-      console.error("Error fetching active rydz:", e);
-      let detailedError = "Failed to load offered rydz for this event.";
-      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-        detailedError = "A Firestore index is required to load offered rydz. Please check the browser's console for a link to create it.";
-      } else if (e.code === 'permission-denied') {
-        detailedError = "Permission denied when fetching offered rydz. Check Firestore security rules.";
-      }
-      setActiveRydzError(detailedError);
-      setActiveRydzList([]);
-      toast({ title: "Error Loading Rydz", description: detailedError, variant: "destructive", duration: 10000 });
-    } finally {
-      setIsLoadingActiveRydz(false);
-    }
-  }, [toast, eventDetails?.name]);
-
-  const fetchRydRequestsForEvent = useCallback(async (currentEventId: string) => {
-    if (!currentEventId) {
-        setRydRequestsError("Event ID is missing for RydRequests fetch.");
-        setIsLoadingRydRequests(false);
-        setRydRequestsList([]);
-        return;
-    }
-    setIsLoadingRydRequests(true);
-    setRydRequestsError(null);
-    try {
-        const rydRequestsCollectionRef = collection(db, "rydz");
-        const q = query(
-            rydRequestsCollectionRef,
-            where("eventId", "==", currentEventId),
-            where("status", "in", ["requested", "searching_driver"]),
-            orderBy("createdAt", "desc")
-        );
-        const querySnapshot = await getDocs(q);
-        const fetchedRydRequestsPromises: Promise<DisplayRydRequestData | null>[] = [];
-
-        querySnapshot.forEach((docSnap) => {
-            const rydRequest = { id: docSnap.id, ...docSnap.data() } as RydData & {id: string};
-
-            const promise = async (): Promise<DisplayRydRequestData | null> => {
-                let requesterProfile: UserProfileData | undefined = undefined;
-                if (rydRequest.requestedBy) {
-                    try {
-                        const userDocRef = doc(db, "users", rydRequest.requestedBy);
-                        const userDocSnap = await getDoc(userDocRef);
-                        if (userDocSnap.exists()) {
-                            requesterProfile = userDocSnap.data() as UserProfileData;
-                        }
-                    } catch (e) {
-                        console.warn('Failed to fetch requester profile for ' + rydRequest.requestedBy, e);
-                    }
-                }
-
-                let passengerUserProfiles: UserProfileData[] = [];
-                if (rydRequest.passengerIds && rydRequest.passengerIds.length > 0) {
-                    const profilesPromises = rydRequest.passengerIds.map(async (userId) => {
-                        try {
-                            const userDocRef = doc(db, "users", userId);
-                            const userDocSnap = await getDoc(userDocRef);
-                            return userDocSnap.exists() ? userDocSnap.data() as UserProfileData : null;
-                        } catch (e) {
-                            console.warn('Failed to fetch passenger profile for ' + userId, e);
-                            return null;
-                        }
-                    });
-                    passengerUserProfiles = (await Promise.all(profilesPromises)).filter(Boolean) as UserProfileData[];
-                }
-
-                return { ...rydRequest, requesterProfile, passengerUserProfiles, eventName: eventDetails?.name };
-            };
-            fetchedRydRequestsPromises.push(promise());
-        });
-
-        const resolvedRydRequests = (await Promise.all(fetchedRydRequestsPromises)).filter(Boolean) as DisplayRydRequestData[];
-        setRydRequestsList(resolvedRydRequests);
-
-    } catch (e: any) {
-        console.error("[EventRydzPage] Error fetching ryd requests:", e);
-        console.error("[EventRydzPage] Full error object for ryd requests:", JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
-        let detailedError = "Failed to load ryd requests for this event.";
-        if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
-            detailedError = "A Firestore index is required to load ryd requests. Please check the browser's developer console for a link to create it in your Firebase project.";
-        } else if (e.code === 'permission-denied') {
-            detailedError = "Permission denied when fetching ryd requests. Please check your Firestore security rules to ensure reads are allowed for the 'rydz' collection based on your query criteria.";
-        } else {
-            detailedError = 'An unexpected error occurred: ' + (e.message || "Unknown error") + '. Code: ' + (e.code || "N/A");
-        }
-        setRydRequestsError(detailedError);
-        setRydRequestsList([]);
-        toast({ title: "Error Loading Ryd Requests", description: detailedError, variant: "destructive", duration: 10000 });
-    } finally {
-      setIsLoadingRydRequests(false);
-    }
-  }, [toast, eventDetails?.name]);
-
-
   useEffect(() => {
-    fetchEventDetails();
+    fetchPageData();
     fetchAllGroups();
     fetchManagedStudents();
-  }, [fetchEventDetails, fetchAllGroups, fetchManagedStudents]);
-
-  useEffect(() => {
-    if (eventId && eventDetails) {
-      fetchActiveRydzForEvent(eventId);
-      fetchRydRequestsForEvent(eventId);
-    } else if (eventId && !eventDetails && !isLoadingEvent && eventError) {
-      setIsLoadingActiveRydz(false);
-      setActiveRydzList([]);
-      setIsLoadingRydRequests(false);
-      setRydRequestsList([]);
-    }
-  }, [eventId, eventDetails, isLoadingEvent, eventError, fetchActiveRydzForEvent, fetchRydRequestsForEvent]);
-
+  }, [fetchPageData, fetchAllGroups, fetchManagedStudents]);
 
   const handleRequestSeatForUser = useCallback(async (activeRydId: string, userId: string, userName: string) => {
     if (!authUser) {
@@ -358,7 +157,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
       if (success) {
         toast({ title: "Request Sent!", description: `Request for ${userName} to join has been sent.` });
-        if (eventId) fetchActiveRydzForEvent(eventId);
+        if (eventId) fetchPageData();
         setAddPassengerPopoverOpen(prev => ({ ...prev, [activeRydId]: false }));
 
         if (serverRydId && eventId) {
@@ -374,7 +173,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     } finally {
       setIsAddingPassenger(prev => ({ ...prev, [userId]: false }));
     }
-  }, [authUser, eventId, fetchActiveRydzForEvent, toast, router]);
+  }, [authUser, eventId, fetchPageData, toast, router]);
 
   const handleFulfillWithExistingRyd = async (rydRequestId: string, existingActiveRydId: string) => {
     if (!authUser) {
@@ -390,10 +189,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       });
       if (result.success && result.activeRydId) {
         toast({ title: "Request Fulfilled!", description: result.message });
-        if (eventId) {
-            fetchRydRequestsForEvent(eventId); 
-            fetchActiveRydzForEvent(eventId);  
-        }
+        fetchPageData();
         router.push('/rydz/tracking/' + result.activeRydId);
       } else {
         toast({ title: "Fulfillment Failed", description: result.message, variant: "destructive" });
@@ -406,23 +202,23 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   };
 
 
-  const isLoadingPage = authLoading || isLoadingEvent || isLoadingAllGroups || isLoadingManagedStudents;
+  const isLoading = authLoading || isLoadingPage || isLoadingAllGroups || isLoadingManagedStudents;
 
-  if (isLoadingPage) {
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground">Loading event and group data...</p>
+        <p className="text-muted-foreground">Loading event data...</p>
       </div>
     );
   }
 
-  if (eventError || !eventDetails) {
+  if (pageError || !eventDetails) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">{eventError ? "Error Loading Event" : "Event Not Found"}</h2>
-        <p className="text-muted-foreground px-4">{eventError || 'The event with ID "' + (resolvedParams?.eventId || 'unknown') + '" could not be found.'}</p>
+        <h2 className="text-2xl font-semibold mb-2">{pageError ? "Error Loading Event" : "Event Not Found"}</h2>
+        <p className="text-muted-foreground px-4">{pageError || 'The event with ID "' + (resolvedParams?.eventId || 'unknown') + '" could not be found.'}</p>
         <Button asChild className="mt-4">
           <Link href="/events">Back to Events</Link>
         </Button>
@@ -526,29 +322,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       </Card>
 
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz for this Event</h3>
-      {isLoadingActiveRydz && (
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="ml-3 text-muted-foreground">Loading offered rydz...</p>
-        </div>
-      )}
-
-      {activeRydzError && (
-        <Card className="text-center py-10 shadow-md bg-destructive/10 border-destructive">
-          <CardHeader>
-            <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
-            <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Offered Rydz</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
-              {activeRydzError}
-            </CardDescription>
-            <Button onClick={() => eventId && fetchActiveRydzForEvent(eventId)} variant="secondary" type="button">Try Again</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {!isLoadingActiveRydz && !activeRydzError && activeRydzList.length > 0 && (
+      {activeRydzList.length > 0 && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {activeRydzList.map((activeRyd) => {
             const driverName = activeRyd.driverProfile?.fullName || "Unknown Driver";
@@ -762,7 +536,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         </div>
       )}
 
-      {!isLoadingActiveRydz && !activeRydzError && activeRydzList.length === 0 && (
+      {activeRydzList.length === 0 && (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -782,29 +556,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       )}
 
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Requested Rydz for this Event</h3>
-      {isLoadingRydRequests && (
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="ml-3 text-muted-foreground">Loading ryd requests...</p>
-        </div>
-      )}
-
-      {rydRequestsError && (
-        <Card className="text-center py-10 shadow-md bg-destructive/10 border-destructive">
-          <CardHeader>
-            <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
-            <CardTitle className="font-headline text-2xl text-destructive-foreground">Error Loading Ryd Requests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6 text-destructive-foreground/90 whitespace-pre-line">
-              {rydRequestsError}
-            </CardDescription>
-            <Button onClick={() => eventId && fetchRydRequestsForEvent(eventId)} variant="secondary" type="button">Try Again</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {!isLoadingRydRequests && !rydRequestsError && rydRequestsList.length > 0 && (
+      {rydRequestsList.length > 0 && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {rydRequestsList.map((request) => {
             const primaryPassenger = request.passengerUserProfiles && request.passengerUserProfiles.length > 0 
@@ -953,7 +705,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           )})}
         </div>
       )}
-      {!isLoadingRydRequests && !rydRequestsError && rydRequestsList.length === 0 && (
+      {rydRequestsList.length === 0 && (
         <Card className="text-center py-12 shadow-md">
           <CardHeader>
             <UserPlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
