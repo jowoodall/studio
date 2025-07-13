@@ -33,7 +33,7 @@ async function getMultipleUserProfiles(userIds: string[]): Promise<Map<string, U
   const userDocs = await db.getAll(...userRefs);
   const profiles = new Map<string, UserProfileData>();
   userDocs.forEach(doc => {
-    if (doc.exists) {
+    if (doc.exists()) {
       profiles.set(doc.id, { uid: doc.id, ...doc.data() } as UserProfileData);
     }
   });
@@ -60,7 +60,7 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
         // 1. Fetch Event Details and Managers
         const eventDocRef = db.collection('events').doc(eventId);
         const eventDocSnap = await eventDocRef.get();
-        if (!eventDocSnap.exists) {
+        if (!eventDocSnap.exists()) {
             return { success: false, message: `Event with ID "${eventId}" not found.` };
         }
         const eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
