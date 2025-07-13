@@ -25,6 +25,25 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
     return { success: false, message: `An unexpected error occurred in ${actionName}: ${errorMessage}` };
 };
 
+// --- Serialization Helpers ---
+// These functions ensure that any object with Firestore Timestamps is converted
+// to an object with ISO date strings before being sent to the client.
+
+const toSerializableObject = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Timestamp) return obj.toDate().toISOString();
+    if (Array.isArray(obj)) return obj.map(toSerializableObject);
+    if (typeof obj === 'object') {
+        const newObj: { [key: string]: any } = {};
+        for (const key in obj) {
+            newObj[key] = toSerializableObject(obj[key]);
+        }
+        return newObj;
+    }
+    return obj;
+};
+
+
 // Helper function to get user profiles in a batch
 async function getMultipleUserProfiles(userIds: string[]): Promise<Map<string, UserProfileData>> {
   if (userIds.length === 0) return new Map();
@@ -117,15 +136,18 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
                 passengerUserProfiles: req.passengerIds.map(id => allProfilesMap.get(id)).filter(Boolean) as UserProfileData[],
             };
         });
+        
+        // 7. Serialize the entire data object before returning
+        const serializableData = toSerializableObject({
+            eventDetails,
+            eventManagers,
+            activeRydzList: hydratedActiveRydz,
+            rydRequestsList: hydratedRydRequests,
+        });
 
         return {
             success: true,
-            data: {
-                eventDetails,
-                eventManagers,
-                activeRydzList: hydratedActiveRydz,
-                rydRequestsList: hydratedRydRequests,
-            }
+            data: serializableData as EventRydzData,
         };
 
     } catch (error: any) {
