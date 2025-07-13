@@ -52,7 +52,7 @@ async function getMultipleUserProfiles(userIds: string[]): Promise<Map<string, U
   const userDocs = await db.getAll(...userRefs);
   const profiles = new Map<string, UserProfileData>();
   userDocs.forEach(doc => {
-    if (doc.exists()) {
+    if (doc.exists) {
       profiles.set(doc.id, { uid: doc.id, ...doc.data() } as UserProfileData);
     }
   });
