@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -17,7 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 
 export default function GroupsPage() {
-  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user: authUser, userProfile, loading: authLoading, isLoadingProfile, refreshUserProfile } = useAuth();
   const { toast } = useToast();
   
   const [joinedGroupsList, setJoinedGroupsList] = useState<GroupData[]>([]);
@@ -128,7 +129,7 @@ export default function GroupsPage() {
     if (!authLoading && !isLoadingProfile) {
         fetchGroupsAndInvitations();
     }
-  }, [authLoading, isLoadingProfile, fetchGroupsAndInvitations]);
+  }, [authLoading, isLoadingProfile, fetchGroupsAndInvitations, userProfile]); // Added userProfile dependency
 
 
   const handleAcceptInvitation = async (groupIdToAccept: string, groupName: string) => {
@@ -148,12 +149,9 @@ export default function GroupsPage() {
         description: `You have successfully joined the group: ${groupName}.`,
       });
 
-      // Optimistically update UI or refetch
-      const acceptedGroup = pendingInvitations.find(g => g.id === groupIdToAccept);
-      if (acceptedGroup) {
-          setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToAccept));
-          setJoinedGroupsList(prev => [acceptedGroup, ...prev]);
-      }
+      // Refresh the user profile to get the latest joinedGroupIds
+      await refreshUserProfile();
+      
     } catch (error) {
       console.error("Error accepting invitation:", error);
       toast({ title: "Acceptance Failed", description: "Could not join the group. Please try again.", variant: "destructive" });
