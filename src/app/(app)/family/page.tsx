@@ -9,7 +9,7 @@ import { Loader2, AlertTriangle, Users, PlusCircle, UserCog } from "lucide-react
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { getFamilyDataAction } from '@/actions/familyActions'; // Updated import
+import { getFamilyDataAction } from '@/actions/familyActions'; 
 import type { FamilyData } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
@@ -36,7 +36,12 @@ export default function MyFamilyPage() {
       const result = await getFamilyDataAction(authUser.uid);
       
       if (result.success && result.families) {
-        setFamilies(result.families);
+        // Since the timestamp is now an ISO string, convert it back to a Date object for display
+        const familiesWithDates = result.families.map(f => ({
+            ...f,
+            subscriptionEndDate: f.subscriptionEndDate ? new Date(f.subscriptionEndDate as any) : undefined,
+        }));
+        setFamilies(familiesWithDates as any);
       } else {
         setError(result.message || "An unknown error occurred while fetching families.");
         toast({ title: "Error Loading Families", description: result.message, variant: "destructive", duration: 9000 });
@@ -123,7 +128,7 @@ export default function MyFamilyPage() {
                   <Badge variant="outline" className="capitalize">{family.subscriptionTier} Plan</Badge>
                   {family.subscriptionEndDate && (
                     <p className="text-xs text-muted-foreground mt-2">
-                      Renews on: {family.subscriptionEndDate.toDate().toLocaleDateString()}
+                      Renews on: {family.subscriptionEndDate.toLocaleDateString()}
                     </p>
                   )}
                 </CardContent>
