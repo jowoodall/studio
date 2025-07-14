@@ -32,22 +32,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         const userDocRef = doc(db, "users", firebaseUser.uid);
         const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
+        if (userDocSnap.exists()) { 
           const profileData = userDocSnap.data() as UserProfileData;
           setUserProfile(profileData);
 
           // Determine subscription tier
           let highestTier = SubscriptionTier.FREE;
-          // Securely query families where the user is a member
-          const familiesQuery = query(collection(db, "families"), where("memberIds", "array-contains", firebaseUser.uid));
-          const familiesSnapshot = await getDocs(familiesQuery);
+          const familyIds = profileData.familyIds || [];
           
-          if (!familiesSnapshot.empty) {
+          if (familyIds.length > 0) {
+            const familyPromises = familyIds.map(id => getDoc(doc(db, "families", id)));
+            const familyDocs = await Promise.all(familyPromises);
+            
             const tierOrder = { [SubscriptionTier.FREE]: 0, [SubscriptionTier.PREMIUM]: 1, [SubscriptionTier.ORGANIZATION]: 2 };
-            familiesSnapshot.forEach(familyDoc => {
-              const familyData = familyDoc.data() as FamilyData;
-              if (tierOrder[familyData.subscriptionTier] > tierOrder[highestTier]) {
-                highestTier = familyData.subscriptionTier;
+            
+            familyDocs.forEach(familyDoc => {
+              if (familyDoc.exists()) {
+                const familyData = familyDoc.data() as FamilyData;
+                if (tierOrder[familyData.subscriptionTier] > tierOrder[highestTier]) {
+                  highestTier = familyData.subscriptionTier;
+                }
               }
             });
           }
