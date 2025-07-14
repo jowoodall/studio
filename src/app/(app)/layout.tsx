@@ -6,26 +6,33 @@ import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from 'lucide-react';
 
 function ProtectedContent({ children }: { children: React.ReactNode }) {
   const { user, userProfile, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (loading) return; // Wait until auth state is determined
+
+    if (!user) {
       router.push('/login');
+      return;
     }
-    // New logic to handle onboarding
-    if (!loading && userProfile && !userProfile.onboardingComplete) {
+    
+    // If user profile is loaded and onboarding is not complete,
+    // and they are NOT on an onboarding page, redirect them.
+    if (userProfile && !userProfile.onboardingComplete && !pathname.startsWith('/onboarding')) {
         router.push('/onboarding/welcome');
     }
-  }, [user, userProfile, loading, router]);
+    
+  }, [user, userProfile, loading, router, pathname]);
 
-  if (loading || !user || !userProfile?.onboardingComplete) {
-    // This loader is inside the main content area, not replacing the whole page.
-    // This maintains the overall HTML structure and prevents hydration errors.
+  // Show a loader while auth state is loading or if the profile is still being fetched.
+  // Also show loader if onboarding is not complete and user is not on an onboarding page (during the redirect).
+  if (loading || !user || !userProfile || (!userProfile.onboardingComplete && !pathname.startsWith('/onboarding'))) {
     return (
       <div className="flex h-full w-full items-center justify-center p-8 min-h-[calc(100vh-200px)]">
         <div className="flex flex-col items-center gap-2">
@@ -36,6 +43,12 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // If user is onboarding, let the onboarding layout handle the rendering.
+  if (!userProfile.onboardingComplete && pathname.startsWith('/onboarding')) {
+      return <>{children}</>;
+  }
+
+  // Otherwise, user is onboarded and can see protected content.
   return <>{children}</>;
 }
 
@@ -45,7 +58,6 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // This structure is now STATIC. It always renders, on server and client.
   return (
     <AuthProvider>
       <SidebarProvider defaultOpen={true}>
