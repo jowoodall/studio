@@ -32,6 +32,7 @@ import Link from "next/link";
 import { submitPassengerDetailsForActiveRydAction } from "@/actions/activeRydActions";
 import { Checkbox } from "@/components/ui/checkbox";
 
+export const dynamic = 'force-dynamic';
 
 interface ManagedStudentSelectItem {
   id: string;

@@ -23,6 +23,8 @@ import { format, parse } from 'date-fns';
 
 import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas';
 
+export const dynamic = 'force-dynamic';
+
 interface ResolvedPageParams {
   eventId: string;
 }

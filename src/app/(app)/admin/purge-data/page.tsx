@@ -20,6 +20,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+export const dynamic = 'force-dynamic';
+
 type PurgeableCollection = 'events' | 'rydz' | 'activeRydz';
 
 export default function PurgeDataPage() {
