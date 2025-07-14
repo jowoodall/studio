@@ -21,7 +21,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc, where } from "firebase/firestore";
 import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData, type ActiveRyd, PassengerManifestStatus } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -259,33 +259,65 @@ export default function RydRequestPage() {
   }, [searchParams, form, userProfile, availableEvents, toast]); // Added toast to dependencies
 
   useEffect(() => {
-    const fetchEvents = async () => {
-      if (isJoinOfferContext) { 
-        setIsLoadingEvents(false);
-        return;
-      }
-      setIsLoadingEvents(true);
-      try {
-        const eventsQuery = query(collection(db, "events"), orderBy("eventTimestamp", "asc"));
-        const querySnapshot = await getDocs(eventsQuery);
-        const fetchedEvents: EventData[] = [];
-        querySnapshot.forEach((eventDoc) => { 
-          const eventData = eventDoc.data() as EventData;
-          const eventDate = eventData.eventTimestamp instanceof Timestamp ? eventData.eventTimestamp.toDate() : new Date(0);
-          if (eventDate >= new Date()) {
-            fetchedEvents.push({ id: eventDoc.id, ...eventData });
-          }
-        });
-        setAvailableEvents(fetchedEvents);
-      } catch (error) {
-        console.error("Error fetching events:", error);
-        toast({ title: "Error", description: "Could not load available events.", variant: "destructive" });
-      } finally {
-        setIsLoadingEvents(false);
-      }
+    const fetchVisibleEvents = async () => {
+        if (isJoinOfferContext || !userProfile || !authUser) {
+            setIsLoadingEvents(false);
+            return;
+        }
+
+        setIsLoadingEvents(true);
+        try {
+            const userGroupIds = userProfile.joinedGroupIds || [];
+            const userId = authUser.uid;
+            
+            const eventsMap = new Map<string, EventData>();
+
+            // Query 1: Events for user's groups
+            if (userGroupIds.length > 0) {
+                const groupEventsQuery = query(
+                    collection(db, "events"),
+                    where("status", "==", "active"),
+                    where("associatedGroupIds", "array-contains-any", userGroupIds)
+                );
+                const groupEventsSnapshot = await getDocs(groupEventsQuery);
+                groupEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+            }
+
+            // Query 2: Events managed by user
+            const managedEventsQuery = query(
+                collection(db, "events"),
+                where("status", "==", "active"),
+                where("managerIds", "array-contains", userId)
+            );
+            const managedEventsSnapshot = await getDocs(managedEventsQuery);
+            managedEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+            
+            const allVisibleEvents = Array.from(eventsMap.values());
+
+            // Filter for upcoming events
+            const upcomingEvents = allVisibleEvents.filter(event => {
+                const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date(0);
+                return eventDate >= new Date();
+            }).sort((a, b) => {
+                const timeA = a.eventTimestamp?.toMillis() || 0;
+                const timeB = b.eventTimestamp?.toMillis() || 0;
+                return timeA - timeB;
+            });
+            
+            setAvailableEvents(upcomingEvents);
+
+        } catch (error: any) {
+            console.error("Error fetching visible events:", error);
+            toast({ title: "Error", description: "Could not load available events.", variant: "destructive" });
+        } finally {
+            setIsLoadingEvents(false);
+        }
     };
-    fetchEvents();
-  }, [toast, isJoinOfferContext]); 
+
+    if (!authLoading && userProfile) {
+        fetchVisibleEvents();
+    }
+}, [toast, isJoinOfferContext, userProfile, authUser, authLoading]);
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
