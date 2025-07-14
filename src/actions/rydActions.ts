@@ -15,90 +15,37 @@ import {
 import { Timestamp } from 'firebase-admin/firestore';
 import { isAfter } from 'date-fns';
 
-// --- Firestore REST API Helpers ---
-// These helpers allow us to run queries against Firestore's REST API using a user's
-// ID token, which enforces security rules and avoids Admin SDK credential issues.
+// --- Re-usable Helper Functions using Admin SDK ---
 
-function parseFirestoreDocument(doc: any): any {
-  const fields = doc.fields || {};
-  const parsed: { [key: string]: any } = {};
-
-  for (const key in fields) {
-    const value = fields[key];
-    if (value.stringValue !== undefined) {
-      parsed[key] = value.stringValue;
-    } else if (value.integerValue !== undefined) {
-      parsed[key] = parseInt(value.integerValue, 10);
-    } else if (value.doubleValue !== undefined) {
-      parsed[key] = value.doubleValue;
-    } else if (value.booleanValue !== undefined) {
-      parsed[key] = value.booleanValue;
-    } else if (value.timestampValue !== undefined) {
-      // Return as a string for client-side serialization
-      parsed[key] = value.timestampValue;
-    } else if (value.mapValue !== undefined) {
-      parsed[key] = parseFirestoreDocument(value.mapValue);
-    } else if (value.arrayValue !== undefined) {
-      parsed[key] = (value.arrayValue.values || []).map((v: any) => parseFirestoreDocument({ fields: { inner: v } }).inner);
-    } else if (value.nullValue !== undefined) {
-      parsed[key] = null;
-    }
-  }
-
-  if (doc.name) {
-    parsed.id = doc.name.split('/').pop();
-  }
-  
-  return parsed;
-}
-
-async function runFirestoreQuery(query: object, idToken: string): Promise<any[]> {
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  if (!projectId) {
-    throw new Error("Firebase Project ID is not configured.");
-  }
-
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ structuredQuery: query }),
-    cache: 'no-store', // Ensure fresh data is fetched
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json();
-    console.error("Firestore Query Error:", JSON.stringify(errorBody, null, 2));
-    throw new Error(`Firestore query failed: ${errorBody.error?.message || 'Unknown error'}`);
-  }
-
-  const data = await response.json();
-  return data
-    .filter((item: any) => item.document)
-    .map((item: any) => parseFirestoreDocument(item.document));
-}
-
-async function getClientSideUserProfile(userId: string, idToken: string): Promise<UserProfileData | null> {
+// Gets a user's profile. Returns null if not found.
+async function getUserProfile(userId: string): Promise<UserProfileData | null> {
     if (!userId) return null;
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${userId}`;
     try {
-        const response = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${idToken}` },
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        return parseFirestoreDocument(data) as UserProfileData;
+        const userDocRef = admin.firestore().collection('users').doc(userId);
+        const userDocSnap = await userDocRef.get();
+        return userDocSnap.exists ? { uid: userDocSnap.id, ...userDocSnap.data() } as UserProfileData : null;
     } catch (error) {
-        console.error(`Error fetching profile for ${userId}:`, error);
+        console.error(`[AdminAction] Error fetching profile for ${userId}:`, error);
         return null;
     }
 }
 
+// Converts Firestore Timestamps to ISO strings for client-side serialization
+function toSerializable(obj: any): any {
+    if (!obj) return obj;
+    if (obj instanceof Timestamp) return obj.toDate().toISOString();
+    if (Array.isArray(obj)) return obj.map(toSerializable);
+    if (typeof obj === 'object') {
+        const newObj: { [key: string]: any } = {};
+        for (const key in obj) {
+            newObj[key] = toSerializable(obj[key]);
+        }
+        return newObj;
+    }
+    return obj;
+}
+
+// --- Server Actions ---
 
 export async function getUpcomingRydzAction({ idToken }: { idToken: string }): Promise<{
     success: boolean;
@@ -107,7 +54,7 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     pendingRequests?: DisplayRydData[];
     message?: string;
 }> {
-  console.log('[Action: getUpcomingRydzAction] Fetching upcoming rydz using proxy model.');
+  console.log('[Action: getUpcomingRydzAction] Fetching upcoming rydz using Admin SDK.');
 
   if (!idToken) {
     return { success: false, message: "Authentication token is required." };
@@ -117,16 +64,17 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
-    if (!userProfileSnap.exists) {
+    const userProfile = await getUserProfile(userId);
+    if (!userProfile) {
         return { success: false, message: "User profile not found." };
     }
-    const userProfile = userProfileSnap.data() as UserProfileData;
 
     const uidsToQuery = [userId];
     if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
         uidsToQuery.push(...userProfile.managedStudentIds);
     }
+    
+    const db = admin.firestore();
 
     const upcomingActiveRydStatuses: ActiveRydStatus[] = [
       ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS, ActiveRydStatus.RYD_PLANNED,
@@ -134,100 +82,83 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
     ];
     const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver'];
 
-    const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
-    const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
-    const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
-
-    const [drivingResults, passengerResults, requestsResults] = await Promise.all([
-      runFirestoreQuery(drivingQuery, idToken),
-      runFirestoreQuery(passengerQuery, idToken),
-      runFirestoreQuery(requestsQuery, idToken),
-    ]);
+    // Queries using Admin SDK
+    const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId).where('status', 'in', upcomingActiveRydStatuses);
+    const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains-any', uidsToQuery).where('status', 'in', upcomingActiveRydStatuses);
+    const requestsQuery = db.collection('rydz').where('passengerIds', 'array-contains-any', uidsToQuery).where('status', 'in', pendingRequestStatuses);
     
-    const drivingRydzPromises = drivingResults
-      .filter(ryd => upcomingActiveRydStatuses.includes(ryd.status))
-      .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
-        const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
-        return {
-          ...ryd,
-          isDriver: true,
-          passengerProfiles,
-          driverProfile: await getClientSideUserProfile(userId, idToken) || undefined,
-          assignedActiveRydId: ryd.id,
-          rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime,
-        };
-      });
+    const [drivingSnap, passengerSnap, requestsSnap] = await Promise.all([
+      drivingQuery.get(),
+      passengerQuery.get(),
+      requestsQuery.get()
+    ]);
 
-    const passengerRydzPromises = passengerResults
-      .filter(ryd => ryd.driverId !== userId && upcomingActiveRydStatuses.includes(ryd.status))
-      .map(async (ryd: ActiveRyd): Promise<DisplayRydData> => {
-        const driverProfile = await getClientSideUserProfile(ryd.driverId, idToken);
-        const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+    // Hydrate Rydz with Profiles
+    const hydrateRyd = async (rydDoc: admin.firestore.DocumentSnapshot, isDriver: boolean): Promise<DisplayRydData> => {
+        const rydData = rydDoc.data() as ActiveRyd;
+        const passengerProfiles = await Promise.all((rydData.passengerUids || []).map(id => getUserProfile(id)));
+        const driverProfile = isDriver ? userProfile : await getUserProfile(rydData.driverId);
         return {
-          ...ryd,
-          isDriver: false,
-          driverProfile: driverProfile || undefined,
-          passengerProfiles,
-          assignedActiveRydId: ryd.id,
-          rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime,
+            ...rydData,
+            id: rydDoc.id,
+            isDriver,
+            passengerProfiles: passengerProfiles.filter(Boolean) as UserProfileData[],
+            driverProfile: driverProfile || undefined,
+            assignedActiveRydId: rydDoc.id,
+            rydTimestamp: rydData.plannedArrivalTime || rydData.proposedDepartureTime,
         };
-      });
-      
-    const pendingRequestsPromises = requestsResults
-      .filter(req => pendingRequestStatuses.includes(req.status))
-      .map(async (req: RydData): Promise<DisplayRydData> => {
-        const driverProfile = req.driverId ? await getClientSideUserProfile(req.driverId, idToken) : undefined;
-        const passengerProfiles = (await Promise.all((req.passengerIds || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+    };
+
+    const hydrateRequest = async (reqDoc: admin.firestore.DocumentSnapshot): Promise<DisplayRydData> => {
+        const reqData = reqDoc.data() as RydData;
+        const passengerProfiles = await Promise.all((reqData.passengerIds || []).map(id => getUserProfile(id)));
+        const driverProfile = reqData.driverId ? await getUserProfile(reqData.driverId) : undefined;
         return {
-          ...req,
-          isDriver: false,
-          driverProfile,
-          passengerProfiles,
+            ...reqData,
+            id: reqDoc.id,
+            isDriver: false,
+            passengerProfiles: passengerProfiles.filter(Boolean) as UserProfileData[],
+            driverProfile,
         };
-      });
+    };
+
+    const drivingRydzPromises = drivingSnap.docs.map(doc => hydrateRyd(doc, true));
+    
+    // Filter out rydz where user is both driver and passenger to avoid duplicates
+    const passengerRydzPromises = passengerSnap.docs
+      .filter(doc => doc.data().driverId !== userId) 
+      .map(doc => hydrateRyd(doc, false));
+
+    const pendingRequestsPromises = requestsSnap.docs.map(hydrateRequest);
 
     const [drivingRydz, passengerRydz, pendingRequests] = await Promise.all([
         Promise.all(drivingRydzPromises),
         Promise.all(passengerRydzPromises),
         Promise.all(pendingRequestsPromises)
     ]);
-
-    // --- NEW FILTERING LOGIC ---
-    const now = new Date();
-    // Allow rydz from the last 6 hours to still show up, e.g., if they are in progress.
-    const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000); 
-
-    const filterTrulyUpcoming = (ryd: DisplayRydData) => {
-      if (!ryd.rydTimestamp) return false; // Don't show rydz without a timestamp
-      
-      const rydTime = new Date(ryd.rydTimestamp);
-      const isInProgress = ryd.status === ActiveRydStatus.IN_PROGRESS_PICKUP || ryd.status === ActiveRydStatus.IN_PROGRESS_ROUTE;
-      
-      // Keep if it's in progress, OR if the event time is after 6 hours ago.
-      return isInProgress || isAfter(rydTime, sixHoursAgo);
+    
+    const sortByTimestamp = (a: DisplayRydData, b: DisplayRydData) => {
+        const timeA = (a.rydTimestamp as Timestamp)?.toMillis() || 0;
+        const timeB = (b.rydTimestamp as Timestamp)?.toMillis() || 0;
+        return timeA - timeB;
     };
-
-    const finalDrivingRydz = drivingRydz.filter(filterTrulyUpcoming);
-    const finalPassengerRydz = passengerRydz.filter(filterTrulyUpcoming);
-    const finalPendingRequests = pendingRequests.filter(filterTrulyUpcoming);
-    // --- END NEW FILTERING LOGIC ---
-
-
-    const sortByTimestamp = (a: DisplayRydData, b: DisplayRydData) => new Date(a.rydTimestamp).getTime() - new Date(b.rydTimestamp).getTime();
-    finalDrivingRydz.sort(sortByTimestamp);
-    finalPassengerRydz.sort(sortByTimestamp);
-    finalPendingRequests.sort(sortByTimestamp);
+    drivingRydz.sort(sortByTimestamp);
+    passengerRydz.sort(sortByTimestamp);
+    pendingRequests.sort(sortByTimestamp);
 
     return { 
       success: true, 
-      drivingRydz: finalDrivingRydz, 
-      passengerRydz: finalPassengerRydz, 
-      pendingRequests: finalPendingRequests 
+      drivingRydz: toSerializable(drivingRydz),
+      passengerRydz: toSerializable(passengerRydz),
+      pendingRequests: toSerializable(pendingRequests) 
     };
 
   } catch (error: any) {
     console.error(`[Action: getUpcomingRydzAction] Error:`, error);
-    return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+    const errorMessage = error.code === 'failed-precondition' 
+        ? `A Firestore index is required for this query. Please check your server terminal for an error message from Firestore that contains a link to create the necessary index automatically.`
+        : `An unexpected server error occurred: ${error.message}`;
+    return { success: false, message: errorMessage };
   }
 }
 
@@ -236,7 +167,7 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
     history?: DisplayRydData[];
     message?: string;
 }> {
-    console.log('[Action: getRydHistoryAction] Fetching ryd history using proxy model.');
+    console.log('[Action: getRydHistoryAction] Fetching ryd history using Admin SDK.');
     if (!idToken) {
         return { success: false, message: "Authentication token is required." };
     }
@@ -245,84 +176,83 @@ export async function getRydHistoryAction({ idToken }: { idToken: string }): Pro
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userId = decodedToken.uid;
 
-        const userProfileSnap = await admin.firestore().collection('users').doc(userId).get();
-        if (!userProfileSnap.exists) {
+        const userProfile = await getUserProfile(userId);
+        if (!userProfile) {
             return { success: false, message: "User profile not found." };
         }
-        const userProfile = userProfileSnap.data() as UserProfileData;
 
         const uidsToQuery = [userId];
         if (userProfile.role === UserRole.PARENT && userProfile.managedStudentIds) {
             uidsToQuery.push(...userProfile.managedStudentIds);
         }
+        
+        const db = admin.firestore();
 
-        // Fetch ALL rydz and requests associated with the user, regardless of status
-        const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
-        const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
-        const requestsQuery = { from: [{ collectionId: 'rydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerIds' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
+        // Historical statuses
+        const historicalActiveRydStatuses: ActiveRydStatus[] = [
+            ActiveRydStatus.COMPLETED, ActiveRydStatus.CANCELLED_BY_DRIVER, ActiveRydStatus.CANCELLED_BY_SYSTEM,
+        ];
+        const historicalRequestStatuses: RydStatus[] = ['cancelled_by_user', 'no_driver_found'];
 
-        const [drivingResults, passengerResults, requestsResults] = await Promise.all([
-            runFirestoreQuery(drivingQuery, idToken),
-            runFirestoreQuery(passengerQuery, idToken),
-            runFirestoreQuery(requestsQuery, idToken),
+        const drivingQuery = db.collection('activeRydz').where('driverId', '==', userId).where('status', 'in', historicalActiveRydStatuses);
+        const passengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains-any', uidsToQuery).where('status', 'in', historicalActiveRydStatuses);
+        const requestsQuery = db.collection('rydz').where('passengerIds', 'array-contains-any', uidsToQuery).where('status', 'in', historicalRequestStatuses);
+
+        const [drivingSnap, passengerSnap, requestsSnap] = await Promise.all([
+            drivingQuery.get(),
+            passengerQuery.get(),
+            requestsQuery.get()
         ]);
-        
-        const allActiveRydz = [...drivingResults, ...passengerResults];
-        const uniqueActiveRydz = allActiveRydz.reduce((acc, current) => {
-            if (!acc.find(item => item.id === current.id)) {
-                acc.push(current);
-            }
-            return acc;
-        }, [] as any[]);
 
-        const activeRydzPromises = uniqueActiveRydz.map(async (ryd): Promise<DisplayRydData> => {
-            const driverProfile = await getClientSideUserProfile(ryd.driverId, idToken);
-            const passengerProfiles = (await Promise.all((ryd.passengerUids || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+        const allRydzMap = new Map<string, admin.firestore.DocumentSnapshot>();
+        drivingSnap.docs.forEach(doc => allRydzMap.set(doc.id, doc));
+        passengerSnap.docs.forEach(doc => allRydzMap.set(doc.id, doc));
+
+        const hydrateRyd = async (rydDoc: admin.firestore.DocumentSnapshot): Promise<DisplayRydData> => {
+            const rydData = rydDoc.data() as ActiveRyd;
+            const passengerProfiles = await Promise.all((rydData.passengerUids || []).map(id => getUserProfile(id)));
+            const driverProfile = await getUserProfile(rydData.driverId);
             return {
-              ...ryd,
-              isDriver: ryd.driverId === userId,
-              passengerProfiles,
-              driverProfile: driverProfile || undefined,
-              assignedActiveRydId: ryd.id,
-              rydTimestamp: ryd.plannedArrivalTime || ryd.proposedDepartureTime || ryd.createdAt,
+                ...rydData,
+                id: rydDoc.id,
+                isDriver: rydData.driverId === userId,
+                passengerProfiles: passengerProfiles.filter(Boolean) as UserProfileData[],
+                driverProfile: driverProfile || undefined,
+                assignedActiveRydId: rydDoc.id,
+                rydTimestamp: rydData.plannedArrivalTime || rydData.proposedDepartureTime || rydData.createdAt,
             };
-        });
-        
-        const requestPromises = requestsResults.map(async (req): Promise<DisplayRydData> => {
-            const passengerProfiles = (await Promise.all((req.passengerIds || []).map(id => getClientSideUserProfile(id, idToken)))).filter(Boolean) as UserProfileData[];
+        };
+
+        const hydrateRequest = async (reqDoc: admin.firestore.DocumentSnapshot): Promise<DisplayRydData> => {
+            const reqData = reqDoc.data() as RydData;
+            const passengerProfiles = await Promise.all((reqData.passengerIds || []).map(id => getUserProfile(id)));
             return {
-              ...req,
-              isDriver: false,
-              driverProfile: undefined,
-              passengerProfiles,
-              rydTimestamp: req.rydTimestamp || req.createdAt,
+                ...reqData,
+                id: reqDoc.id,
+                isDriver: false,
+                passengerProfiles: passengerProfiles.filter(Boolean) as UserProfileData[],
+                rydTimestamp: reqData.rydTimestamp || reqData.createdAt,
             };
+        };
+
+        const rydPromises = Array.from(allRydzMap.values()).map(doc => hydrateRyd(doc));
+        const requestPromises = requestsSnap.docs.map(doc => hydrateRequest(doc));
+
+        const allItems = await Promise.all([...rydPromises, ...requestPromises]);
+        
+        allItems.sort((a, b) => {
+            const timeA = (a.rydTimestamp as Timestamp)?.toMillis() || 0;
+            const timeB = (b.rydTimestamp as Timestamp)?.toMillis() || 0;
+            return timeB - timeA;
         });
 
-        const allItems = await Promise.all([...activeRydzPromises, ...requestPromises]);
-
-        // Filter out upcoming items to leave only history
-        const now = new Date();
-        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
-
-        const finalHistoryItems = allItems.filter(ryd => {
-            if (!ryd.rydTimestamp) return true; // Keep items without a timestamp in history? Maybe filter them out. Let's keep for now.
-
-            const rydTime = new Date(ryd.rydTimestamp);
-            const isInProgress = ryd.status === ActiveRydStatus.IN_PROGRESS_PICKUP || ryd.status === ActiveRydStatus.IN_PROGRESS_ROUTE;
-            
-            const isUpcoming = isInProgress || isAfter(rydTime, sixHoursAgo);
-            
-            // Return true for items that are NOT upcoming
-            return !isUpcoming;
-        });
-
-        finalHistoryItems.sort((a, b) => new Date(b.rydTimestamp).getTime() - new Date(a.rydTimestamp).getTime());
-
-        return { success: true, history: finalHistoryItems };
+        return { success: true, history: toSerializable(allItems) };
         
     } catch (error: any) {
         console.error(`[Action: getRydHistoryAction] Error:`, error);
-        return { success: false, message: `An unexpected server error occurred: ${error.message}` };
+        const errorMessage = error.code === 'failed-precondition' 
+            ? `A Firestore index is required for this query. Please check your server terminal for an error message from Firestore that contains a link to create the necessary index automatically.`
+            : `An unexpected server error occurred: ${error.message}`;
+        return { success: false, message: errorMessage };
     }
 }
