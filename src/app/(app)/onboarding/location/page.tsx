@@ -85,7 +85,7 @@ export default function OnboardingLocationPage() {
         defaultLocationId: savedLocations[0].id // First one is default
       });
       
-      await refreshUserProfile();
+      await refreshUserProfile(); // Ensure this await completes before moving on
       
       toast({
         title: "Locations Saved!",
