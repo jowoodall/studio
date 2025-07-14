@@ -80,7 +80,7 @@ These notifications are related to the process of requesting, joining, and compl
 
 ---
 
-## Group Management Notifications
+## Group & Family Management Notifications
 
 ### 1. Group Invitation
 
@@ -88,3 +88,12 @@ These notifications are related to the process of requesting, joining, and compl
 -   **Recipient**: The User being invited.
 -   **Trigger**: A group admin adds a user to the group's member list by email.
 -   **Message**: `You have been invited to join the group "[Group Name]".`
+
+---
+
+### 2. Added to Family
+
+-   **Title**: `You were added to a family`
+-   **Recipient**: The User being added.
+-   **Trigger**: A family admin adds a user to the family's member list by email.
+-   **Message**: `[Admin's Name] has added you to the family "[Family Name]".`

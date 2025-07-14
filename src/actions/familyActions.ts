@@ -3,8 +3,9 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { UserProfileData, FamilyData, SubscriptionTier } from '@/types';
-import { UserRole } from '@/types';
+import type { UserProfileData, FamilyData, SubscriptionTier, NotificationType } from '@/types';
+import { UserRole, NotificationType as NotificationTypeEnum } from '@/types';
+import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
 
@@ -97,6 +98,14 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
         if (!familyData.adminIds.includes(actingUserId)) {
             return { success: false, message: "Permission denied. Only family admins can manage members." };
         }
+        
+        const actingUserDocRef = db.collection('users').doc(actingUserId);
+        const actingUserDocSnap = await actingUserDocRef.get();
+        if(!actingUserDocSnap.exists) {
+            return { success: false, message: "Acting user profile not found." };
+        }
+        const actingUserData = actingUserDocSnap.data() as UserProfileData;
+
 
         const batch = db.batch();
 
@@ -120,6 +129,15 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                 // Add to family's member list and user's family list
                 batch.update(familyDocRef, { memberIds: FieldValue.arrayUnion(newMemberId) });
                 batch.update(userDocToAdd.ref, { familyIds: FieldValue.arrayUnion(familyId) });
+                
+                // Notification is created outside the batch commit
+                await createNotification(
+                    newMemberId,
+                    'You were added to a family',
+                    `${actingUserData.fullName} has added you to the family "${familyData.name}".`,
+                    NotificationTypeEnum.SUCCESS,
+                    `/family/${familyId}/manage`
+                );
 
                 await batch.commit();
                 return { success: true, message: `${userDocToAdd.data().fullName} has been added to the family.` };
@@ -253,7 +271,7 @@ export async function getFamilyManagementDataAction(
             const memberPromises = familyData.memberIds.map(async (memberUid) => {
               const userDocRef = db.collection('users').doc(memberUid);
               const userDocSnap = await userDocRef.get();
-              if (userDocSnap.exists) { // remove exists()
+              if (userDocSnap.exists()) { // remove exists()
                 const userData = userDocSnap.data() as UserProfileData;
                 return {
                   id: userDocSnap.id,
