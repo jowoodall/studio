@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
-import { Bell, UserCircle, Menu, LogOut, Settings, Loader2 } from 'lucide-react';
+import { Bell, UserCircle, Menu, LogOut, Settings, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -22,12 +22,13 @@ import { auth } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext'; 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getNotificationsAction } from '@/actions/notificationActions';
+import { SubscriptionTier } from '@/types';
 
 export function AppHeader() {
   const { toggleSidebar, isMobile } = useSidebar();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user, userProfile, loading: authLoading, isLoadingProfile, subscriptionTier } = useAuth();
   
   const [hasMounted, setHasMounted] = React.useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
@@ -82,6 +83,16 @@ export function AppHeader() {
   };
 
   const isLoading = authLoading || isLoadingProfile;
+  const isPremium = subscriptionTier === SubscriptionTier.PREMIUM || subscriptionTier === SubscriptionTier.ORGANIZATION;
+
+  const AppTitle = () => (
+    <div className="flex items-center gap-1">
+      <span className="hidden font-bold sm:inline-block font-headline">{siteConfig.name}</span>
+      {isPremium && (
+        <span className="text-primary font-bold text-lg" title="Premium Tier">⁺</span>
+      )}
+    </div>
+  );
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -107,7 +118,7 @@ export function AppHeader() {
             // Render desktop view only on the client
              <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
                 <Logo iconOnly />
-                <span className="hidden font-bold sm:inline-block font-headline">{siteConfig.name}</span>
+                <AppTitle />
              </Link>
           )}
         </div>
