@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { UserRole } from "@/types";
+import { UserRole, SubscriptionTier } from "@/types";
 import { Loader2, Check, X } from "lucide-react";
 
 import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
@@ -137,6 +137,7 @@ export function SignupForm() {
           fullName: data.fullName,
           email: data.email.trim().toLowerCase(), // Normalized email
           role: data.role,
+          subscriptionTier: SubscriptionTier.FREE, // All new users start on free tier
           createdAt: serverTimestamp(),
           avatarUrl: userCredential.user.photoURL || "",
           dataAiHint: "",

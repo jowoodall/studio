@@ -67,6 +67,7 @@ export interface UserProfileData {
   fullName: string;
   email: string;
   role: UserRole;
+  subscriptionTier: SubscriptionTier; // Added this field
   avatarUrl?: string;
   dataAiHint?: string;
   bio?: string;
@@ -225,6 +226,23 @@ export interface ActiveRyd {
   eventName?: string; 
   messages?: RydMessage[];
 }
+
+export interface DisplayRydRequestData extends RydData {
+  requesterProfile?: UserProfileData;
+  passengerUserProfiles?: UserProfileData[];
+}
+
+export interface DisplayActiveRyd extends ActiveRyd {
+  driverProfile?: UserProfileData;
+  passengerProfiles?: (UserProfileData & { manifestStatus?: PassengerManifestStatus })[];
+}
+
+export interface DisplayRydData extends RydData, Partial<ActiveRyd> {
+  isDriver: boolean;
+  passengerProfiles?: UserProfileData[];
+  driverProfile?: UserProfileData;
+}
+
 
 export interface DashboardRydData {
   id: string;

@@ -63,7 +63,7 @@ export async function manageDriverApprovalAction(
     const transactionResult = await db.runTransaction(async (transaction) => {
       const [parentDocSnap, activeRydDocSnap] = await transaction.getAll(parentDocRef, activeRydDocRef);
       
-      if (!parentDocSnap.exists()) {
+      if (!parentDocSnap.exists) { // remove exists()
         throw new Error("Parent profile not found.");
       }
       const parentProfile = parentDocSnap.data() as UserProfileData;
@@ -73,7 +73,7 @@ export async function manageDriverApprovalAction(
         throw new Error("Unauthorized: You are not registered as a parent for this student.");
       }
 
-      if (!activeRydDocSnap.exists()) {
+      if (!activeRydDocSnap.exists) { // remove exists()
         throw new Error("The associated ryd could not be found.");
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
