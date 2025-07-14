@@ -137,7 +137,8 @@ export function SignupForm() {
           fullName: data.fullName,
           email: data.email.trim().toLowerCase(), // Normalized email
           role: data.role,
-          subscriptionTier: SubscriptionTier.FREE, // All new users start on free tier
+          subscriptionTier: SubscriptionTier.FREE,
+          onboardingComplete: false, // Start the onboarding flow
           createdAt: serverTimestamp(),
           avatarUrl: userCredential.user.photoURL || "",
           dataAiHint: "",
@@ -177,9 +178,9 @@ export function SignupForm() {
 
       toast({
         title: "Account Created!",
-        description: "You have been successfully signed up.",
+        description: "Let's get your profile set up.",
       });
-      router.push("/dashboard"); 
+      router.push("/onboarding/welcome"); 
     } catch (error: any) {
       console.error("Signup error:", error);
       let errorMessage = "An unexpected error occurred. Please try again.";

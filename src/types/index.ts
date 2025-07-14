@@ -67,11 +67,12 @@ export interface UserProfileData {
   fullName: string;
   email: string;
   role: UserRole;
-  subscriptionTier: SubscriptionTier; // Added this field
+  subscriptionTier: SubscriptionTier;
   avatarUrl?: string;
   dataAiHint?: string;
   bio?: string;
   phone?: string;
+  onboardingComplete: boolean;
   preferences?: {
     notifications?: NotificationPreferences;
   };

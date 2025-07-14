@@ -10,16 +10,20 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from 'lucide-react';
 
 function ProtectedContent({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+    // New logic to handle onboarding
+    if (!loading && userProfile && !userProfile.onboardingComplete) {
+        router.push('/onboarding/welcome');
+    }
+  }, [user, userProfile, loading, router]);
 
-  if (loading || !user) {
+  if (loading || !user || !userProfile?.onboardingComplete) {
     // This loader is inside the main content area, not replacing the whole page.
     // This maintains the overall HTML structure and prevents hydration errors.
     return (
