@@ -38,11 +38,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
           // Determine subscription tier
           let highestTier = SubscriptionTier.FREE;
-          if (profileData.familyIds && profileData.familyIds.length > 0) {
-            const familiesQuery = query(collection(db, "families"), where("__name__", "in", profileData.familyIds));
-            const familiesSnapshot = await getDocs(familiesQuery);
+          // Securely query families where the user is a member
+          const familiesQuery = query(collection(db, "families"), where("memberIds", "array-contains", firebaseUser.uid));
+          const familiesSnapshot = await getDocs(familiesQuery);
+          
+          if (!familiesSnapshot.empty) {
             const tierOrder = { [SubscriptionTier.FREE]: 0, [SubscriptionTier.PREMIUM]: 1, [SubscriptionTier.ORGANIZATION]: 2 };
-
             familiesSnapshot.forEach(familyDoc => {
               const familyData = familyDoc.data() as FamilyData;
               if (tierOrder[familyData.subscriptionTier] > tierOrder[highestTier]) {
