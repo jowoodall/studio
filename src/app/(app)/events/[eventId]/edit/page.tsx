@@ -16,7 +16,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, Timestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { EventStatus, type EventData, type UserProfileData, type GroupData } from "@/types";
@@ -30,6 +30,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { updateEventAction } from "@/actions/eventActions";
 
 
 const eventEditFormSchema = z.object({
@@ -213,14 +214,12 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
 
 
   async function onSubmit(data: EventEditFormValues) {
-    if (!eventId || !eventDetails || !isAuthorized) {
+    if (!eventId || !eventDetails || !isAuthorized || !authUser) {
       toast({ title: "Error", description: "Not authorized or event data not loaded.", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
     try {
-      const eventDocRef = doc(db, "events", eventId);
-      
       const [hours, minutes] = data.eventTime.split(':').map(Number);
       const combinedDateTime = new Date(data.eventDate);
       combinedDateTime.setHours(hours, minutes, 0, 0);
@@ -228,7 +227,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       
       const managerIds = managers.map(m => m.uid);
 
-      const updateData: Partial<EventData> & { updatedAt: Timestamp } = {
+      const updateData: Partial<EventData> = {
         name: data.eventName,
         location: data.eventLocation,
         description: data.description || "",
@@ -237,16 +236,19 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
         eventTimestamp: eventFirestoreTimestamp,
         managerIds: managerIds,
         associatedGroupIds: data.selectedGroups || [],
-        updatedAt: Timestamp.now(),
       };
+      
+      const result = await updateEventAction(eventId, updateData, authUser.uid);
 
-      await updateDoc(eventDocRef, updateData as any);
-
-      toast({
-        title: "Event Updated!",
-        description: `The event "${data.eventName}" has been successfully updated.`,
-      });
-      router.push(`/events/${eventId}/rydz`);
+      if (result.success) {
+        toast({
+          title: "Event Updated!",
+          description: `The event "${data.eventName}" has been successfully updated.`,
+        });
+        router.push(`/events/${eventId}/rydz`);
+      } else {
+        throw new Error(result.message);
+      }
     } catch (e: any) {
       console.error("Error updating event:", e);
       toast({

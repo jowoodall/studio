@@ -26,6 +26,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import type { EventData, GroupData, SavedLocation, EventStatus } from "@/types";
+import { createEventAction } from "@/actions/eventActions";
 
 const eventFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
@@ -152,32 +153,33 @@ export default function CreateEventPage() {
         return;
       }
 
-      const newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any } = {
+      const newEventData = {
         name: data.eventName,
         eventTimestamp: eventFirestoreTimestamp,
         location: finalLocation,
         description: data.description || "",
         eventType: data.eventType,
-        createdBy: authUser.uid,
-        createdAt: serverTimestamp(),
-        associatedGroupIds: data.selectedGroups || [],
-        status: 'active' as EventStatus,
         managerIds: [authUser.uid],
+        associatedGroupIds: data.selectedGroups || [],
       };
+      
+      const result = await createEventAction(newEventData, authUser.uid);
 
-      const docRef = await addDoc(collection(db, "events"), newEventData);
+      if (result.success && result.eventId) {
+        toast({
+            title: "Event Created!",
+            description: `The event "${data.eventName}" has been successfully created.`,
+        });
+        router.push(`/events/${result.eventId}/rydz`);
+      } else {
+        throw new Error(result.message || "Failed to create event.");
+      }
 
-      toast({
-        title: "Event Created!",
-        description: `The event "${data.eventName}" has been successfully created.`,
-      });
-      router.push(`/events/${docRef.id}/rydz`);
-
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating event:", error);
       toast({
         title: "Failed to Create Event",
-        description: "An error occurred while saving the event. Please check Firestore rules and try again.",
+        description: error.message || "An error occurred while saving the event.",
         variant: "destructive",
       });
     } finally {

@@ -97,3 +97,23 @@ These notifications are related to the process of requesting, joining, and compl
 -   **Recipient**: The User being added.
 -   **Trigger**: A family admin adds a user to the family's member list by email.
 -   **Message**: `[Admin's Name] has added you to the family "[Family Name]".`
+
+---
+
+## Event Notifications
+
+### 1. New Event Created for Group
+
+-   **Title**: `Event Created`
+-   **Recipient**: All members of groups associated with a new event (except the creator).
+-   **Trigger**: An event manager creates a new event and associates it with one or more groups.
+-   **Message**: `The event "[Event Name]" which is associated with one of your groups has been created.`
+
+---
+
+### 2. Event Updated for Group
+
+-   **Title**: `Event Updated`
+-   **Recipient**: All members of groups associated with an updated event (except the editor).
+-   **Trigger**: An event manager updates an existing event that is associated with one or more groups.
+-   **Message**: `The event "[Event Name]" which is associated with one of your groups has been updated.`

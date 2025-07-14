@@ -2,9 +2,10 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import type { EventData, UserProfileData, ActiveRyd, RydData, RydStatus, DisplayRydRequestData, DisplayActiveRyd } from '@/types';
-import { ActiveRydStatus, PassengerManifestStatus } from '@/types';
-import { Timestamp } from 'firebase-admin/firestore';
+import type { EventData, UserProfileData, ActiveRyd, RydData, RydStatus, DisplayRydRequestData, DisplayActiveRyd, NotificationType } from '@/types';
+import { ActiveRydStatus, PassengerManifestStatus, EventStatus as EventStatusEnum, NotificationType as NotificationTypeEnum } from '@/types';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
 
@@ -152,5 +153,99 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
 
     } catch (error: any) {
         return handleActionError(error, "getEventRydzPageDataAction");
+    }
+}
+
+
+// Internal helper function to notify group members of an event change
+async function notifyGroupMembersOfEvent(
+    eventId: string,
+    eventName: string,
+    actingUserId: string,
+    groupIds: string[],
+    action: 'created' | 'updated'
+) {
+    if (groupIds.length === 0) return;
+
+    try {
+        const groupsQuery = db.collection('groups').where(FieldValue.documentId(), 'in', groupIds);
+        const groupsSnapshot = await groupsQuery.get();
+
+        const memberIdsToNotify = new Set<string>();
+        groupsSnapshot.forEach(doc => {
+            const groupData = doc.data();
+            groupData.memberIds?.forEach((memberId: string) => {
+                if (memberId !== actingUserId) { // Don't notify the person who made the change
+                    memberIdsToNotify.add(memberId);
+                }
+            });
+        });
+
+        const notificationPromises = Array.from(memberIdsToNotify).map(userId => {
+            const title = `Event ${action === 'created' ? 'Created' : 'Updated'}`;
+            const message = `The event "${eventName}" which is associated with one of your groups has been ${action}.`;
+            return createNotification(userId, title, message, NotificationTypeEnum.INFO, `/events/${eventId}/rydz`);
+        });
+
+        await Promise.all(notificationPromises);
+        console.log(`[Action: notifyGroupMembersOfEvent] Sent ${notificationPromises.length} notifications for event ${eventId}.`);
+
+    } catch (error) {
+        console.error(`[Action: notifyGroupMembersOfEvent] Failed to send notifications for event ${eventId}:`, error);
+        // We don't throw an error here to avoid failing the main action if notifications fail
+    }
+}
+
+
+export async function createEventAction(
+    newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt' | 'status'>,
+    creatorId: string,
+): Promise<{ success: boolean; message: string; eventId?: string }> {
+    try {
+        const dataToSave = {
+            ...newEventData,
+            status: EventStatusEnum.ACTIVE,
+            createdBy: creatorId,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        const docRef = await db.collection('events').add(dataToSave);
+
+        // Send notifications to group members
+        if (newEventData.associatedGroupIds && newEventData.associatedGroupIds.length > 0) {
+            await notifyGroupMembersOfEvent(docRef.id, newEventData.name, creatorId, newEventData.associatedGroupIds, 'created');
+        }
+
+        return { success: true, message: 'Event created successfully.', eventId: docRef.id };
+    } catch (error: any) {
+        return handleActionError(error, "createEventAction");
+    }
+}
+
+export async function updateEventAction(
+    eventId: string,
+    updateData: Partial<EventData>,
+    actingUserId: string,
+): Promise<{ success: boolean; message: string }> {
+    try {
+        const eventDocRef = db.collection('events').doc(eventId);
+        
+        await eventDocRef.update({
+            ...updateData,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+        
+        // Fetch the event name for the notification message
+        const eventName = updateData.name || (await eventDocRef.get()).data()?.name || "Unnamed Event";
+
+        // Send notifications if groups were associated
+        if (updateData.associatedGroupIds && updateData.associatedGroupIds.length > 0) {
+            await notifyGroupMembersOfEvent(eventId, eventName, actingUserId, updateData.associatedGroupIds, 'updated');
+        }
+
+        return { success: true, message: 'Event updated successfully.' };
+    } catch (error: any) {
+        return handleActionError(error, "updateEventAction");
     }
 }
