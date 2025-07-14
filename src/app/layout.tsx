@@ -1,7 +1,9 @@
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { siteConfig } from '@/config/site';
+import { GoogleAnalytics } from '@/components/analytics/google-analytics';
 
 export const metadata: Metadata = {
   title: {
@@ -23,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body suppressHydrationWarning>
+        <GoogleAnalytics />
         {children}
         <Toaster />
       </body>
