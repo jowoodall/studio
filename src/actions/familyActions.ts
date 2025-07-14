@@ -253,7 +253,7 @@ export async function getFamilyManagementDataAction(
             const memberPromises = familyData.memberIds.map(async (memberUid) => {
               const userDocRef = db.collection('users').doc(memberUid);
               const userDocSnap = await userDocRef.get();
-              if (userDocSnap.exists()) {
+              if (userDocSnap.exists) { // remove exists()
                 const userData = userDocSnap.data() as UserProfileData;
                 return {
                   id: userDocSnap.id,

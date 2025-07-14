@@ -132,7 +132,7 @@ export async function getUpcomingRydzAction({ idToken }: { idToken: string }): P
       ActiveRydStatus.PLANNING, ActiveRydStatus.AWAITING_PASSENGERS, ActiveRydStatus.RYD_PLANNED,
       ActiveRydStatus.IN_PROGRESS_PICKUP, ActiveRydStatus.IN_PROGRESS_ROUTE,
     ];
-    const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver', 'driver_assigned'];
+    const pendingRequestStatuses: RydStatus[] = ['requested', 'searching_driver'];
 
     const drivingQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'driverId' }, op: 'EQUAL', value: { stringValue: userId } } } };
     const passengerQuery = { from: [{ collectionId: 'activeRydz' }], where: { fieldFilter: { field: { fieldPath: 'passengerUids' }, op: 'ARRAY_CONTAINS_ANY', value: { arrayValue: { values: uidsToQuery.map(id => ({ stringValue: id })) } } } } };
