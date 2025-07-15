@@ -22,6 +22,11 @@ export enum SubscriptionTier {
     ORGANIZATION = 'organization',
 }
 
+export enum RydDirection {
+  TO_EVENT = 'to_event',
+  FROM_EVENT = 'from_event',
+}
+
 export type NavItem = {
   title: string;
   href: string;
@@ -213,6 +218,7 @@ export interface ActiveRyd {
     passengerCapacity?: string; 
   };
   status: ActiveRydStatus;
+  direction: RydDirection;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   proposedDepartureTime?: Timestamp; 
@@ -259,6 +265,7 @@ export interface DashboardRydData {
   driverId?: string;
   passengerCount?: { confirmed: number; pending: number; totalInManifest: number; };
   passengerStatus?: PassengerManifestStatus; 
+  direction?: RydDirection;
 }
 
 export interface RydData {
@@ -267,6 +274,7 @@ export interface RydData {
     passengerIds: string[];
     eventId?: string;
     eventName?: string;
+    direction: RydDirection;
     rydTimestamp: Timestamp;
     earliestPickupTimestamp?: Timestamp;
     pickupLocation: string;
