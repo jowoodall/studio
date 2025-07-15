@@ -16,13 +16,13 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parse } from "date-fns";
-import { CalendarIcon, Car, Loader2, Users, Check, X, Info, ArrowLeft } from "lucide-react";
+import { CalendarIcon, Car, Loader2, Users, Check, X, Info, ArrowLeft, ArrowRight, ArrowLeftRight } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, addDoc, serverTimestamp, doc, getDoc as getFirestoreDoc, where } from "firebase/firestore";
-import { UserRole, type EventData, type RydData, type RydStatus, type UserProfileData, type ActiveRyd, PassengerManifestStatus } from "@/types";
+import { UserRole, RydDirection, type EventData, type RydData, type RydStatus, type UserProfileData, type ActiveRyd, PassengerManifestStatus } from "@/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { submitPassengerDetailsForActiveRydAction } from "@/actions/activeRydActions";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,7 @@ interface ManagedStudentSelectItem {
 }
 
 const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: boolean) => z.object({ 
+  direction: z.nativeEnum(RydDirection).default(RydDirection.TO_EVENT),
   eventId: z.string().optional(), 
   eventName: z.string().optional(),
   destination: z.string().min(1, "Destination address is required."), 
@@ -121,6 +123,7 @@ export default function RydRequestPage() {
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(createRydRequestFormSchema(userProfile?.role, isJoinOfferContext)), 
     defaultValues: {
+      direction: RydDirection.TO_EVENT,
       eventId: undefined,
       eventName: "",
       destination: "",
@@ -456,6 +459,7 @@ export default function RydRequestPage() {
         const earliestPickupFirestoreTimestamp = Timestamp.fromDate(earliestPickupDateTime);
 
         const rydRequestPayload: Partial<RydData> = { 
+          direction: data.direction,
           requestedBy: authUser.uid,
           destination: data.destination.trim(),
           pickupLocation: finalPickupLocation,
@@ -492,26 +496,36 @@ export default function RydRequestPage() {
 
   const selectedEventId = form.watch("eventId");
   const isPickupFlexible = form.watch("isPickupFlexible");
+  const direction = form.watch("direction");
 
   useEffect(() => {
     if (isJoinOfferContext) return; 
 
-    if (selectedEventId && selectedEventId !== "custom") {
-      const event = availableEvents.find(e => e.id === selectedEventId);
-      if (event) {
-        form.setValue("destination", event.location ? event.location.trim() : "");
-        form.setValue("eventName", ""); 
+    const event = selectedEventId && selectedEventId !== 'custom' ? availableEvents.find(e => e.id === selectedEventId) : null;
+
+    if (event) {
+        if (direction === RydDirection.TO_EVENT) {
+            form.setValue("destination", event.location ? event.location.trim() : "");
+            form.setValue("pickupLocation", "");
+        } else { // FROM_EVENT
+            form.setValue("pickupLocation", event.location ? event.location.trim() : "");
+            form.setValue("destination", "");
+        }
+        form.setValue("eventName", ""); // Reset custom event name
         if (event.eventTimestamp) {
             const eventDate = event.eventTimestamp.toDate();
             form.setValue("date", eventDate);
             form.setValue("time", format(eventDate, "HH:mm"));
         }
-      }
-    } else if (selectedEventId === "custom") {
-      form.setValue("eventName", form.getValues("eventName") || ""); 
-      form.setValue("destination", form.getValues("destination") || ""); 
+    } else { // Custom event or no event selected
+        if (direction === RydDirection.TO_EVENT) {
+             form.setValue("destination", form.getValues("destination") || ""); 
+        } else { // FROM_EVENT
+             form.setValue("pickupLocation", form.getValues("pickupLocation") || "");
+        }
     }
-  }, [selectedEventId, form, availableEvents, isJoinOfferContext]);
+  }, [selectedEventId, direction, form, availableEvents, isJoinOfferContext]);
+
   
   const handleStudentSelection = (studentId: string) => {
     const currentSelectedStudents = form.getValues("passengerUids") || [];
@@ -544,6 +558,13 @@ export default function RydRequestPage() {
     ? `Confirm your pickup information for the ryd to ${activeRydBeingUpdated?.eventName || activeRydBeingUpdated?.finalDestinationAddress || "the event"}.`
     : "Fill out the details below to request a ryd to an event or destination.";
   const submitButtonText = isJoinOfferContext ? "Submit Pickup Details" : "Submit Ryd Request";
+
+  const pickupLabel = direction === RydDirection.FROM_EVENT ? "Pickup Location (From Event)" : "Your Pickup Location";
+  const destinationLabel = direction === RydDirection.FROM_EVENT ? "Your Drop-off Destination" : "Destination Address";
+  
+  const isPickupDisabled = (direction === RydDirection.FROM_EVENT && !!selectedEventId && selectedEventId !== 'custom') || isPickupFlexible;
+  const isDestinationDisabled = (direction === RydDirection.TO_EVENT && !!selectedEventId && selectedEventId !== 'custom') || isJoinOfferContext;
+
 
   if (authLoading || isLoadingProfile || (isJoinOfferContext && isLoadingJoinOfferDetails)) {
     return (
@@ -579,6 +600,43 @@ export default function RydRequestPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              
+               <FormField
+                control={form.control}
+                name="direction"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel>Ryd Direction</FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        className="flex flex-col sm:flex-row gap-4"
+                        disabled={isJoinOfferContext}
+                      >
+                        <FormItem className="flex items-center space-x-3 space-y-0 flex-1 border p-4 rounded-md has-[:checked]:border-primary">
+                          <FormControl>
+                            <RadioGroupItem value={RydDirection.TO_EVENT} />
+                          </FormControl>
+                          <FormLabel className="font-normal flex items-center gap-2">
+                             <ArrowRight className="h-4 w-4"/> To Event
+                          </FormLabel>
+                        </FormItem>
+                        <FormItem className="flex items-center space-x-3 space-y-0 flex-1 border p-4 rounded-md has-[:checked]:border-primary">
+                          <FormControl>
+                            <RadioGroupItem value={RydDirection.FROM_EVENT} />
+                          </FormControl>
+                          <FormLabel className="font-normal flex items-center gap-2">
+                            <ArrowLeft className="h-4 w-4"/> From Event
+                          </FormLabel>
+                        </FormItem>
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {!isJoinOfferContext && (
                 <FormField
                   control={form.control}
@@ -604,7 +662,7 @@ export default function RydRequestPage() {
                            <SelectItem value="custom">Other (Specify Below)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>If your event is not listed, choose "Other".</FormDescription>
+                      <FormDescription>If your event is not listed, choose "Other". This will determine one of your locations.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -626,76 +684,15 @@ export default function RydRequestPage() {
                     )}
                   />
               )}
-
-              <FormField
-                control={form.control}
-                name="destination"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Destination Address</FormLabel>
-                    {sortedSavedLocations.length > 0 && !isJoinOfferContext && (!selectedEventId || selectedEventId === "custom") && (
-                      <Select
-                        onValueChange={(value) => {
-                          const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
-                          if (selectedLoc) {
-                            form.setValue("destination", selectedLoc.address);
-                          }
-                        }}
-                        disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Or use a saved location for destination..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sortedSavedLocations.map((loc) => (
-                            <SelectItem key={loc.id} value={loc.id}>
-                              {`${loc.name} (${loc.address})`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                    <FormControl>
-                      <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} className={(isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) ? "bg-muted/50" : ""} />
-                    </FormControl>
-                     {!isJoinOfferContext && selectedEventId && selectedEventId !== "custom" && <FormDescription>Destination auto-filled from selected event.</FormDescription>}
-                     {isJoinOfferContext && <FormDescription>Destination set by ryd offer.</FormDescription>}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
+              
               <FormField
                 control={form.control}
                 name="pickupLocation"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Your Pickup Location</FormLabel>
-                    {sortedSavedLocations.length > 0 && (
-                      <Select
-                        onValueChange={(value) => {
-                          const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
-                          if (selectedLoc) {
-                            form.setValue("pickupLocation", selectedLoc.address);
-                            form.setValue("isPickupFlexible", false);
-                          }
-                        }}
-                        disabled={isPickupFlexible}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Or use a saved location for pickup..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sortedSavedLocations.map((loc) => (
-                            <SelectItem key={loc.id} value={loc.id}>
-                               {`${loc.name} (${loc.address})`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                    <FormLabel>{pickupLabel}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupFlexible}/>
+                      <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupDisabled} className={isPickupDisabled ? "bg-muted/50" : ""}/>
                     </FormControl>
                     <FormMessage />
                      <FormField
@@ -717,6 +714,20 @@ export default function RydRequestPage() {
                         </FormItem>
                         )}
                       />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="destination"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{destinationLabel}</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
+                    </FormControl>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -826,11 +837,11 @@ export default function RydRequestPage() {
                   name="time"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event Start Time (24h format)</FormLabel>
+                      <FormLabel>Time at Event (24h format)</FormLabel>
                       <FormControl>
                         <Input type="time" {...field} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} className={ (isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) ? "bg-muted/50" : ""}/>
                       </FormControl>
-                      {(isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) && <FormDescription className="text-xs">Event start time auto-filled.</FormDescription>}
+                      <FormDescription className="text-xs">The time you need to be at/leave the event.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -883,4 +894,6 @@ export default function RydRequestPage() {
     </>
   );
 }
+
+
 
