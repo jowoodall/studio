@@ -707,28 +707,31 @@ export default function RydRequestPage() {
                             <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupDisabled} className={isPickupDisabled ? "bg-muted/50" : ""}/>
                             </FormControl>
                             <FormMessage />
-                            <FormField
-                                control={form.control}
-                                name="isPickupFlexible"
-                                render={({ field: flexibleField }) => (
-                                <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
-                                    <FormControl>
-                                        <Checkbox
-                                            checked={flexibleField.value}
-                                            onCheckedChange={flexibleField.onChange}
-                                        />
-                                    </FormControl>
-                                    <div className="space-y-1 leading-none">
-                                    <FormLabel className="text-sm font-normal cursor-pointer">
-                                        My pickup location is flexible (I can meet the driver).
-                                    </FormLabel>
-                                    </div>
-                                </FormItem>
-                                )}
-                            />
                         </FormItem>
                         )}
                     />
+                    
+                     {direction === 'to_event' && (
+                        <FormField
+                            control={form.control}
+                            name="isPickupFlexible"
+                            render={({ field: flexibleField }) => (
+                            <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
+                                <FormControl>
+                                    <Checkbox
+                                        checked={flexibleField.value}
+                                        onCheckedChange={flexibleField.onChange}
+                                    />
+                                </FormControl>
+                                <div className="space-y-1 leading-none">
+                                <FormLabel className="text-sm font-normal cursor-pointer">
+                                    My pickup location is flexible (I can meet the driver).
+                                </FormLabel>
+                                </div>
+                            </FormItem>
+                            )}
+                        />
+                    )}
                     
                     <FormField
                         control={form.control}
@@ -743,6 +746,28 @@ export default function RydRequestPage() {
                         </FormItem>
                         )}
                     />
+
+                     {direction === 'from_event' && (
+                        <FormField
+                            control={form.control}
+                            name="isPickupFlexible"
+                            render={({ field: flexibleField }) => (
+                            <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
+                                <FormControl>
+                                    <Checkbox
+                                        checked={flexibleField.value}
+                                        onCheckedChange={flexibleField.onChange}
+                                    />
+                                </FormControl>
+                                <div className="space-y-1 leading-none">
+                                <FormLabel className="text-sm font-normal cursor-pointer">
+                                    My destination location is flexible.
+                                </FormLabel>
+                                </div>
+                            </FormItem>
+                            )}
+                        />
+                    )}
 
                     {(authLoading || isLoadingProfile) && !isJoinOfferContext && (
                         <div className="space-y-2"> <Skeleton className="h-4 w-1/4" /> <Skeleton className="h-10 w-full" /> </div>
@@ -908,6 +933,7 @@ export default function RydRequestPage() {
     </>
   );
 }
+
 
 
 
