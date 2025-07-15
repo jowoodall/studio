@@ -703,6 +703,21 @@ export default function RydRequestPage() {
                         render={({ field }) => (
                         <FormItem>
                             <FormLabel>{pickupLabel}</FormLabel>
+                             {direction === 'to_event' && !isPickupDisabled && sortedSavedLocations.length > 0 && (
+                                <Select
+                                onValueChange={(value) => {
+                                    const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
+                                    if (selectedLoc) form.setValue("pickupLocation", selectedLoc.address);
+                                }}
+                                >
+                                <SelectTrigger className="mt-1 mb-2"> <SelectValue placeholder="Or use a saved location..." /> </SelectTrigger>
+                                <SelectContent>
+                                    {sortedSavedLocations.map((loc) => (
+                                    <SelectItem key={loc.id} value={loc.id}> {`${loc.name} (${loc.address})`} </SelectItem>
+                                    ))}
+                                </SelectContent>
+                                </Select>
+                             )}
                             <FormControl>
                             <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupDisabled} className={isPickupDisabled ? "bg-muted/50" : ""}/>
                             </FormControl>
@@ -739,6 +754,21 @@ export default function RydRequestPage() {
                         render={({ field }) => (
                         <FormItem>
                             <FormLabel>{destinationLabel}</FormLabel>
+                            {direction === 'from_event' && !isDestinationDisabled && sortedSavedLocations.length > 0 && (
+                                <Select
+                                onValueChange={(value) => {
+                                    const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
+                                    if (selectedLoc) form.setValue("destination", selectedLoc.address);
+                                }}
+                                >
+                                <SelectTrigger className="mt-1 mb-2"> <SelectValue placeholder="Or use a saved location..." /> </SelectTrigger>
+                                <SelectContent>
+                                    {sortedSavedLocations.map((loc) => (
+                                    <SelectItem key={loc.id} value={loc.id}> {`${loc.name} (${loc.address})`} </SelectItem>
+                                    ))}
+                                </SelectContent>
+                                </Select>
+                             )}
                             <FormControl>
                             <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
                             </FormControl>
@@ -933,8 +963,4 @@ export default function RydRequestPage() {
     </>
   );
 }
-
-
-
-
 
