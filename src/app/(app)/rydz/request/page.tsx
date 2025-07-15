@@ -41,7 +41,7 @@ interface ManagedStudentSelectItem {
 }
 
 const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: boolean) => z.object({ 
-  direction: z.nativeEnum(RydDirection).default(RydDirection.TO_EVENT),
+  direction: z.nativeEnum(RydDirection).optional(),
   eventId: z.string().optional(), 
   eventName: z.string().optional(),
   destination: z.string().min(1, "Destination address is required."), 
@@ -53,6 +53,13 @@ const createRydRequestFormSchema = (userRole?: UserRole, isJoinOfferContext?: bo
   passengerUids: z.array(z.string()).optional(), 
   notes: z.string().optional(),
 }).superRefine((data, ctx) => {
+    if (!data.direction) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please select a ryd direction.",
+            path: ["direction"],
+        });
+    }
     if (!isJoinOfferContext) { 
       if (data.eventId === "custom" && (!data.eventName || data.eventName.trim().length < 3)) {
         ctx.addIssue({
@@ -123,7 +130,7 @@ export default function RydRequestPage() {
   const form = useForm<RydRequestFormValues>({ 
     resolver: zodResolver(createRydRequestFormSchema(userProfile?.role, isJoinOfferContext)), 
     defaultValues: {
-      direction: RydDirection.TO_EVENT,
+      direction: undefined,
       eventId: undefined,
       eventName: "",
       destination: "",
@@ -152,6 +159,9 @@ export default function RydRequestPage() {
         if (!activeRydSnap.exists()) throw new Error("Active Ryd not found.");
         const fetchedActiveRyd = { id: activeRydSnap.id, ...activeRydSnap.data() } as ActiveRyd;
         setActiveRydBeingUpdated(fetchedActiveRyd);
+        
+        // When joining, it's always "To Event" directionally
+        form.setValue("direction", RydDirection.TO_EVENT);
 
         let fetchedEvent: EventData | null = null;
         if (fetchedActiveRyd.associatedEventId) {
@@ -610,7 +620,7 @@ export default function RydRequestPage() {
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                         className="flex flex-col sm:flex-row gap-4"
                         disabled={isJoinOfferContext}
                       >
@@ -637,249 +647,253 @@ export default function RydRequestPage() {
                 )}
               />
 
-              {!isJoinOfferContext && (
-                <FormField
-                  control={form.control}
-                  name="eventId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Select Event (Optional)</FormLabel>
-                      <Select 
-                          onValueChange={(value) => field.onChange(value)} 
-                          defaultValue={field.value}
-                          value={field.value || undefined}
-                          disabled={isLoadingEvents}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={isLoadingEvents ? "Loading events..." : "Choose an existing event or 'Other'"} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {!isLoadingEvents && availableEvents.map(event => (
-                            <SelectItem key={event.id} value={event.id}>{event.name} ({event.eventTimestamp instanceof Timestamp ? format(event.eventTimestamp.toDate(), "MMM d, p") : 'Invalid Date'})</SelectItem>
-                          ))}
-                           <SelectItem value="custom">Other (Specify Below)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>If your event is not listed, choose "Other". This will determine one of your locations.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              {((!isJoinOfferContext && selectedEventId === "custom") || (!selectedEventId && form.getValues("eventName")) || (isJoinOfferContext && activeRydBeingUpdated?.eventName)) && ( 
-                 <FormField
-                    control={form.control}
-                    name="eventName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Event Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Birthday Party, Study Group" {...field} disabled={isJoinOfferContext} className={isJoinOfferContext ? "bg-muted/50" : ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-              )}
-              
-              <FormField
-                control={form.control}
-                name="pickupLocation"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{pickupLabel}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupDisabled} className={isPickupDisabled ? "bg-muted/50" : ""}/>
-                    </FormControl>
-                    <FormMessage />
-                     <FormField
+              {direction && (
+                <div className="space-y-6 animate-accordion-down">
+                    {!isJoinOfferContext && (
+                        <FormField
                         control={form.control}
-                        name="isPickupFlexible"
-                        render={({ field: flexibleField }) => (
-                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
+                        name="eventId"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Select Event (Optional)</FormLabel>
+                            <Select 
+                                onValueChange={(value) => field.onChange(value)} 
+                                defaultValue={field.value}
+                                value={field.value || undefined}
+                                disabled={isLoadingEvents}
+                            >
+                                <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder={isLoadingEvents ? "Loading events..." : "Choose an existing event or 'Other'"} />
+                                </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                {!isLoadingEvents && availableEvents.map(event => (
+                                    <SelectItem key={event.id} value={event.id}>{event.name} ({event.eventTimestamp instanceof Timestamp ? format(event.eventTimestamp.toDate(), "MMM d, p") : 'Invalid Date'})</SelectItem>
+                                ))}
+                                <SelectItem value="custom">Other (Specify Below)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <FormDescription>If your event is not listed, choose "Other". This will determine one of your locations.</FormDescription>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                    )}
+
+                    {((!isJoinOfferContext && selectedEventId === "custom") || (!selectedEventId && form.getValues("eventName")) || (isJoinOfferContext && activeRydBeingUpdated?.eventName)) && ( 
+                        <FormField
+                            control={form.control}
+                            name="eventName"
+                            render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Event Name</FormLabel>
+                                <FormControl>
+                                <Input placeholder="e.g., Birthday Party, Study Group" {...field} disabled={isJoinOfferContext} className={isJoinOfferContext ? "bg-muted/50" : ""} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                            )}
+                        />
+                    )}
+                    
+                    <FormField
+                        control={form.control}
+                        name="pickupLocation"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>{pickupLabel}</FormLabel>
                             <FormControl>
-                                <Checkbox
-                                    checked={flexibleField.value}
-                                    onCheckedChange={flexibleField.onChange}
-                                />
+                            <Input placeholder="e.g., 456 Oak Ave, Anytown" {...field} disabled={isPickupDisabled} className={isPickupDisabled ? "bg-muted/50" : ""}/>
                             </FormControl>
-                            <div className="space-y-1 leading-none">
-                            <FormLabel className="text-sm font-normal cursor-pointer">
-                                My pickup location is flexible (I can meet the driver).
-                            </FormLabel>
-                            </div>
+                            <FormMessage />
+                            <FormField
+                                control={form.control}
+                                name="isPickupFlexible"
+                                render={({ field: flexibleField }) => (
+                                <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md p-3 border bg-muted/20 mt-2">
+                                    <FormControl>
+                                        <Checkbox
+                                            checked={flexibleField.value}
+                                            onCheckedChange={flexibleField.onChange}
+                                        />
+                                    </FormControl>
+                                    <div className="space-y-1 leading-none">
+                                    <FormLabel className="text-sm font-normal cursor-pointer">
+                                        My pickup location is flexible (I can meet the driver).
+                                    </FormLabel>
+                                    </div>
+                                </FormItem>
+                                )}
+                            />
                         </FormItem>
                         )}
-                      />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="destination"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{destinationLabel}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    />
+                    
+                    <FormField
+                        control={form.control}
+                        name="destination"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>{destinationLabel}</FormLabel>
+                            <FormControl>
+                            <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
 
-              {(authLoading || isLoadingProfile) && !isJoinOfferContext && (
-                <div className="space-y-2"> <Skeleton className="h-4 w-1/4" /> <Skeleton className="h-10 w-full" /> </div>
+                    {(authLoading || isLoadingProfile) && !isJoinOfferContext && (
+                        <div className="space-y-2"> <Skeleton className="h-4 w-1/4" /> <Skeleton className="h-10 w-full" /> </div>
+                    )}
+
+                    {!isJoinOfferContext && !authLoading && !isLoadingProfile && userProfile && (
+                        <FormField
+                        control={form.control}
+                        name="passengerUids"
+                        render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                            <FormLabel className="text-base flex items-center"> <Users className="mr-2 h-4 w-4 text-muted-foreground" /> This ryd is for </FormLabel>
+                            {userProfile.role === UserRole.STUDENT && ( <p className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">Me</p> )}
+                            {userProfile.role === UserRole.PARENT && (
+                                <>
+                                <Popover open={studentPopoverOpen} onOpenChange={setStudentPopoverOpen}>
+                                    <PopoverTrigger asChild>
+                                    <Button variant="outline" role="combobox" aria-expanded={studentPopoverOpen} className="w-full justify-between" disabled={isLoadingManagedStudents} >
+                                        {isLoadingManagedStudents ? "Loading students..." : (currentSelectedStudentUids.length > 0 ? `${currentSelectedStudentUids.length} passenger(s) selected` : "Select passenger(s)...")}
+                                        <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                                    <Command>
+                                        <CommandInput placeholder="Search students or 'Me'..." value={studentSearchTerm} onValueChange={setStudentSearchTerm} disabled={isLoadingManagedStudents}/>
+                                        <CommandList>
+                                        <ScrollArea className="h-48">
+                                            {isLoadingManagedStudents && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
+                                            {!isLoadingManagedStudents && filteredStudentsForPopover.length === 0 && <CommandEmpty>No students found.</CommandEmpty>}
+                                            <CommandGroup>
+                                            {!isLoadingManagedStudents && filteredStudentsForPopover.map((student) => (
+                                                <CommandItem key={student.id} value={student.id} onSelect={() => handleStudentSelection(student.id)}>
+                                                <Check className={cn("mr-2 h-4 w-4", currentSelectedStudentUids.includes(student.id) ? "opacity-100" : "opacity-0")} />
+                                                {student.fullName}
+                                                </CommandItem>
+                                            ))}
+                                            </CommandGroup>
+                                        </ScrollArea>
+                                        </CommandList>
+                                    </Command>
+                                    </PopoverContent>
+                                </Popover>
+                                {currentSelectedStudentUids.length > 0 && (
+                                    <div className="pt-2 space-x-1 space-y-1">
+                                    {currentSelectedStudentUids.map(passengerId => {
+                                        let passengerName = "";
+                                        if (passengerId === authUser?.uid && userProfile?.role === UserRole.PARENT) {
+                                            passengerName = `${userProfile.fullName} (Me)`;
+                                        } else {
+                                            const student = managedStudentsList.find(s => s.id === passengerId);
+                                            passengerName = student ? student.fullName : `User ${passengerId.substring(0,5)}`;
+                                        }
+                                        return (
+                                        <Badge key={passengerId} variant="secondary" className="mr-1"> {passengerName}
+                                            <button type="button" className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2" onClick={() => handleStudentSelection(passengerId)}> <X className="h-3 w-3 text-muted-foreground hover:text-foreground" /> </button>
+                                        </Badge>
+                                        );
+                                    })}
+                                    </div>
+                                )}
+                                <FormMessage /> 
+                                </>
+                            )}
+                            </FormItem>
+                        )}
+                        />
+                    )}
+                    {isJoinOfferContext && passengerIdForUpdate && (
+                        <FormItem>
+                            <FormLabel className="text-base flex items-center"> <Users className="mr-2 h-4 w-4 text-muted-foreground" /> This ryd is for </FormLabel>
+                            <p className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">
+                                {managedStudentsList.find(s => s.id === passengerIdForUpdate)?.fullName || (userProfile?.uid === passengerIdForUpdate ? userProfile.fullName : `User ${passengerIdForUpdate.substring(0,6)}...`) }
+                            </p>
+                        </FormItem>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                        control={form.control}
+                        name="date"
+                        render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                            <FormLabel>Date of Ryd</FormLabel> 
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                <FormControl>
+                                    <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground", (isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) && "bg-muted/50" )} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} >
+                                    {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                    </Button>
+                                </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar mode="single" selected={field.value || undefined} onSelect={field.onChange} disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) || isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} initialFocus />
+                                </PopoverContent>
+                            </Popover>
+                            {(isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) && <FormDescription className="text-xs">Date auto-filled from event/offer.</FormDescription>}
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                        <FormField
+                        control={form.control}
+                        name="time"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Time at Event (24h format)</FormLabel>
+                            <FormControl>
+                                <Input type="time" {...field} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} className={ (isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) ? "bg-muted/50" : ""}/>
+                            </FormControl>
+                            <FormDescription className="text-xs">The time you need to be at/leave the event.</FormDescription>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                    </div>
+                    
+                    <FormField
+                        control={form.control}
+                        name="earliestPickupTime"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Earliest Pickup Time (24h format)</FormLabel>
+                            <FormControl>
+                            <Input type="time" {...field} />
+                            </FormControl>
+                            <FormDescription>The earliest you'd like to be picked up on the event date.</FormDescription>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+
+                    <FormField
+                        control={form.control}
+                        name="notes"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Additional Notes (Optional)</FormLabel>
+                            <FormControl>
+                            <Textarea placeholder="e.g., Number of passengers, specific instructions for driver." {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                </div>
               )}
-
-              {!isJoinOfferContext && !authLoading && !isLoadingProfile && userProfile && (
-                <FormField
-                  control={form.control}
-                  name="passengerUids"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel className="text-base flex items-center"> <Users className="mr-2 h-4 w-4 text-muted-foreground" /> This ryd is for </FormLabel>
-                      {userProfile.role === UserRole.STUDENT && ( <p className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">Me</p> )}
-                      {userProfile.role === UserRole.PARENT && (
-                        <>
-                          <Popover open={studentPopoverOpen} onOpenChange={setStudentPopoverOpen}>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" role="combobox" aria-expanded={studentPopoverOpen} className="w-full justify-between" disabled={isLoadingManagedStudents} >
-                                {isLoadingManagedStudents ? "Loading students..." : (currentSelectedStudentUids.length > 0 ? `${currentSelectedStudentUids.length} passenger(s) selected` : "Select passenger(s)...")}
-                                <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                              <Command>
-                                <CommandInput placeholder="Search students or 'Me'..." value={studentSearchTerm} onValueChange={setStudentSearchTerm} disabled={isLoadingManagedStudents}/>
-                                <CommandList>
-                                  <ScrollArea className="h-48">
-                                    {isLoadingManagedStudents && <CommandEmpty><Loader2 className="h-4 w-4 animate-spin my-4 mx-auto" /></CommandEmpty>}
-                                    {!isLoadingManagedStudents && filteredStudentsForPopover.length === 0 && <CommandEmpty>No students found.</CommandEmpty>}
-                                    <CommandGroup>
-                                      {!isLoadingManagedStudents && filteredStudentsForPopover.map((student) => (
-                                        <CommandItem key={student.id} value={student.id} onSelect={() => handleStudentSelection(student.id)}>
-                                          <Check className={cn("mr-2 h-4 w-4", currentSelectedStudentUids.includes(student.id) ? "opacity-100" : "opacity-0")} />
-                                          {student.fullName}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </ScrollArea>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
-                          {currentSelectedStudentUids.length > 0 && (
-                            <div className="pt-2 space-x-1 space-y-1">
-                              {currentSelectedStudentUids.map(passengerId => {
-                                let passengerName = "";
-                                if (passengerId === authUser?.uid && userProfile?.role === UserRole.PARENT) {
-                                    passengerName = `${userProfile.fullName} (Me)`;
-                                } else {
-                                    const student = managedStudentsList.find(s => s.id === passengerId);
-                                    passengerName = student ? student.fullName : `User ${passengerId.substring(0,5)}`;
-                                }
-                                return (
-                                  <Badge key={passengerId} variant="secondary" className="mr-1"> {passengerName}
-                                    <button type="button" className="ml-1.5 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2" onClick={() => handleStudentSelection(passengerId)}> <X className="h-3 w-3 text-muted-foreground hover:text-foreground" /> </button>
-                                  </Badge>
-                                );
-                              })}
-                            </div>
-                          )}
-                          <FormMessage /> 
-                        </>
-                      )}
-                    </FormItem>
-                  )}
-                />
-              )}
-              {isJoinOfferContext && passengerIdForUpdate && (
-                <FormItem>
-                    <FormLabel className="text-base flex items-center"> <Users className="mr-2 h-4 w-4 text-muted-foreground" /> This ryd is for </FormLabel>
-                    <p className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">
-                        {managedStudentsList.find(s => s.id === passengerIdForUpdate)?.fullName || (userProfile?.uid === passengerIdForUpdate ? userProfile.fullName : `User ${passengerIdForUpdate.substring(0,6)}...`) }
-                    </p>
-                </FormItem>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Date of Ryd</FormLabel> 
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground", (isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) && "bg-muted/50" )} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} >
-                              {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar mode="single" selected={field.value || undefined} onSelect={field.onChange} disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) || isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} initialFocus />
-                        </PopoverContent>
-                      </Popover>
-                      {(isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) && <FormDescription className="text-xs">Date auto-filled from event/offer.</FormDescription>}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="time"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Time at Event (24h format)</FormLabel>
-                      <FormControl>
-                        <Input type="time" {...field} disabled={isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")} className={ (isJoinOfferContext || (!!selectedEventId && selectedEventId !== "custom")) ? "bg-muted/50" : ""}/>
-                      </FormControl>
-                      <FormDescription className="text-xs">The time you need to be at/leave the event.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <FormField
-                control={form.control}
-                name="earliestPickupTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Earliest Pickup Time (24h format)</FormLabel>
-                    <FormControl>
-                      <Input type="time" {...field} />
-                    </FormControl>
-                    <FormDescription>The earliest you'd like to be picked up on the event date.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Additional Notes (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="e.g., Number of passengers, specific instructions for driver." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <Button 
                 type="submit" 
-                className="w-full" 
-                disabled={isSubmitting || authLoading || isLoadingProfile || (!isJoinOfferContext && (isLoadingEvents || isLoadingManagedStudents)) || (isJoinOfferContext && isLoadingJoinOfferDetails)}
+                className="w-full mt-6" 
+                disabled={isSubmitting || !direction || authLoading || isLoadingProfile || (!isJoinOfferContext && (isLoadingEvents || isLoadingManagedStudents)) || (isJoinOfferContext && isLoadingJoinOfferDetails)}
               >
                 {isSubmitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
@@ -894,6 +908,7 @@ export default function RydRequestPage() {
     </>
   );
 }
+
 
 
 
