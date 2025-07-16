@@ -15,7 +15,7 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
     const errorMessage = error.message || "An unknown server error occurred.";
 
     // Handle Firestore index errors
-    if (error.code === 'failed-precondition' || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
+    if (error.code === 5 || error.code === 'failed-precondition' || (errorMessage.toLowerCase().includes("index") || errorMessage.toLowerCase().includes("missing a composite index"))) {
       return { success: false, message: `A Firestore index is required for this query. Please check your server terminal logs for an error message from Firestore that contains a link to create the necessary index automatically.` };
     }
     
@@ -169,25 +169,32 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     const fourteenDaysLater = addDays(todayStart, 14);
 
     const scheduleItemsMap = new Map<string, ScheduleItem>();
-    
+
+    // Refactored Queries to be simpler and avoid composite index needs
     const activeRydzDriverQuery = db.collection('activeRydz').where('driverId', 'in', uidsToQuery);
     const activeRydzPassengerQuery = db.collection('activeRydz').where('passengerUids', 'array-contains-any', uidsToQuery);
-    const rydRequestsQuery = db.collection('rydz').where('passengerIds', 'array-contains-any', uidsToQuery);
-    const managedEventsQuery = db.collection('events').where('managerIds', 'array-contains', userId);
+    const rydRequestsQuery = db.collection('rydz').where('passengerIds', 'array-contains-any', uidsToQuery).where('status', 'in', ['requested', 'searching_driver']);
+    const managedEventsQuery = db.collection('events').where('managerIds', 'array-contains', userId).where('status', '==', EventStatus.ACTIVE);
     
     const queriesToRun: Promise<admin.firestore.QuerySnapshot>[] = [
-        activeRydzDriverQuery.get(),
-        activeRydzPassengerQuery.get(),
-        rydRequestsQuery.get(),
-        managedEventsQuery.get(),
+      activeRydzDriverQuery.get(),
+      activeRydzPassengerQuery.get(),
+      rydRequestsQuery.get(),
+      managedEventsQuery.get(),
     ];
 
     if (userProfile.joinedGroupIds && userProfile.joinedGroupIds.length > 0) {
-        const groupEventsQuery = db.collection('events').where('associatedGroupIds', 'array-contains-any', userProfile.joinedGroupIds);
-        queriesToRun.push(groupEventsQuery.get());
+      const groupEventsQuery = db.collection('events').where('associatedGroupIds', 'array-contains-any', userProfile.joinedGroupIds).where('status', '==', EventStatus.ACTIVE);
+      queriesToRun.push(groupEventsQuery.get());
     }
 
-    const [activeRydzAsDriverSnap, activeRydzAsPassengerSnap, rydRequestsSnap, managedEventsSnap, groupEventsSnap] = await Promise.all(queriesToRun);
+    const [
+      activeRydzAsDriverSnap,
+      activeRydzAsPassengerSnap,
+      rydRequestsSnap,
+      managedEventsSnap,
+      groupEventsSnap, // Will be undefined if the query wasn't added, which is fine
+    ] = await Promise.all(queriesToRun);
     
     const allActiveRydzDocs = [...activeRydzAsDriverSnap.docs, ...activeRydzAsPassengerSnap.docs];
     const allEventsDocs = [...managedEventsSnap.docs, ...(groupEventsSnap?.docs || [])];
@@ -204,7 +211,13 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
       const timestamp = (activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime) as Timestamp | undefined;
       if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
         const relevantUserUid = uidsToQuery.find(uid => uid === activeRyd.driverId || activeRyd.passengerUids?.includes(uid));
-        const relevantUserSnap = await db.collection('users').doc(relevantUserUid!).get();
+        
+        // This check is important as passenger query might return rydz for other students not managed by this parent.
+        if (!relevantUserUid) continue;
+
+        const relevantUserSnap = await db.collection('users').doc(relevantUserUid).get();
+        if(!relevantUserSnap.exists) continue;
+
         const relevantUser = relevantUserSnap.data() as UserProfileData;
         let subtitle: string;
         if (activeRyd.driverId === relevantUserUid) {
@@ -228,7 +241,7 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     for (const reqDoc of rydRequestsSnap.docs) {
       const rydRequest = { id: reqDoc.id, ...reqDoc.data() } as RydData;
       const timestamp = rydRequest.rydTimestamp as Timestamp | undefined;
-       if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater }) && ['requested', 'searching_driver'].includes(rydRequest.status)) {
+       if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
         scheduleItemsMap.set(`request-${rydRequest.id}`, {
           id: `request-${rydRequest.id}`,
           type: 'request',
@@ -241,10 +254,16 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     }
 
     // --- Process Events ---
-    for (const evDoc of allEventsDocs) {
-        const event = {id: evDoc.id, ...evDoc.data()} as EventData;
+    const allUniqueEvents = allEventsDocs.reduce((acc, doc) => {
+        if (!acc.has(doc.id)) {
+            acc.set(doc.id, {id: doc.id, ...doc.data()} as EventData);
+        }
+        return acc;
+    }, new Map<string, EventData>());
+
+    for (const event of allUniqueEvents.values()) {
         const timestamp = event.eventStartTimestamp as Timestamp | undefined;
-        if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater }) && event.status === EventStatus.ACTIVE) {
+        if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
             scheduleItemsMap.set(`event-${event.id}`, {
                 id: `event-${event.id}`,
                 type: 'event',
