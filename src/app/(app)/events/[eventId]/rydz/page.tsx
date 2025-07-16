@@ -46,12 +46,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const [pageError, setPageError] = useState<string | null>(null);
 
   const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
-  const [isLoadingAllGroups, setIsLoadingAllGroups] = useState(true);
-
+  
   const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
 
   const [managedStudents, setManagedStudents] = useState<UserProfileData[]>([]);
-  const [isLoadingManagedStudents, setIsLoadingManagedStudents] = useState(true);
   const [addPassengerPopoverOpen, setAddPassengerPopoverOpen] = useState<Record<string, boolean>>({});
   const [isAddingPassenger, setIsAddingPassenger] = useState<Record<string, boolean>>({});
 
@@ -71,6 +69,23 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setEventManagers(result.data.eventManagers);
         setActiveRydzList(result.data.activeRydzList);
         setRydRequestsList(result.data.rydRequestsList);
+
+        if (result.data.eventDetails?.associatedGroupIds?.length) {
+            const groupPromises = result.data.eventDetails.associatedGroupIds.map(gid => getDoc(doc(db, "groups", gid)));
+            const groupDocs = await Promise.all(groupPromises);
+            setAllFetchedGroups(groupDocs.filter(d => d.exists()).map(d => ({id: d.id, ...d.data()}) as GroupData));
+        }
+        
+        if (authUserProfile?.role === UserRole.PARENT && authUserProfile.managedStudentIds?.length) {
+             const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
+                const studentDocRef = doc(db, "users", studentId);
+                const studentDocSnap = await getDoc(studentDocRef);
+                return studentDocSnap.exists() ? (studentDocSnap.data() as UserProfileData) : null;
+            });
+            const students = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
+            setManagedStudents(students);
+        }
+
       } else {
         throw new Error(result.message || "Failed to load event page data.");
       }
@@ -81,58 +96,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     } finally {
       setIsLoadingPage(false);
     }
-  }, [eventId, toast]);
-
-  const fetchAllGroups = useCallback(async () => {
-    setIsLoadingAllGroups(true);
-    try {
-      const groupsCollectionQuery = query(collection(db, "groups"));
-      const querySnapshot = await getDocs(groupsCollectionQuery);
-      const fetchedGroups: GroupData[] = [];
-      querySnapshot.forEach((docSnap) => {
-        fetchedGroups.push({ id: docSnap.id, ...docSnap.data() } as GroupData);
-      });
-      setAllFetchedGroups(fetchedGroups);
-    } catch (error) {
-      console.error("Error fetching all groups:", error);
-      toast({
-        title: "Error",
-        description: "Could not fetch list of all groups for selection.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingAllGroups(false);
-    }
-  }, [toast]);
-
-  const fetchManagedStudents = useCallback(async () => {
-    if (authUserProfile?.role !== UserRole.PARENT || !authUserProfile.managedStudentIds?.length) {
-      setIsLoadingManagedStudents(false);
-      setManagedStudents([]);
-      return;
-    }
-    setIsLoadingManagedStudents(true);
-    try {
-      const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
-        const studentDocRef = doc(db, "users", studentId);
-        const studentDocSnap = await getDoc(studentDocRef);
-        return studentDocSnap.exists() ? (studentDocSnap.data() as UserProfileData) : null;
-      });
-      const students = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
-      setManagedStudents(students);
-    } catch (e) {
-      console.error("Error fetching managed students:", e);
-      toast({ title: "Error", description: "Could not load managed students.", variant: "destructive" });
-    } finally {
-      setIsLoadingManagedStudents(false);
-    }
-  }, [authUserProfile, toast]);
+  }, [eventId, toast, authUserProfile]);
 
   useEffect(() => {
-    fetchPageData();
-    fetchAllGroups();
-    fetchManagedStudents();
-  }, [fetchPageData, fetchAllGroups, fetchManagedStudents]);
+    if(!authLoading) {
+      fetchPageData();
+    }
+  }, [fetchPageData, authLoading]);
 
   const handleRequestSeatForUser = useCallback(async (activeRydId: string, userId: string, userName: string) => {
     if (!authUser) {
@@ -202,7 +172,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   };
 
 
-  const isLoading = authLoading || isLoadingPage || isLoadingAllGroups || isLoadingManagedStudents;
+  const isLoading = authLoading || isLoadingPage;
 
   if (isLoading) {
     return (
@@ -226,7 +196,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
+  const eventDate = new Date(eventDetails.eventStartTimestamp as any);
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
@@ -293,18 +263,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           <CardDescription>Groups linked to this event. Rydz might be prioritized for members.</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingAllGroups ? (
-             <div className="flex items-center justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : eventDetails.associatedGroupIds && eventDetails.associatedGroupIds.length > 0 ? (
+          {allFetchedGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2 mb-4">
-              {eventDetails.associatedGroupIds.map(groupId => {
-                const group = allFetchedGroups.find(g => g.id === groupId);
-                return group ? (
-                   <Link key={groupId} href={`/groups/${group.id}`}>
-                      <Badge variant="secondary" className="hover:bg-muted/80">{group.name}</Badge>
-                  </Link>
-                ) : <Badge key={groupId} variant="outline">Loading...</Badge>;
-              })}
+              {allFetchedGroups.map(group => (
+                 <Link key={group.id} href={`/groups/${group.id}`}>
+                    <Badge variant="secondary" className="hover:bg-muted/80">{group.name}</Badge>
+                </Link>
+              ))}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No groups are currently associated with this event.</p>
@@ -339,9 +304,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             if (vehicleLicense) vehicleDisplay += ' (Plate: ' + vehicleLicense + ')';
             if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
 
-            const proposedDeparture = activeRyd.proposedDepartureTime instanceof Timestamp ? activeRyd.proposedDepartureTime.toDate() : null;
-            const plannedArrival = activeRyd.plannedArrivalTime instanceof Timestamp ? activeRyd.plannedArrivalTime.toDate() : null;
-            const actualDeparture = activeRyd.actualDepartureTime instanceof Timestamp ? activeRyd.actualDepartureTime.toDate() : null;
+            const proposedDeparture = activeRyd.proposedDepartureTime ? new Date(activeRyd.proposedDepartureTime as any) : null;
+            const plannedArrival = activeRyd.plannedArrivalTime ? new Date(activeRyd.plannedArrivalTime as any) : null;
+            const actualDeparture = activeRyd.actualDepartureTime ? new Date(activeRyd.actualDepartureTime as any) : null;
 
             const displayDepartureTime = actualDeparture || proposedDeparture;
 
@@ -590,8 +555,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             }
 
 
-            const rydDateTime = request.rydTimestamp instanceof Timestamp ? request.rydTimestamp.toDate() : null;
-            const earliestPickup = request.earliestPickupTimestamp instanceof Timestamp ? request.earliestPickupTimestamp.toDate() : null;
+            const rydDateTime = request.rydTimestamp ? new Date(request.rydTimestamp as any) : null;
+            const earliestPickup = request.earliestPickupTimestamp ? new Date(request.earliestPickupTimestamp as any) : null;
             const canCurrentUserOfferToFulfill = authUserProfile?.canDrive;
 
             let suitableExistingActiveRydId: string | null = null;
