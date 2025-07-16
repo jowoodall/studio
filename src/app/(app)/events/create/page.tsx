@@ -97,7 +97,6 @@ export default function CreateEventPage() {
 
   useEffect(() => {
     const fetchUserGroups = async () => {
-        // This function will now only run if auth is not loading and a profile exists.
         if (!userProfile) {
             setAvailableGroups([]);
             setIsLoadingGroups(false);
@@ -114,12 +113,14 @@ export default function CreateEventPage() {
 
             const groupsCollectionRef = collection(db, "groups");
             const groupChunks: string[][] = [];
+            // Firestore 'in' query has a limit of 30 elements
             for (let i = 0; i < userJoinedGroupIds.length; i += 30) {
                 groupChunks.push(userJoinedGroupIds.slice(i, i + 30));
             }
 
             const fetchedGroups: GroupSelectItem[] = [];
             for (const chunk of groupChunks) {
+                if (chunk.length === 0) continue;
                 const groupsQuery = query(groupsCollectionRef, where("__name__", "in", chunk));
                 const querySnapshot = await getDocs(groupsQuery);
                 querySnapshot.forEach((doc) => {
@@ -140,11 +141,10 @@ export default function CreateEventPage() {
         }
     };
 
-    // We explicitly wait for the auth context to be done loading and have a user profile.
     if (!authLoading && !isLoadingProfile) {
         fetchUserGroups();
     }
-}, [toast, authUser, userProfile, authLoading, isLoadingProfile]);
+  }, [toast, userProfile, authLoading, isLoadingProfile]);
 
 
   async function onSubmit(data: EventFormValues) {
