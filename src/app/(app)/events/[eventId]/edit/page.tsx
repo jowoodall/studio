@@ -32,6 +32,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { updateEventAction } from "@/actions/eventActions";
+import { getGroupsAndInvitationsAction } from "@/actions/groupActions";
 
 
 const eventEditFormSchema = z.object({
@@ -66,7 +67,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
   const router = useRouter();
 
   const { toast } = useToast();
-  const { user: authUser, loading: authLoading, userProfile } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   
   const [eventDetails, setEventDetails] = useState<EventData | null>(null);
   const [managers, setManagers] = useState<UserProfileData[]>([]);
@@ -179,30 +180,26 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
   }, [eventId, form, toast, authLoading, authUser]);
   
   useEffect(() => {
-    if (authLoading || !userProfile) return;
+    if (authLoading || !authUser) return;
 
     const fetchUserGroups = async () => {
-        setIsLoadingGroups(true);
-        try {
-            const userJoinedGroupIds = userProfile.joinedGroupIds || [];
-            if (userJoinedGroupIds.length > 0) {
-                // Firestore 'in' query is limited to 30 elements
-                const groupsQuery = query(collection(db, "groups"), where("__name__", "in", userJoinedGroupIds.slice(0, 30)));
-                const querySnapshot = await getDocs(groupsQuery);
-                const userGroups = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupData));
-                setAvailableGroups(userGroups);
-            } else {
-                setAvailableGroups([]);
-            }
-        } catch (e) {
-            console.error("Failed to fetch user groups:", e);
-            toast({ title: "Error", description: "Could not load your groups for selection.", variant: "destructive" });
-        } finally {
-            setIsLoadingGroups(false);
+      setIsLoadingGroups(true);
+      try {
+        const result = await getGroupsAndInvitationsAction(authUser.uid);
+        if (result.success && result.data) {
+            setAvailableGroups(result.data.joinedGroups as any);
+        } else {
+            throw new Error(result.message || "Failed to fetch groups.");
         }
+      } catch (e: any) {
+        console.error("Failed to fetch user groups:", e);
+        toast({ title: "Error", description: "Could not load your groups for selection.", variant: "destructive" });
+      } finally {
+        setIsLoadingGroups(false);
+      }
     };
     fetchUserGroups();
-  }, [authLoading, userProfile, toast]);
+  }, [authLoading, authUser, toast]);
 
 
   const handleAddManager = async () => {
