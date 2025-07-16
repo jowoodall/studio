@@ -20,7 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { EventData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
 import { getEventRydzPageDataAction } from "@/actions/eventActions";
@@ -45,7 +45,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   
   const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
 
-  const [managedStudents, setManagedStudents] = useState<UserProfileData[]>([]);
   const [addPassengerPopoverOpen, setAddPassengerPopoverOpen] = useState<Record<string, boolean>>({});
   const [isAddingPassenger, setIsAddingPassenger] = useState<Record<string, boolean>>({});
 
@@ -176,7 +175,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = new Date(eventDetails.eventStartTimestamp as any);
+  const eventDate = parseISO(eventDetails.eventStartTimestamp as any);
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
