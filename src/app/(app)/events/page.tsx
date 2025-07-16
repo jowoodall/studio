@@ -98,8 +98,8 @@ export default function EventsPage() {
       
       // Sort by event timestamp on the client
       combinedEvents.sort((a, b) => {
-        const timeA = a.eventTimestamp?.toMillis() || 0;
-        const timeB = b.eventTimestamp?.toMillis() || 0;
+        const timeA = a.eventStartTimestamp?.toMillis() || 0;
+        const timeB = b.eventStartTimestamp?.toMillis() || 0;
         return timeA - timeB;
       });
 
@@ -176,7 +176,7 @@ export default function EventsPage() {
       {events.length > 0 ? (
          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => {
-            const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
+            const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : new Date();
             return (
             <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">

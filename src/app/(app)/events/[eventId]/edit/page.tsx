@@ -36,12 +36,21 @@ import { updateEventAction } from "@/actions/eventActions";
 const eventEditFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
-  eventTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  eventStartTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
+  eventEndTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM).").optional(),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
   status: z.nativeEnum(EventStatus, { errorMap: () => ({ message: "Please select a status."})}),
   selectedGroups: z.array(z.string()).optional(),
+}).refine(data => {
+    if (data.eventEndTime && data.eventEndTime < data.eventStartTime) {
+        return false;
+    }
+    return true;
+}, {
+    message: "End time cannot be before start time.",
+    path: ["eventEndTime"],
 });
 
 type EventEditFormValues = z.infer<typeof eventEditFormSchema>;
@@ -103,15 +112,18 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             setIsAuthorized(false);
           }
 
-          const eventDate = data.eventTimestamp.toDate();
+          const eventStartDate = data.eventStartTimestamp.toDate();
+          const eventEndDate = data.eventEndTimestamp?.toDate();
+          
           form.reset({
             eventName: data.name,
             eventLocation: data.location,
             description: data.description || "",
             eventType: data.eventType,
             status: data.status,
-            eventDate: eventDate,
-            eventTime: format(eventDate, "HH:mm"),
+            eventDate: eventStartDate,
+            eventStartTime: format(eventStartDate, "HH:mm"),
+            eventEndTime: eventEndDate ? format(eventEndDate, "HH:mm") : "",
             selectedGroups: data.associatedGroupIds || [],
           });
 
@@ -220,10 +232,18 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
     }
     setIsSubmitting(true);
     try {
-      const [hours, minutes] = data.eventTime.split(':').map(Number);
-      const combinedDateTime = new Date(data.eventDate);
-      combinedDateTime.setHours(hours, minutes, 0, 0);
-      const eventFirestoreTimestamp = Timestamp.fromDate(combinedDateTime);
+      const [startHours, startMinutes] = data.eventStartTime.split(':').map(Number);
+      const startDateTime = new Date(data.eventDate);
+      startDateTime.setHours(startHours, startMinutes, 0, 0);
+      const eventStartTimestamp = Timestamp.fromDate(startDateTime);
+
+      let eventEndTimestamp: Timestamp | undefined;
+      if (data.eventEndTime) {
+          const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
+          const endDateTime = new Date(data.eventDate);
+          endDateTime.setHours(endHours, endMinutes, 0, 0);
+          eventEndTimestamp = Timestamp.fromDate(endDateTime);
+      }
       
       const managerIds = managers.map(m => m.uid);
 
@@ -233,7 +253,8 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
         description: data.description || "",
         eventType: data.eventType,
         status: data.status,
-        eventTimestamp: eventFirestoreTimestamp,
+        eventStartTimestamp: eventStartTimestamp,
+        eventEndTimestamp: eventEndTimestamp,
         managerIds: managerIds,
         associatedGroupIds: data.selectedGroups || [],
       };
@@ -383,13 +404,28 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
                     </FormItem>
                   )}
                 />
-                <FormField
+                 <FormField
                   control={form.control}
-                  name="eventTime"
+                  name="eventStartTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event Time (HH:MM)</FormLabel>
+                      <FormLabel>Event Start Time (HH:MM)</FormLabel>
                       <FormControl><Input type="time" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+               <div className="grid grid-cols-1">
+                 <FormField
+                  control={form.control}
+                  name="eventEndTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Event End Time (Optional)</FormLabel>
+                      <FormControl><Input type="time" {...field} /></FormControl>
+                      <FormDescription>If the event has a specific end time.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

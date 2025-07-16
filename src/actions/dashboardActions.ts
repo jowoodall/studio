@@ -243,7 +243,7 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     // --- Process Events ---
     for (const evDoc of allEventsDocs) {
         const event = {id: evDoc.id, ...evDoc.data()} as EventData;
-        const timestamp = event.eventTimestamp as Timestamp | undefined;
+        const timestamp = event.eventStartTimestamp as Timestamp | undefined;
         if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater }) && event.status === EventStatus.ACTIVE) {
             scheduleItemsMap.set(`event-${event.id}`, {
                 id: `event-${event.id}`,

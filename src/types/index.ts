@@ -120,7 +120,8 @@ export interface GroupData {
 export interface EventData {
   id: string; 
   name: string;
-  eventTimestamp: Timestamp; 
+  eventStartTimestamp: Timestamp; 
+  eventEndTimestamp?: Timestamp;
   location: string;
   description?: string;
   eventType: string; 

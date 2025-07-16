@@ -48,7 +48,7 @@ export default function ArchivedEventsPage() {
       const eventsQuery = query(
         collection(db, "events"), 
         where("status", "in", [EventStatus.COMPLETED, EventStatus.CANCELLED]),
-        orderBy("eventTimestamp", "desc")
+        orderBy("eventStartTimestamp", "desc")
       );
       const querySnapshot = await getDocs(eventsQuery);
       const fetchedEvents: EventData[] = [];
@@ -139,7 +139,7 @@ export default function ArchivedEventsPage() {
                 </TableHeader>
                 <TableBody>
                     {events.map((event) => {
-                        const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
+                        const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : new Date();
                         return (
                             <TableRow key={event.id}>
                                 <TableCell><StatusBadge status={event.status} /></TableCell>

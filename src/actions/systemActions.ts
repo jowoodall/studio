@@ -119,7 +119,7 @@ export async function updateStaleEventsAction(): Promise<{ success: boolean; mes
     console.log(`[Action: updateStaleEventsAction] Found ${eventsSnapshot.docs.length} active events to process.`);
     
     const docsToProcess = eventsSnapshot.docs.filter(doc => {
-      const eventTimestamp = doc.data().eventTimestamp as Timestamp;
+      const eventTimestamp = doc.data().eventStartTimestamp as Timestamp;
       // Add a check to ensure eventTimestamp is a valid Firestore Timestamp object
       if (eventTimestamp && typeof eventTimestamp.toMillis === 'function') {
         return eventTimestamp.toMillis() < fortyEightHoursAgo.toMillis();

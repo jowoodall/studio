@@ -109,7 +109,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
       const eventsQuery = query(
         collection(db, "events"), 
         where("associatedGroupIds", "array-contains", groupId),
-        orderBy("eventTimestamp", "asc") // Show upcoming events first
+        orderBy("eventStartTimestamp", "asc") // Show upcoming events first
       );
       const eventsSnapshot = await getDocs(eventsQuery);
       const fetchedEvents: EventData[] = [];
@@ -232,7 +232,7 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
               ) : associatedEvents.length > 0 ? (
                 <ul className="space-y-4">
                   {associatedEvents.map(event => {
-                    const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date();
+                    const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : new Date();
                     return (
                     <li key={event.id} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                       <h4 className="font-semibold">{event.name}</h4>
