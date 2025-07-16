@@ -111,6 +111,10 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
           } else {
             setIsAuthorized(false);
           }
+          
+          if (!data.eventStartTimestamp) {
+            throw new Error("Event data is missing a start timestamp. Cannot edit.");
+          }
 
           const eventStartDate = data.eventStartTimestamp.toDate();
           const eventEndDate = data.eventEndTimestamp?.toDate();
@@ -140,9 +144,9 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
           setError(`Event with ID "${eventId}" not found.`);
           setEventDetails(null);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Error fetching event data:", e);
-        setError("Failed to load event data. Please try again.");
+        setError("Failed to load event data. Please try again. " + e.message);
       } finally {
         setIsLoading(false);
       }
