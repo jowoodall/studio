@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
@@ -32,9 +33,22 @@ async function getUserProfile(userId: string): Promise<UserProfileData | null> {
 
 // Converts Firestore Timestamps to ISO strings for client-side serialization
 function toSerializable(obj: any): any {
-    if (!obj) return obj;
-    if (obj instanceof Timestamp) return obj.toDate().toISOString();
+    if (obj === null || obj === undefined) return obj;
+
+    // Check if it's a Firestore Timestamp-like object (from a direct doc.data() call)
+    if (typeof obj.toDate === 'function') {
+        return obj.toDate().toISOString();
+    }
+    
+    // Check if it's a plain object with seconds/nanoseconds (can happen after some transformations)
+    if (typeof obj === 'object' && 'seconds' in obj && 'nanoseconds' in obj && Object.keys(obj).length === 2) {
+        return new Timestamp(obj.seconds, obj.nanoseconds).toDate().toISOString();
+    }
+    
+    // Recurse for arrays
     if (Array.isArray(obj)) return obj.map(toSerializable);
+    
+    // Recurse for objects
     if (typeof obj === 'object') {
         const newObj: { [key: string]: any } = {};
         for (const key in obj) {
@@ -42,6 +56,7 @@ function toSerializable(obj: any): any {
         }
         return newObj;
     }
+    
     return obj;
 }
 

@@ -33,8 +33,21 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
 
 const toSerializableObject = (obj: any): any => {
     if (obj === null || obj === undefined) return obj;
-    if (obj instanceof Timestamp) return obj.toDate().toISOString();
+
+    // Check if it's a Firestore Timestamp-like object (from a direct doc.data() call)
+    if (typeof obj.toDate === 'function') {
+        return obj.toDate().toISOString();
+    }
+    
+    // Check if it's a plain object with seconds/nanoseconds (can happen after some transformations)
+    if (typeof obj === 'object' && 'seconds' in obj && 'nanoseconds' in obj && Object.keys(obj).length === 2) {
+        return new Timestamp(obj.seconds, obj.nanoseconds).toDate().toISOString();
+    }
+    
+    // Recurse for arrays
     if (Array.isArray(obj)) return obj.map(toSerializableObject);
+    
+    // Recurse for objects
     if (typeof obj === 'object') {
         const newObj: { [key: string]: any } = {};
         for (const key in obj) {
@@ -42,6 +55,7 @@ const toSerializableObject = (obj: any): any => {
         }
         return newObj;
     }
+    
     return obj;
 };
 
@@ -187,7 +201,7 @@ async function notifyGroupMembersOfEvent(
         const notificationPromises = Array.from(memberIdsToNotify).map(userId => {
             const title = `Event ${action === 'created' ? 'Created' : 'Updated'}`;
             const message = `The event "${eventName}" which is associated with one of your groups has been ${action}.`;
-            return createNotification(userId, title, message, NotificationTypeEnum.INFO, `/events/${eventId}/rydz`);
+            return createNotification(userId, title, NotificationTypeEnum.INFO, `/events/${eventId}/rydz`);
         });
 
         await Promise.all(notificationPromises);

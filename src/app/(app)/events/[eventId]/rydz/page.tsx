@@ -177,12 +177,20 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  // Robust date handling
-  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : null;
-  const eventEndDate = eventDetails.eventEndTimestamp ? new Date(eventDetails.eventEndTimestamp as any) : null;
+  // --- Robust Date Handling ---
+  let eventDate: Date | null = null;
+  if (eventDetails.eventStartTimestamp) {
+    eventDate = new Date(eventDetails.eventStartTimestamp as any);
+  }
   
+  let eventEndDate: Date | null = null;
+  if (eventDetails.eventEndTimestamp) {
+    eventEndDate = new Date(eventDetails.eventEndTimestamp as any);
+  }
+
   const isEventDateValid = eventDate && !isNaN(eventDate.getTime());
   const isEventEndDateValid = eventEndDate && !isNaN(eventEndDate.getTime());
+  // --- End Robust Date Handling ---
   
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
