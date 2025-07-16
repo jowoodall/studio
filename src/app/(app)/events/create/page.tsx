@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -24,7 +23,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import type { EventData, GroupData, SavedLocation, EventStatus } from "@/types";
 import { createEventAction } from "@/actions/eventActions";
@@ -115,15 +114,24 @@ export default function CreateEventPage() {
           return;
         }
 
-        const groupsCollectionQuery = query(collection(db, "groups"));
-        const querySnapshot = await getDocs(groupsCollectionQuery);
+        const groupsCollectionRef = collection(db, "groups");
+        // Firestore 'in' query has a limit of 30 items per query.
+        // We'll chunk the queries if the user is in more than 30 groups.
+        const groupChunks: string[][] = [];
+        for (let i = 0; i < userJoinedGroupIds.length; i += 30) {
+            groupChunks.push(userJoinedGroupIds.slice(i, i + 30));
+        }
+        
         const fetchedGroups: GroupSelectItem[] = [];
-        querySnapshot.forEach((doc) => {
-          if (userJoinedGroupIds.includes(doc.id)) {
-            const groupData = doc.data() as GroupData;
-            fetchedGroups.push({ id: doc.id, name: groupData.name });
-          }
-        });
+        for (const chunk of groupChunks) {
+            const groupsQuery = query(groupsCollectionRef, where("__name__", "in", chunk));
+            const querySnapshot = await getDocs(groupsQuery);
+            querySnapshot.forEach((doc) => {
+                const groupData = doc.data() as GroupData;
+                fetchedGroups.push({ id: doc.id, name: groupData.name });
+            });
+        }
+        
         setAvailableGroups(fetchedGroups);
       } catch (error) {
         console.error("Error fetching user's groups:", error);
