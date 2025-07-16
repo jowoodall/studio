@@ -12,7 +12,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; // Added arrayRemove
+import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, arrayUnion, arrayRemove, where } from 'firebase/firestore'; // Added where
 import type { GroupData, UserProfileData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
@@ -30,12 +30,11 @@ export default function GroupsPage() {
 
 
   const fetchGroupsAndInvitations = useCallback(async () => {
-    if (!authUser || !userProfile) { // Ensure authUser and userProfile are loaded
-      if (!authLoading && !isLoadingProfile) { // If auth context is done loading but no user/profile
+    if (!authUser || !userProfile) { 
+      if (!authLoading && !isLoadingProfile) {
         setIsLoadingGroups(false);
         setJoinedGroupsList([]);
         setPendingInvitations([]);
-        // setError("Please log in to view groups and invitations.");
       }
       return;
     }
@@ -43,29 +42,38 @@ export default function GroupsPage() {
     setIsLoadingGroups(true);
     setError(null);
     try {
-      // Temporarily removed orderBy("createdAt", "desc") to avoid index error.
-      // User should create the index in Firebase console for sorting.
-      // The original query was: query(collection(db, "groups"), orderBy("createdAt", "desc"));
-      const groupsQuery = query(collection(db, "groups"));
-      const querySnapshot = await getDocs(groupsQuery);
-      const fetchedGroups: GroupData[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedGroups.push({ id: doc.id, ...doc.data() } as GroupData);
-      });
-
-      const currentJoinedGroupIds = userProfile?.joinedGroupIds || [];
+      const groupsRef = collection(db, "groups");
+      const joinedGroupIds = userProfile.joinedGroupIds || [];
+      
       const newJoined: GroupData[] = [];
       const newPending: GroupData[] = [];
 
-      fetchedGroups.forEach(group => {
-        if (currentJoinedGroupIds.includes(group.id)) {
-          newJoined.push(group);
-        } else if (group.memberIds.includes(authUser.uid)) {
-          newPending.push(group);
+      // Securely fetch joined groups if any exist
+      if (joinedGroupIds.length > 0) {
+        // Chunking to handle > 30 groups
+        const chunks = [];
+        for (let i = 0; i < joinedGroupIds.length; i += 30) {
+            chunks.push(joinedGroupIds.slice(i, i + 30));
+        }
+        for (const chunk of chunks) {
+            const joinedQuery = query(groupsRef, where("__name__", "in", chunk));
+            const joinedSnapshot = await getDocs(joinedQuery);
+            joinedSnapshot.forEach(doc => newJoined.push({ id: doc.id, ...doc.data() } as GroupData));
+        }
+      }
+
+      // Securely fetch pending invitations
+      const pendingQuery = query(groupsRef, where("memberIds", "array-contains", authUser.uid));
+      const pendingSnapshot = await getDocs(pendingQuery);
+      
+      pendingSnapshot.forEach(doc => {
+        // An invitation is pending if the user is a memberId but hasn't "joined" yet
+        if (!joinedGroupIds.includes(doc.id)) {
+          newPending.push({ id: doc.id, ...doc.data() } as GroupData);
         }
       });
 
-      // If the index is created, you can restore sorting here:
+      // Sort results if desired (requires Firestore index)
       // newJoined.sort((a, b) => (b.createdAt as Timestamp).toMillis() - (a.createdAt as Timestamp).toMillis());
       // newPending.sort((a, b) => (b.createdAt as Timestamp).toMillis() - (a.createdAt as Timestamp).toMillis());
 
@@ -74,62 +82,27 @@ export default function GroupsPage() {
 
     } catch (e: any) {
       console.error("Error fetching groups:", e);
-      // Check if the error is due to a missing index
-      if (e.message && e.message.toLowerCase().includes("index")) {
-        setError("Firestore query requires an index. Please check the browser console for a link to create it in your Firebase project. The page will load groups without sorting for now.");
-        toast({
-          title: "Indexing Required",
-          description: "Groups are not sorted. Please create the recommended Firestore index (see console).",
-          variant: "default",
-          duration: 10000,
-        });
-         // Attempt to fetch without sorting as a fallback
-        try {
-            const groupsQueryNoSort = query(collection(db, "groups"));
-            const querySnapshotNoSort = await getDocs(groupsQueryNoSort);
-            const fetchedGroupsNoSort: GroupData[] = [];
-            querySnapshotNoSort.forEach((doc) => {
-                fetchedGroupsNoSort.push({ id: doc.id, ...doc.data() } as GroupData);
-            });
-
-            const currentJoinedGroupIdsNoSort = userProfile?.joinedGroupIds || [];
-            const newJoinedNoSort: GroupData[] = [];
-            const newPendingNoSort: GroupData[] = [];
-
-            fetchedGroupsNoSort.forEach(group => {
-                if (currentJoinedGroupIdsNoSort.includes(group.id)) {
-                newJoinedNoSort.push(group);
-                } else if (group.memberIds.includes(authUser.uid)) {
-                newPendingNoSort.push(group);
-                }
-            });
-            setJoinedGroupsList(newJoinedNoSort);
-            setPendingInvitations(newPendingNoSort);
-            setError(null); // Clear the index error as we've fetched without sorting
-        } catch (fallbackError) {
-             console.error("Error fetching groups without sorting (fallback):", fallbackError);
-             setError("Failed to load groups and invitations. Please try again.");
-        }
-
-      } else {
-        setError("Failed to load groups and invitations. Please try again.");
-        toast({
-          title: "Error",
-          description: "Could not fetch groups information.",
-          variant: "destructive",
-        });
+      let detailedError = "Failed to load groups and invitations. Please try again.";
+      if (e.message && (e.message.toLowerCase().includes("index") || e.message.toLowerCase().includes("missing a composite index"))) {
+        detailedError = "A Firestore index might be required to perform this query efficiently. Please check the browser's console for any Firebase error logs.";
       }
+      setError(detailedError);
+      toast({
+        title: "Error",
+        description: detailedError,
+        variant: "destructive",
+        duration: 9000
+      });
     } finally {
       setIsLoadingGroups(false);
     }
   }, [authUser, userProfile, toast, authLoading, isLoadingProfile]);
 
   useEffect(() => {
-    // Fetch groups only when auth context is fully loaded and user/profile are available
     if (!authLoading && !isLoadingProfile) {
         fetchGroupsAndInvitations();
     }
-  }, [authLoading, isLoadingProfile, fetchGroupsAndInvitations, userProfile]); // Added userProfile dependency
+  }, [authLoading, isLoadingProfile, fetchGroupsAndInvitations, userProfile]);
 
 
   const handleAcceptInvitation = async (groupIdToAccept: string, groupName: string) => {
@@ -149,7 +122,6 @@ export default function GroupsPage() {
         description: `You have successfully joined the group: ${groupName}.`,
       });
 
-      // Refresh the user profile to get the latest joinedGroupIds
       await refreshUserProfile();
       
     } catch (error) {
@@ -167,8 +139,6 @@ export default function GroupsPage() {
     }
     setIsDeclining(prev => ({ ...prev, [groupIdToDecline]: true }));
     try {
-      // To decline, we just remove the user's ID from the group's memberIds array.
-      // The user doesn't have the groupId in their own joinedGroupIds yet, so we don't need to touch their document.
       const groupDocRef = doc(db, "groups", groupIdToDecline);
       await updateDoc(groupDocRef, {
         memberIds: arrayRemove(authUser.uid)
@@ -180,7 +150,6 @@ export default function GroupsPage() {
         variant: "default",
       });
 
-      // Update UI
       setPendingInvitations(prev => prev.filter(group => group.id !== groupIdToDecline));
 
     } catch (error) {
@@ -221,10 +190,9 @@ export default function GroupsPage() {
   }
 
   if (error && !isLoading) {
-    // Don't show a full-page error if it's just the index warning and groups were fetched
     const isJustIndexWarning = error.includes("Firestore query requires an index");
     if (isJustIndexWarning && (joinedGroupsList.length > 0 || pendingInvitations.length > 0)) {
-        // Groups are loaded, just show the toast (already handled in fetchGroupsAndInvitations)
+        
     } else {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
@@ -237,7 +205,7 @@ export default function GroupsPage() {
     }
   }
   
-  if (!authUser && !authLoading) { // If auth context has loaded and there's no user
+  if (!authUser && !authLoading) { 
      return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <LogIn className="h-12 w-12 text-muted-foreground mb-4" />
@@ -413,6 +381,3 @@ export default function GroupsPage() {
     </>
   );
 }
-
-
-    
