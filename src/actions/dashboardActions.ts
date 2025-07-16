@@ -208,11 +208,10 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     
     // --- Process Active Rydz ---
     for (const activeRyd of allActiveRydz) {
-      const timestamp = (activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime) as Timestamp | undefined;
-      if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
+      const timestamp = (activeRyd.plannedArrivalTime || activeRyd.proposedDepartureTime);
+      if (timestamp instanceof Timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
         const relevantUserUid = uidsToQuery.find(uid => uid === activeRyd.driverId || activeRyd.passengerUids?.includes(uid));
         
-        // This check is important as passenger query might return rydz for other students not managed by this parent.
         if (!relevantUserUid) continue;
 
         const relevantUserSnap = await db.collection('users').doc(relevantUserUid).get();
@@ -240,8 +239,8 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     // --- Process Ryd Requests ---
     for (const reqDoc of rydRequestsSnap.docs) {
       const rydRequest = { id: reqDoc.id, ...reqDoc.data() } as RydData;
-      const timestamp = rydRequest.rydTimestamp as Timestamp | undefined;
-       if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
+      const timestamp = rydRequest.rydTimestamp;
+       if (timestamp instanceof Timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
         scheduleItemsMap.set(`request-${rydRequest.id}`, {
           id: `request-${rydRequest.id}`,
           type: 'request',
@@ -262,8 +261,8 @@ export async function getUpcomingScheduleAction({ userId }: { userId: string }):
     }, new Map<string, EventData>());
 
     for (const event of allUniqueEvents.values()) {
-        const timestamp = event.eventStartTimestamp as Timestamp | undefined;
-        if (timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
+        const timestamp = event.eventStartTimestamp;
+        if (timestamp instanceof Timestamp && isWithinInterval(timestamp.toDate(), { start: todayStart, end: fourteenDaysLater })) {
             scheduleItemsMap.set(`event-${event.id}`, {
                 id: `event-${event.id}`,
                 type: 'event',
