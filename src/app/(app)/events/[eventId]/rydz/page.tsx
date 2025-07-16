@@ -21,11 +21,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { EventData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
 import { getEventRydzPageDataAction } from "@/actions/eventActions";
 import { useRouter } from "next/navigation";
+import { Separator } from "@/components/ui/separator";
 
 interface ResolvedPageParams { eventId: string; }
 
@@ -177,6 +178,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }
 
   const eventDate = new Date(eventDetails.eventStartTimestamp as any || new Date());
+  const eventEndDate = new Date(eventDetails.eventEndTimestamp as any || new Date());
   const isEventDateValid = !isNaN(eventDate.getTime());
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
@@ -185,7 +187,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     <>
       <PageHeader
         title={'Rydz for: ' + eventDetails.name}
-        description={`Event at ${eventDetails.location} on ${isEventDateValid ? format(eventDate, "PPP 'at' p") : 'Date TBD'}. View rydz or manage associated groups.`}
+        description={`Coordinate carpools for this event or request a ryd below.`}
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             {isEventManager && (
@@ -211,32 +213,53 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         }
       />
 
+      {eventManagers.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="text-sm font-medium text-muted-foreground">Managed by:</p>
+          <div className="flex flex-wrap gap-4">
+            {eventManagers.map(manager => (
+              <div key={manager.uid} className="flex items-center gap-2">
+                <Avatar className="h-6 w-6">
+                  <AvatarImage src={manager.avatarUrl} alt={manager.fullName} />
+                  <AvatarFallback className="text-xs">{manager.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                </Avatar>
+                <Link href={`/profile/view/${manager.uid}`} className="text-sm font-semibold hover:underline">{manager.fullName}</Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Card className="mb-6 shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-primary" /> Event Managers</CardTitle>
-          <CardDescription>Contact these users for questions about the event.</CardDescription>
+          <CardTitle>Event Details</CardTitle>
         </CardHeader>
-        <CardContent>
-          {eventManagers.length > 0 ? (
-            <div className="flex flex-wrap gap-4">
-              {eventManagers.map(manager => (
-                <div key={manager.uid} className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={manager.avatarUrl} alt={manager.fullName} />
-                    <AvatarFallback>{manager.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <Link href={`/profile/view/${manager.uid}`} className="font-semibold hover:underline">{manager.fullName}</Link>
-                    <p className="text-xs text-muted-foreground">{manager.email}</p>
-                  </div>
-                </div>
-              ))}
+        <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+          <div className="flex items-start gap-3">
+            <MapPinIcon className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-muted-foreground">Location</p>
+              <p className="font-semibold">{eventDetails.location}</p>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No managers listed for this event.</p>
-          )}
+          </div>
+          <div className="flex items-start gap-3">
+            <CalendarDays className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-muted-foreground">Starts</p>
+              <p className="font-semibold">{isEventDateValid ? format(eventDate, "PPP 'at' p") : 'Date TBD'}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-muted-foreground">Ends</p>
+              <p className="font-semibold">{isEventDateValid ? format(eventEndDate, "PPP 'at' p") : 'Date TBD'}</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      <Separator className="my-8"/>
 
       <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz for this Event</h3>
       {activeRydzList.length > 0 && (
@@ -645,3 +668,4 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
+
