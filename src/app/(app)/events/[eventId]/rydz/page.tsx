@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -175,7 +176,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = parseISO(eventDetails.eventStartTimestamp as any);
+  const eventDate = eventDetails.eventStartTimestamp ? parseISO(eventDetails.eventStartTimestamp as any) : new Date();
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
