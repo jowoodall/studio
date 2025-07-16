@@ -97,55 +97,55 @@ export default function CreateEventPage() {
 
   useEffect(() => {
     const fetchUserGroups = async () => {
-      if (authLoading || isLoadingProfile || !userProfile || !authUser) {
-        if (!authLoading && !isLoadingProfile && !userProfile && authUser) {
-            setIsLoadingGroups(false);
+        // This function will now only run if auth is not loading and a profile exists.
+        if (!userProfile) {
             setAvailableGroups([]);
-        }
-        return;
-      }
-
-      setIsLoadingGroups(true);
-      try {
-        const userJoinedGroupIds = userProfile.joinedGroupIds || [];
-        if (userJoinedGroupIds.length === 0) {
-          setAvailableGroups([]);
-          setIsLoadingGroups(false);
-          return;
+            setIsLoadingGroups(false);
+            return;
         }
 
-        const groupsCollectionRef = collection(db, "groups");
-        // Firestore 'in' query has a limit of 30 items per query.
-        // We'll chunk the queries if the user is in more than 30 groups.
-        const groupChunks: string[][] = [];
-        for (let i = 0; i < userJoinedGroupIds.length; i += 30) {
-            groupChunks.push(userJoinedGroupIds.slice(i, i + 30));
-        }
-        
-        const fetchedGroups: GroupSelectItem[] = [];
-        for (const chunk of groupChunks) {
-            const groupsQuery = query(groupsCollectionRef, where("__name__", "in", chunk));
-            const querySnapshot = await getDocs(groupsQuery);
-            querySnapshot.forEach((doc) => {
-                const groupData = doc.data() as GroupData;
-                fetchedGroups.push({ id: doc.id, name: groupData.name });
+        setIsLoadingGroups(true);
+        try {
+            const userJoinedGroupIds = userProfile.joinedGroupIds || [];
+            if (userJoinedGroupIds.length === 0) {
+                setAvailableGroups([]);
+                return;
+            }
+
+            const groupsCollectionRef = collection(db, "groups");
+            const groupChunks: string[][] = [];
+            for (let i = 0; i < userJoinedGroupIds.length; i += 30) {
+                groupChunks.push(userJoinedGroupIds.slice(i, i + 30));
+            }
+
+            const fetchedGroups: GroupSelectItem[] = [];
+            for (const chunk of groupChunks) {
+                const groupsQuery = query(groupsCollectionRef, where("__name__", "in", chunk));
+                const querySnapshot = await getDocs(groupsQuery);
+                querySnapshot.forEach((doc) => {
+                    const groupData = doc.data() as GroupData;
+                    fetchedGroups.push({ id: doc.id, name: groupData.name });
+                });
+            }
+            setAvailableGroups(fetchedGroups);
+        } catch (error) {
+            console.error("Error fetching user's groups:", error);
+            toast({
+                title: "Error",
+                description: "Could not fetch your groups. Please try again.",
+                variant: "destructive",
             });
+        } finally {
+            setIsLoadingGroups(false);
         }
-        
-        setAvailableGroups(fetchedGroups);
-      } catch (error) {
-        console.error("Error fetching user's groups:", error);
-        toast({
-          title: "Error",
-          description: "Could not fetch your groups. Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoadingGroups(false);
-      }
     };
-    fetchUserGroups();
-  }, [toast, authUser, userProfile, authLoading, isLoadingProfile]);
+
+    // We explicitly wait for the auth context to be done loading and have a user profile.
+    if (!authLoading && !isLoadingProfile) {
+        fetchUserGroups();
+    }
+}, [toast, authUser, userProfile, authLoading, isLoadingProfile]);
+
 
   async function onSubmit(data: EventFormValues) {
     if (!authUser) {
