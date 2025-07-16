@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -17,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
+import { format, addHours } from "date-fns";
 import { CalendarIcon, PlusCircle, Loader2, Users, Check, X, MapPin } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -32,13 +33,12 @@ const eventFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventStartTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
-  eventEndTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM).").optional(),
+  eventEndTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "End time is required."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
   selectedGroups: z.array(z.string()).optional(),
 }).refine(data => {
-    // If an end time is provided, it must be after the start time on the same day.
     if (data.eventEndTime) {
         return data.eventEndTime > data.eventStartTime;
     }
@@ -81,7 +81,7 @@ export default function CreateEventPage() {
     defaultValues: {
       eventName: "",
       eventStartTime: "10:00",
-      eventEndTime: "",
+      eventEndTime: "12:00", // Default to 2 hours after start
       eventType: "",
       selectedGroups: [],
       eventLocation: "",
@@ -89,7 +89,6 @@ export default function CreateEventPage() {
   });
 
   useEffect(() => {
-    // Pre-fill location with default location if available
     if (sortedLocations.length > 0 && userProfile?.defaultLocationId === sortedLocations[0].id) {
       if (!form.getValues("eventLocation")) {
         form.setValue("eventLocation", formatAddress(sortedLocations[0].address));
@@ -157,13 +156,10 @@ export default function CreateEventPage() {
       startDateTime.setHours(startHours, startMinutes, 0, 0);
       const eventStartTimestamp = Timestamp.fromDate(startDateTime);
       
-      let eventEndTimestamp: Timestamp | undefined;
-      if (data.eventEndTime) {
-          const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
-          const endDateTime = new Date(data.eventDate);
-          endDateTime.setHours(endHours, endMinutes, 0, 0);
-          eventEndTimestamp = Timestamp.fromDate(endDateTime);
-      }
+      const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
+      const endDateTime = new Date(data.eventDate);
+      endDateTime.setHours(endHours, endMinutes, 0, 0);
+      const eventEndTimestamp = Timestamp.fromDate(endDateTime);
 
       const finalLocation = data.eventLocation;
       if (finalLocation.trim() === "") {
@@ -356,7 +352,7 @@ export default function CreateEventPage() {
                   name="eventEndTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event End Time (Optional)</FormLabel>
+                      <FormLabel>Event Planned End Time</FormLabel>
                       <FormControl>
                         <Input type="time" {...field} />
                       </FormControl>

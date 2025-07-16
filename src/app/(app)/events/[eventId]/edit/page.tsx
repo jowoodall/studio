@@ -24,7 +24,7 @@ import { EventStatus, type EventData, type UserProfileData, type GroupData } fro
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { format, parse } from 'date-fns';
+import { format, parse, addHours } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -38,7 +38,7 @@ const eventEditFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
   eventDate: z.date({ required_error: "Event date is required." }),
   eventStartTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM)."),
-  eventEndTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Invalid time format (HH:MM).").optional(),
+  eventEndTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "End time is required."),
   eventLocation: z.string().min(5, "Location must be at least 5 characters."),
   description: z.string().max(500, "Description cannot exceed 500 characters.").optional(),
   eventType: z.string().min(1, "Please select an event type."),
@@ -113,16 +113,24 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             setIsAuthorized(false);
           }
           
-          const eventStartDate = data.eventStartTimestamp ? data.eventStartTimestamp.toDate() : new Date();
-          if (!data.eventStartTimestamp) {
-            console.warn(`Event with ID "${eventId}" is missing a start timestamp. Defaulting to now. Please save the event to fix this.`);
+          let eventStartDate, eventEndDate;
+          
+          if (data.eventStartTimestamp) {
+            eventStartDate = data.eventStartTimestamp.toDate();
+          } else {
+            eventStartDate = new Date();
             toast({
                 title: "Incomplete Event Data",
                 description: "This event is missing a start date. It has been defaulted to today. Please review and save.",
                 variant: "destructive"
             });
           }
-          const eventEndDate = data.eventEndTimestamp?.toDate();
+          
+          if (data.eventEndTimestamp) {
+            eventEndDate = data.eventEndTimestamp.toDate();
+          } else {
+            eventEndDate = addHours(eventStartDate, 2);
+          }
           
           form.reset({
             eventName: data.name,
@@ -132,7 +140,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             status: data.status,
             eventDate: eventStartDate,
             eventStartTime: format(eventStartDate, "HH:mm"),
-            eventEndTime: eventEndDate ? format(eventEndDate, "HH:mm") : "",
+            eventEndTime: format(eventEndDate, "HH:mm"),
             selectedGroups: data.associatedGroupIds || [],
           });
 
@@ -246,13 +254,10 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       startDateTime.setHours(startHours, startMinutes, 0, 0);
       const eventStartTimestamp = Timestamp.fromDate(startDateTime);
 
-      let eventEndTimestamp: Timestamp | undefined;
-      if (data.eventEndTime) {
-          const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
-          const endDateTime = new Date(data.eventDate);
-          endDateTime.setHours(endHours, endMinutes, 0, 0);
-          eventEndTimestamp = Timestamp.fromDate(endDateTime);
-      }
+      const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
+      const endDateTime = new Date(data.eventDate);
+      endDateTime.setHours(endHours, endMinutes, 0, 0);
+      const eventEndTimestamp = Timestamp.fromDate(endDateTime);
       
       const managerIds = managers.map(m => m.uid);
 
@@ -432,7 +437,7 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
                   name="eventEndTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event End Time (Optional)</FormLabel>
+                      <FormLabel>Event Planned End Time</FormLabel>
                       <FormControl><Input type="time" {...field} /></FormControl>
                       <FormDescription>If the event has a specific end time.</FormDescription>
                       <FormMessage />

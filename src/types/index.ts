@@ -121,7 +121,7 @@ export interface EventData {
   id: string; 
   name: string;
   eventStartTimestamp: Timestamp; 
-  eventEndTimestamp?: Timestamp;
+  eventEndTimestamp: Timestamp;
   location: string;
   description?: string;
   eventType: string; 

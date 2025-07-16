@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
@@ -225,16 +226,18 @@ export async function createEventAction(
 
 export async function updateEventAction(
     eventId: string,
-    updateData: Partial<EventData>,
+    updateData: Partial<Omit<EventData, 'id' | 'createdAt' | 'updatedAt'>>,
     actingUserId: string,
 ): Promise<{ success: boolean; message: string }> {
     try {
         const eventDocRef = db.collection('events').doc(eventId);
         
-        await eventDocRef.update({
+        const dataToUpdate = {
             ...updateData,
             updatedAt: FieldValue.serverTimestamp(),
-        });
+        };
+
+        await eventDocRef.update(dataToUpdate);
         
         // Fetch the event name for the notification message
         const eventName = updateData.name || (await eventDocRef.get()).data()?.name || "Unnamed Event";
