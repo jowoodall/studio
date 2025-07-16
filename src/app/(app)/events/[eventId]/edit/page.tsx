@@ -113,23 +113,30 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             setIsAuthorized(false);
           }
           
-          let eventStartDate, eventEndDate;
-          
-          if (data.eventStartTimestamp) {
-            eventStartDate = data.eventStartTimestamp.toDate();
+          let eventStartDate: Date;
+          let eventEndDate: Date;
+
+          const timestamp = data.eventStartTimestamp as any;
+          if (timestamp && typeof timestamp.toDate === 'function') {
+              eventStartDate = timestamp.toDate();
+          } else if (timestamp && typeof timestamp.seconds === 'number') {
+              eventStartDate = new Date(timestamp.seconds * 1000);
           } else {
-            eventStartDate = new Date();
-            toast({
-                title: "Incomplete Event Data",
-                description: "This event is missing a start date. It has been defaulted to today. Please review and save.",
-                variant: "destructive"
-            });
+              eventStartDate = new Date(); // Fallback
+              toast({
+                  title: "Incomplete Event Data",
+                  description: "This event is missing a start date. It has been defaulted to today. Please review and save.",
+                  variant: "destructive"
+              });
           }
           
-          if (data.eventEndTimestamp) {
-            eventEndDate = data.eventEndTimestamp.toDate();
+          const endTimestamp = data.eventEndTimestamp as any;
+          if (endTimestamp && typeof endTimestamp.toDate === 'function') {
+            eventEndDate = endTimestamp.toDate();
+          } else if (endTimestamp && typeof endTimestamp.seconds === 'number') {
+            eventEndDate = new Date(endTimestamp.seconds * 1000);
           } else {
-            eventEndDate = addHours(eventStartDate, 2);
+            eventEndDate = addHours(eventStartDate, 2); // Fallback
           }
           
           form.reset({
