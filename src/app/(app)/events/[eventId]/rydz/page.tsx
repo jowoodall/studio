@@ -21,7 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { EventData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
 import { getEventRydzPageDataAction } from "@/actions/eventActions";
@@ -177,8 +177,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = new Date(eventDetails.eventStartTimestamp as any || new Date());
-  const eventEndDate = new Date(eventDetails.eventEndTimestamp as any || new Date());
+  const eventDate = new Date(eventDetails.eventStartTimestamp as any);
+  const eventEndDate = new Date(eventDetails.eventEndTimestamp as any);
+  
   const isEventDateValid = !isNaN(eventDate.getTime());
   const isEventEndDateValid = !isNaN(eventEndDate.getTime());
   
