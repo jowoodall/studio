@@ -232,14 +232,14 @@ export default function GroupViewPage({ params: paramsPromise }: GroupViewPagePr
               ) : associatedEvents.length > 0 ? (
                 <ul className="space-y-4">
                   {associatedEvents.map(event => {
-                    const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : new Date();
+                    const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : null;
                     return (
                     <li key={event.id} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                       <h4 className="font-semibold">{event.name}</h4>
                       <div className="text-sm text-muted-foreground mt-1">
                         <span className="flex items-center">
                           <CalendarDays className="mr-1.5 h-4 w-4" /> 
-                          {format(eventDate, "PPP 'at' p")}
+                          {eventDate ? format(eventDate, "PPP 'at' p") : 'Date not set'}
                         </span>
                         <span className="flex items-center mt-0.5"><MapPin className="mr-1.5 h-4 w-4" /> {event.location}</span>
                       </div>
