@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useEffect, useState, use } from "react";
@@ -112,11 +113,15 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
             setIsAuthorized(false);
           }
           
+          const eventStartDate = data.eventStartTimestamp ? data.eventStartTimestamp.toDate() : new Date();
           if (!data.eventStartTimestamp) {
-            throw new Error("Event data is missing a start timestamp. Cannot edit.");
+            console.warn(`Event with ID "${eventId}" is missing a start timestamp. Defaulting to now. Please save the event to fix this.`);
+            toast({
+                title: "Incomplete Event Data",
+                description: "This event is missing a start date. It has been defaulted to today. Please review and save.",
+                variant: "destructive"
+            });
           }
-
-          const eventStartDate = data.eventStartTimestamp.toDate();
           const eventEndDate = data.eventEndTimestamp?.toDate();
           
           form.reset({
