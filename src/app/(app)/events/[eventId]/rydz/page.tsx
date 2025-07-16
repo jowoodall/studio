@@ -176,7 +176,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : new Date();
+  const eventDate = new Date(eventDetails.eventStartTimestamp as any || new Date());
+  const isEventDateValid = !isNaN(eventDate.getTime());
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
@@ -184,7 +185,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     <>
       <PageHeader
         title={'Rydz for: ' + eventDetails.name}
-        description={'Event at ' + eventDetails.location + ' on ' + format(eventDate, "PPP 'at' p") + ". View rydz or manage associated groups."}
+        description={`Event at ${eventDetails.location} on ${isEventDateValid ? format(eventDate, "PPP 'at' p") : 'Date TBD'}. View rydz or manage associated groups.`}
         actions={
           <div className="flex flex-col sm:flex-row gap-2">
             {isEventManager && (
