@@ -18,7 +18,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
+import type { EventData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
@@ -66,19 +66,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setActiveRydzList(result.data.activeRydzList);
         setRydRequestsList(result.data.rydRequestsList);
 
-        if (authUserProfile?.role === UserRole.PARENT && authUserProfile.managedStudentIds?.length) {
-            const students = (result.data.eventManagers || []).filter(u => authUserProfile.managedStudentIds!.includes(u.uid));
-            // This is a simplification; a full solution would fetch all manager profiles and filter.
-            // For now, we assume the server action provides all needed profiles. A better approach would be another action or enhanced getEventRydzPageDataAction
-             const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
-                const userDocRef = doc(db, "users", studentId);
-                const studentDocSnap = await getDoc(userDocRef);
-                return studentDocSnap.exists() ? (studentDocSnap.data() as UserProfileData) : null;
-            });
-            const fetchedStudents = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
-            setManagedStudents(fetchedStudents);
-        }
-
       } else {
         throw new Error(result.message || "Failed to load event page data.");
       }
@@ -89,7 +76,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     } finally {
       setIsLoadingPage(false);
     }
-  }, [eventId, toast, authUserProfile]);
+  }, [eventId, toast]);
 
   useEffect(() => {
     if(!authLoading) {
@@ -300,14 +287,16 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const isCurrentUserParent = authUserProfile?.role === UserRole.PARENT;
 
             // Logic for Parent "Join / Add" button
-            const studentsNotOnRyd = isCurrentUserParent ? managedStudents.filter(
-              student => !activeRyd.passengerManifest.some(p =>
-                p.userId === student.uid &&
+            const studentsNotOnRyd = isCurrentUserParent ? (authUserProfile.managedStudentIds || []).filter(
+              studentId => !activeRyd.passengerManifest.some(p =>
+                p.userId === studentId &&
                 p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
                 p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER
               )
-            ) : [];
+            ).map(studentId => authUserProfile.passengerProfiles?.find(p => p.uid === studentId)).filter(Boolean) as UserProfileData[] : [];
+
             const peopleToAddList: { id: string, fullName: string }[] = isCurrentUserParent ? studentsNotOnRyd.map(s => ({id: s.uid, fullName: s.fullName})) : [];
+            
             if (isCurrentUserParent && !hasCurrentUserRequested && !isCurrentUserTheDriverOfThisRyd) {
                 peopleToAddList.unshift({ id: authUser!.uid, fullName: `${authUserProfile.fullName} (Me)` });
             }
@@ -537,7 +526,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      ).length) >= request.passengerUserProfiles.length
                 );
                 if (foundRyd) {
-                    suitableExistingActiveRyd = foundRyd.id;
+                    suitableExistingActiveRydId = foundRyd.id;
                 }
             }
             const fulfillmentLoading = isFulfillingWithExisting[request.id];
