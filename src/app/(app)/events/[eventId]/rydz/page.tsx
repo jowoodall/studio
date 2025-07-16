@@ -178,16 +178,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   }
 
   // --- Robust Date Handling ---
-  let eventDate: Date | null = null;
-  if (eventDetails.eventStartTimestamp) {
-    eventDate = new Date(eventDetails.eventStartTimestamp as any);
-  }
-  
-  let eventEndDate: Date | null = null;
-  if (eventDetails.eventEndTimestamp) {
-    eventEndDate = new Date(eventDetails.eventEndTimestamp as any);
-  }
-
+  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : null;
+  const eventEndDate = eventDetails.eventEndTimestamp ? new Date(eventDetails.eventEndTimestamp as any) : null;
   const isEventDateValid = eventDate && !isNaN(eventDate.getTime());
   const isEventEndDateValid = eventEndDate && !isNaN(eventEndDate.getTime());
   // --- End Robust Date Handling ---
@@ -264,7 +256,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
           <div className="flex items-start gap-3">
             <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
             <div>
-              <p className="text-muted-foreground">Ends</p>
+              <p className="text-muted-foreground">Planned End</p>
               <p className="font-semibold">{isEventEndDateValid ? format(eventEndDate, "PPP 'at' p") : 'Date TBD'}</p>
             </div>
           </div>
