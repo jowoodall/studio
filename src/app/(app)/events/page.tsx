@@ -68,14 +68,26 @@ export default function EventsPage() {
       // Query 1: Events for user's groups
       let groupEventsPromise = Promise.resolve<EventData[]>([]);
       if (userGroupIds.length > 0) {
-        const groupEventsQuery = query(
-          collection(db, "events"), 
-          where("status", "==", EventStatus.ACTIVE), 
-          where("associatedGroupIds", "array-contains-any", userGroupIds)
-        );
-        groupEventsPromise = getDocs(groupEventsQuery).then(snapshot => 
+        // Firestore 'in' query has a limit of 30 items
+        const groupChunks: string[][] = [];
+        for (let i = 0; i < userGroupIds.length; i += 30) {
+          groupChunks.push(userGroupIds.slice(i, i + 30));
+        }
+
+        const groupPromises = groupChunks.map(chunk => {
+          const groupEventsQuery = query(
+            collection(db, "events"), 
+            where("status", "==", EventStatus.ACTIVE), 
+            where("associatedGroupIds", "array-contains-any", chunk)
+          );
+          return getDocs(groupEventsQuery);
+        });
+
+        const groupSnapshots = await Promise.all(groupPromises);
+        const groupEvents = groupSnapshots.flatMap(snapshot => 
           snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventData))
         );
+        groupEvents.forEach(event => eventsMap.set(event.id, event));
       }
 
       // Query 2: Events managed by user
@@ -84,22 +96,30 @@ export default function EventsPage() {
         where("status", "==", EventStatus.ACTIVE),
         where("managerIds", "array-contains", userId)
       );
-      const managedEventsPromise = getDocs(managedEventsQuery).then(snapshot => 
-        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventData))
-      );
-
-      const [groupEvents, managedEvents] = await Promise.all([groupEventsPromise, managedEventsPromise]);
-      
-      // Merge and deduplicate
-      groupEvents.forEach(event => eventsMap.set(event.id, event));
-      managedEvents.forEach(event => eventsMap.set(event.id, event));
+      const managedEventsSnapshot = await getDocs(managedEventsQuery);
+      managedEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
       
       const combinedEvents = Array.from(eventsMap.values());
       
       // Sort by event timestamp on the client
       combinedEvents.sort((a, b) => {
-        const timeA = a.eventStartTimestamp?.toMillis() || 0;
-        const timeB = b.eventStartTimestamp?.toMillis() || 0;
+        const getSortableTime = (timestamp: any): number => {
+          if (!timestamp) return 0;
+          // Check if it's a Firestore Timestamp object with the toMillis method
+          if (typeof timestamp.toMillis === 'function') {
+            return timestamp.toMillis();
+          }
+          // Fallback for plain objects from server actions
+          if (typeof timestamp.seconds === 'number') {
+            return new Date(timestamp.seconds * 1000).getTime();
+          }
+          // Fallback for ISO strings
+          const date = new Date(timestamp);
+          return isNaN(date.getTime()) ? 0 : date.getTime();
+        };
+
+        const timeA = getSortableTime(a.eventStartTimestamp);
+        const timeB = getSortableTime(b.eventStartTimestamp);
         return timeA - timeB;
       });
 
