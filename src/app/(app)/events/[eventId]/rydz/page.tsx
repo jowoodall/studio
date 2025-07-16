@@ -18,8 +18,6 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, Timestamp, collection, query, getDocs, setDoc, serverTimestamp, where, orderBy } from "firebase/firestore";
 import type { EventData, GroupData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
 import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
 import { format } from 'date-fns';
@@ -44,8 +42,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-
-  const [allFetchedGroups, setAllFetchedGroups] = useState<GroupData[]>([]);
   
   const [isFulfillingWithExisting, setIsFulfillingWithExisting] = useState<Record<string, boolean>>({});
 
@@ -70,20 +66,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         setActiveRydzList(result.data.activeRydzList);
         setRydRequestsList(result.data.rydRequestsList);
 
-        if (result.data.eventDetails?.associatedGroupIds?.length) {
-            const groupPromises = result.data.eventDetails.associatedGroupIds.map(gid => getDoc(doc(db, "groups", gid)));
-            const groupDocs = await Promise.all(groupPromises);
-            setAllFetchedGroups(groupDocs.filter(d => d.exists()).map(d => ({id: d.id, ...d.data()}) as GroupData));
-        }
-        
         if (authUserProfile?.role === UserRole.PARENT && authUserProfile.managedStudentIds?.length) {
+            const students = (result.data.eventManagers || []).filter(u => authUserProfile.managedStudentIds!.includes(u.uid));
+            // This is a simplification; a full solution would fetch all manager profiles and filter.
+            // For now, we assume the server action provides all needed profiles. A better approach would be another action or enhanced getEventRydzPageDataAction
              const studentPromises = authUserProfile.managedStudentIds.map(async (studentId) => {
-                const studentDocRef = doc(db, "users", studentId);
-                const studentDocSnap = await getDoc(studentDocRef);
+                const userDocRef = doc(db, "users", studentId);
+                const studentDocSnap = await getDoc(userDocRef);
                 return studentDocSnap.exists() ? (studentDocSnap.data() as UserProfileData) : null;
             });
-            const students = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
-            setManagedStudents(students);
+            const fetchedStudents = (await Promise.all(studentPromises)).filter(Boolean) as UserProfileData[];
+            setManagedStudents(fetchedStudents);
         }
 
       } else {
@@ -253,35 +246,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No managers listed for this event.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="mb-6 shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Associated Groups</CardTitle>
-          <CardDescription>Groups linked to this event. Rydz might be prioritized for members.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {allFetchedGroups.length > 0 ? (
-            <div className="flex flex-wrap gap-2 mb-4">
-              {allFetchedGroups.map(group => (
-                 <Link key={group.id} href={`/groups/${group.id}`}>
-                    <Badge variant="secondary" className="hover:bg-muted/80">{group.name}</Badge>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No groups are currently associated with this event.</p>
-          )}
-          {isEventManager && (
-             <p className="text-xs text-muted-foreground mt-2">
-                You can manage associated groups on the{' '}
-                <Link href={`/events/${eventId}/edit`} className="underline hover:text-primary">
-                    Edit Event
-                </Link>
-                {' '}page.
-            </p>
           )}
         </CardContent>
       </Card>
@@ -573,7 +537,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      ).length) >= request.passengerUserProfiles.length
                 );
                 if (foundRyd) {
-                    suitableExistingActiveRydId = foundRyd.id;
+                    suitableExistingActiveRyd = foundRyd.id;
                 }
             }
             const fulfillmentLoading = isFulfillingWithExisting[request.id];

@@ -81,14 +81,10 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
         // 1. Fetch Event Details and Managers
         const eventDocRef = db.collection('events').doc(eventId);
         const eventDocSnap = await eventDocRef.get();
-        if (!eventDocSnap.exists) { // remove exists()
+        if (!eventDocSnap.exists) {
             return { success: false, message: `Event with ID "${eventId}" not found.` };
         }
         const eventDetails = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
-
-        const managerIds = eventDetails.managerIds || [];
-        const managerProfilesMap = await getMultipleUserProfiles(managerIds);
-        const eventManagers = Array.from(managerProfilesMap.values());
 
         // 2. Fetch Active Rydz for the event
         const activeRydzQuery = db.collection('activeRydz')
@@ -106,8 +102,9 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
         const rydRequestsSnapshot = await rydRequestsQuery.get();
         const rydRequestsList: RydData[] = rydRequestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RydData));
 
-        // 4. Batch fetch all necessary user profiles for rydz and requests
+        // 4. Batch fetch all necessary user profiles for rydz, requests, AND managers
         const allUserIds = new Set<string>();
+        (eventDetails.managerIds || []).forEach(id => allUserIds.add(id));
         activeRydzList.forEach(ryd => {
             allUserIds.add(ryd.driverId);
             ryd.passengerManifest.forEach(p => allUserIds.add(p.userId));
@@ -118,7 +115,12 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
         });
         const allProfilesMap = await getMultipleUserProfiles(Array.from(allUserIds));
 
-        // 5. Hydrate Active Rydz with profiles
+        // 5. Hydrate Managers
+        const eventManagers = (eventDetails.managerIds || [])
+            .map(id => allProfilesMap.get(id))
+            .filter(Boolean) as UserProfileData[];
+
+        // 6. Hydrate Active Rydz with profiles
         const hydratedActiveRydz: DisplayActiveRyd[] = activeRydzList.map(ryd => {
             return {
                 ...ryd,
@@ -130,7 +132,7 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
             };
         });
 
-        // 6. Hydrate Ryd Requests with profiles
+        // 7. Hydrate Ryd Requests with profiles
         const hydratedRydRequests: DisplayRydRequestData[] = rydRequestsList.map(req => {
             return {
                 ...req,
@@ -139,7 +141,7 @@ export async function getEventRydzPageDataAction(eventId: string): Promise<{
             };
         });
         
-        // 7. Serialize the entire data object before returning
+        // 8. Serialize the entire data object before returning
         const serializableData = toSerializableObject({
             eventDetails,
             eventManagers,
