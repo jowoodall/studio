@@ -13,14 +13,10 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Users, Car, Trash2, UserPlus, ShieldCheck, Loader2, PlusCircle, UserX, Info, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import type { GroupData, UserProfileData, UserRole as GlobalUserRole, NotificationType } from "@/types";
-import { NotificationType as NotificationTypeEnum } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { createNotification } from "@/actions/notificationActions";
-
+import { getGroupManagementDataAction, manageGroupMemberAction } from "@/actions/groupActions";
 
 type MemberRoleInGroup = "admin" | "member";
 
@@ -43,7 +39,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
   const params = use(paramsPromise);
   const { groupId } = params || {};
   const { toast } = useToast();
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [members, setMembers] = useState<DisplayGroupMember[]>([]);
@@ -51,231 +47,70 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isProcessingAction, setIsProcessingAction] = useState<Record<string, boolean>>({});
 
   const fetchGroupAndMembersData = useCallback(async () => {
-    if (!groupId) {
-      setError("Group ID is missing.");
-      setIsLoadingPage(false);
+    if (!groupId || !authUser) {
+      if (!authLoading) setIsLoadingPage(false);
       return;
     }
+    
     setIsLoadingPage(true);
     setError(null);
     try {
-      const groupDocRef = doc(db, "groups", groupId);
-      const groupDocSnap = await getDoc(groupDocRef);
-
-      if (!groupDocSnap.exists()) {
-        setError(`Group with ID "${groupId}" not found.`);
-        setGroup(null);
-        setMembers([]);
-        setIsLoadingPage(false);
-        return;
-      }
-
-      const groupData = { id: groupDocSnap.id, ...groupDocSnap.data() } as GroupData;
-      setGroup(groupData);
-
-      if (groupData.memberIds && groupData.memberIds.length > 0) {
-        const memberPromises = groupData.memberIds.map(async (memberUid) => {
-          const userDocRef = doc(db, "users", memberUid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            const userData = userDocSnap.data() as UserProfileData;
-            const hasAccepted = (userData.joinedGroupIds || []).includes(groupId);
-            return {
-              id: userDocSnap.id,
-              name: userData.fullName,
-              avatarUrl: userData.avatarUrl,
-              dataAiHint: userData.dataAiHint,
-              roleInGroup: groupData.adminIds.includes(memberUid) ? "admin" : "member",
-              canDrive: userData.canDrive || false,
-              email: userData.email,
-              hasAcceptedInvitation: hasAccepted, 
-            };
-          }
-          return null;
-        });
-        const fetchedMembers = (await Promise.all(memberPromises)).filter(Boolean) as DisplayGroupMember[];
-        setMembers(fetchedMembers);
+      const result = await getGroupManagementDataAction(groupId, authUser.uid);
+      if (result.success && result.data) {
+        setGroup(result.data.group);
+        setMembers(result.data.members);
       } else {
-        setMembers([]);
+        throw new Error(result.message || "Failed to load group data.");
       }
     } catch (e: any) {
       console.error("Error fetching group/members data:", e);
-      setError("Failed to load group or member data. " + (e.message || ""));
-      toast({ title: "Error", description: "Could not load group/member information.", variant: "destructive" });
+      setError(e.message);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setIsLoadingPage(false);
     }
-  }, [groupId, toast]);
+  }, [groupId, authUser, toast, authLoading]);
 
   useEffect(() => {
-    fetchGroupAndMembersData();
-  }, [fetchGroupAndMembersData]);
-
-  const handleRoleChange = async (memberId: string, newRole: MemberRoleInGroup) => {
-    if (!group || !authUser) return;
-    if (!group.adminIds.includes(authUser.uid)) {
-        toast({ title: "Permission Denied", description: "Only group admins can change roles.", variant: "destructive"});
-        return;
+    if (!authLoading) {
+      fetchGroupAndMembersData();
     }
-    const groupDocRef = doc(db, "groups", groupId);
+  }, [authLoading, fetchGroupAndMembersData]);
+
+  const handleAction = async (action: 'add' | 'remove' | 'promote' | 'demote', targetMemberId: string, targetMemberEmail?: string) => {
+    if (!authUser || !group) return;
+
+    const actionKey = `${action}-${targetMemberId || targetMemberEmail}`;
+    setIsProcessingAction(p => ({ ...p, [actionKey]: true }));
+    if (action === 'add') setIsAddingMember(true);
+    
     try {
-      if (newRole === "admin") {
-        await updateDoc(groupDocRef, { adminIds: arrayUnion(memberId) });
-      } else { 
-        await updateDoc(groupDocRef, { adminIds: arrayRemove(memberId) });
-      }
-      setMembers(prevMembers =>
-        prevMembers.map(member =>
-          member.id === memberId ? { ...member, roleInGroup: newRole } : member
-        )
-      );
-      setGroup(prev => prev ? ({ ...prev, adminIds: newRole === 'admin' ? [...prev.adminIds, memberId] : prev.adminIds.filter(id => id !== memberId)}) : null);
-      toast({
-        title: "Role Updated",
-        description: `${members.find(m => m.id === memberId)?.name || 'Member'}'s role changed to ${newRole}.`,
-      });
-    } catch (e: any) {
-      console.error("Error updating role:", e);
-      toast({ title: "Role Update Failed", description: e.message || "Could not update role.", variant: "destructive"});
-    }
-  };
-
-  const handleRemoveMember = async (memberIdToRemove: string) => {
-    if (!group || !authUser) return;
-    if (!group.adminIds.includes(authUser.uid) && authUser.uid !== memberIdToRemove) {
-      toast({ title: "Permission Denied", description: "Only group admins can remove other members.", variant: "destructive" });
-      return;
-    }
-
-    const memberName = members.find(m => m.id === memberIdToRemove)?.name || 'Member';
-    const batch = writeBatch(db);
-    try {
-      // Remove member from the group's lists
-      const groupDocRef = doc(db, "groups", groupId);
-      batch.update(groupDocRef, {
-        memberIds: arrayRemove(memberIdToRemove),
-        adminIds: arrayRemove(memberIdToRemove)
-      });
-
-      // Also remove the group from the member's list of joined groups
-      const userDocRef = doc(db, "users", memberIdToRemove);
-      batch.update(userDocRef, {
-        joinedGroupIds: arrayRemove(groupId)
-      });
-
-      await batch.commit();
-
-      // Update local state to reflect removal
-      setMembers(prevMembers => prevMembers.filter(member => member.id !== memberIdToRemove));
-      setGroup(prev => prev ? ({
-        ...prev,
-        memberIds: prev.memberIds.filter(id => id !== memberIdToRemove),
-        adminIds: prev.adminIds.filter(id => id !== memberIdToRemove),
-      }) : null);
-
-      toast({
-        title: "Member Removed",
-        description: `${memberName} has been removed from the group and their group list has been updated.`,
-      });
-    } catch (e: any) {
-      console.error("Error removing member:", e);
-      let description = "Could not remove member. Please check console for details.";
-      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-        description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to remove members from the group document.`;
-      } else if (e.message) {
-        description = e.message;
-      }
-      toast({ title: "Removal Failed", description, variant: "destructive", duration: 9000 });
-    }
-  };
-  
-  const handleAddMember = async () => {
-    if (!group || !newMemberEmail.trim() || !authUser) {
-        toast({ title: "Error", description: "Group details missing or email is empty.", variant: "destructive"});
-        return;
-    }
-    if (!group.adminIds.includes(authUser.uid)) {
-        toast({ title: "Permission Denied", description: "Only group admins can add members.", variant: "destructive"});
-        return;
-    }
-
-    setIsAddingMember(true);
-    const emailToInvite = newMemberEmail.trim().toLowerCase();
-
-    try {
-        const usersRef = collection(db, "users");
-        const q = query(usersRef, where("email", "==", emailToInvite));
-        const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) {
-            toast({ 
-                title: "User Not Found", 
-                description: `No user found with email: ${emailToInvite}. (Note: Future versions could allow sending an invitation to join MyRydz if email notifications are enabled.)`, 
-                variant: "destructive",
-                duration: 7000,
-            });
-            setIsAddingMember(false);
-            return;
+        const result = await manageGroupMemberAction({
+            actingUserId: authUser.uid,
+            groupId: group.id,
+            action,
+            targetMemberId,
+            targetMemberEmail,
+        });
+        if (result.success) {
+            toast({ title: "Success", description: result.message });
+            if(action === 'add') setNewMemberEmail("");
+            await fetchGroupAndMembersData(); // Refresh data from server
+        } else {
+            toast({ title: "Action Failed", description: result.message, variant: "destructive" });
         }
-        
-        const userDocToAdd = querySnapshot.docs[0];
-        const newMemberId = userDocToAdd.id;
-        const newMemberData = userDocToAdd.data() as UserProfileData;
-
-        if (group.memberIds.includes(newMemberId)) {
-            toast({ title: "Already Invited", description: `${newMemberData.fullName} is already in this group's member list.` });
-            setIsAddingMember(false);
-            setNewMemberEmail("");
-            return;
-        }
-
-        const groupDocRef = doc(db, "groups", groupId);
-        await updateDoc(groupDocRef, { memberIds: arrayUnion(newMemberId) });
-        
-        // --- Create Notification ---
-        await createNotification(
-            newMemberId,
-            `Group Invitation`,
-            `You have been invited to join the group "${group.name}".`,
-            NotificationTypeEnum.INFO,
-            '/groups'
-        );
-        // --- End Create Notification ---
-        
-        const hasAlreadyAccepted = (newMemberData.joinedGroupIds || []).includes(groupId);
-
-        const newDisplayMember: DisplayGroupMember = {
-            id: newMemberId,
-            name: newMemberData.fullName,
-            avatarUrl: newMemberData.avatarUrl,
-            dataAiHint: newMemberData.dataAiHint,
-            roleInGroup: "member", 
-            canDrive: newMemberData.canDrive || false,
-            email: newMemberData.email,
-            hasAcceptedInvitation: hasAlreadyAccepted, 
-        };
-        setMembers(prev => [...prev, newDisplayMember]);
-        setGroup(prev => prev ? ({ ...prev, memberIds: [...prev.memberIds, newMemberId]}) : null);
-        
-        toast({ title: "Member Invited", description: `${newMemberData.fullName} has been added to the group's member list. They will see a pending invitation.`});
-        setNewMemberEmail("");
     } catch (e: any) {
-      console.error("Error inviting member:", e);
-      let description = "Could not invite member to group. Please check console for details.";
-      if (e.code === 'permission-denied' || (e.message && e.message.toLowerCase().includes('permission denied'))) {
-          description = `Permission denied by Firestore rules (Code: ${e.code}). Ensure rules allow admins to update the group's memberIds.`;
-      } else if (e.message) {
-          description = e.message;
-      }
-      toast({ title: "Invite Member Failed", description, variant: "destructive", duration: 9000});
+        toast({ title: "Error", description: `An unexpected client error occurred: ${e.message}`, variant: "destructive" });
     } finally {
-        setIsAddingMember(false);
+        setIsProcessingAction(p => ({ ...p, [actionKey]: false }));
+        if (action === 'add') setIsAddingMember(false);
     }
   };
 
-  if (isLoadingPage) {
+  if (isLoadingPage || authLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -284,12 +119,12 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     );
   }
 
-  if (error) {
+  if (error || !group) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Error</h2>
-        <p className="text-muted-foreground px-4">{error}</p>
+        <p className="text-muted-foreground px-4">{error || "Group could not be loaded."}</p>
         <Button asChild className="mt-4">
           <Link href="/groups">Back to Groups</Link>
         </Button>
@@ -297,19 +132,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     );
   }
   
-  if (!group && !isLoadingPage) {
-     return (
-        <div className="flex flex-col items-center justify-center h-full text-center py-10">
-            <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-            <h2 className="text-2xl font-semibold mb-2">Group Not Found</h2>
-            <p className="text-muted-foreground">The group with ID "{groupId}" could not be found or loaded.</p>
-            <Button asChild className="mt-4">
-            <Link href="/groups">Back to Groups</Link>
-            </Button>
-        </div>
-     );
-  }
-
+  const isCurrentUserAdmin = group.adminIds.includes(authUser?.uid || '');
 
   return (
     <>
@@ -318,35 +141,34 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
         description={`Add, remove, or change roles for members of "${group.name}".`}
       />
 
-      <Card className="shadow-xl mb-6">
-        <CardHeader>
-            <CardTitle className="flex items-center"><UserPlus className="mr-2 h-5 w-5 text-primary" /> Add New Member</CardTitle>
-            <CardDescription>Invite someone to join this group by their email address. They will need to accept the invitation.</CardDescription>
-        </CardHeader>
-        <CardContent>
-            <div className="flex flex-col sm:flex-row gap-2">
-                <Input 
-                    type="email" 
-                    placeholder="Enter member's email address" 
-                    value={newMemberEmail}
-                    onChange={(e) => setNewMemberEmail(e.target.value)}
-                    className="flex-grow"
-                    disabled={isAddingMember || !group.adminIds.includes(authUser?.uid || '')}
-                />
-                <Button 
-                    onClick={handleAddMember} 
-                    disabled={isAddingMember || !newMemberEmail.trim() || !group.adminIds.includes(authUser?.uid || '')} 
-                    className="w-full sm:w-auto"
-                >
-                    {isAddingMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                    Invite Member
-                </Button>
-            </div>
-            {!group.adminIds.includes(authUser?.uid || '') && (
-                <p className="text-xs text-destructive mt-2">Only group admins can invite new members.</p>
-            )}
-        </CardContent>
-      </Card>
+      {isCurrentUserAdmin && (
+        <Card className="shadow-xl mb-6">
+            <CardHeader>
+                <CardTitle className="flex items-center"><UserPlus className="mr-2 h-5 w-5 text-primary" /> Add New Member</CardTitle>
+                <CardDescription>Invite someone to join this group by their email address. They will need to accept the invitation.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <Input 
+                        type="email" 
+                        placeholder="Enter member's email address" 
+                        value={newMemberEmail}
+                        onChange={(e) => setNewMemberEmail(e.target.value)}
+                        className="flex-grow"
+                        disabled={isAddingMember}
+                    />
+                    <Button 
+                        onClick={() => handleAction('add', '', newMemberEmail)}
+                        disabled={isAddingMember || !newMemberEmail.trim()}
+                        className="w-full sm:w-auto"
+                    >
+                        {isAddingMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                        Invite Member
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-xl">
         <CardHeader>
@@ -364,59 +186,66 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
           </div>
           {members.length > 0 ? (
             <ul className="space-y-4">
-              {members.map((member) => (
-                <li key={member.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow gap-4 sm:gap-2">
-                  <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint={member.dataAiHint}/>
-                      <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
-                        {!member.hasAcceptedInvitation && (
-                            <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-600">
-                                <Info className="mr-1 h-3 w-3" /> Pending Acceptance
-                            </Badge>
+              {members.map((member) => {
+                const isProcessing = !!isProcessingAction[`remove-${member.id}`] || !!isProcessingAction[`promote-${member.id}`] || !!isProcessingAction[`demote-${member.id}`];
+                return (
+                  <li key={member.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow gap-4 sm:gap-2">
+                    <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint={member.dataAiHint}/>
+                        <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
+                          {!member.hasAcceptedInvitation && (
+                              <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-600">
+                                  <Info className="mr-1 h-3 w-3" /> Pending Acceptance
+                              </Badge>
+                          )}
+                        </div>
+                         <p className="text-xs text-muted-foreground">{member.email}</p>
+                        {member.canDrive && (
+                          <Car className="inline-block h-4 w-4 ml-1.5 text-blue-500" title="Can drive" />
+                        )}
+                        {member.roleInGroup === "admin" && (
+                          <ShieldCheck className="inline-block h-4 w-4 ml-1.5 text-green-500" title="Administrator" />
                         )}
                       </div>
-                       <p className="text-xs text-muted-foreground">{member.email}</p>
-                      {member.canDrive && (
-                        <Car className="inline-block h-4 w-4 ml-1.5 text-blue-500" title="Can drive" />
-                      )}
-                      {member.roleInGroup === "admin" && (
-                        <ShieldCheck className="inline-block h-4 w-4 ml-1.5 text-green-500" title="Administrator" />
-                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                    <Select
-                      value={member.roleInGroup}
-                      onValueChange={(value) => handleRoleChange(member.id, value as MemberRoleInGroup)}
-                      disabled={!group.adminIds.includes(authUser?.uid || '') || member.id === authUser?.uid || !member.hasAcceptedInvitation}
-                    >
-                      <SelectTrigger className="w-[120px] text-xs sm:text-sm">
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="member">Member</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleRemoveMember(member.id)}
-                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`Remove ${member.name}`}
-                      disabled={(!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid) || (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && members.filter(m => m.hasAcceptedInvitation).length > 1 && member.hasAcceptedInvitation) }
-                      title={!group.adminIds.includes(authUser?.uid || '') && member.id !== authUser?.uid ? "Only admins can remove others" : (member.id === authUser?.uid && group.adminIds.length === 1 && group.adminIds[0] === authUser?.uid && members.filter(m => m.hasAcceptedInvitation).length > 1) ? "Cannot remove self as last admin if other accepted members are present" : `Remove ${member.name}`}
-                    >
-                      {member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </li>
-              ))}
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                      <Select
+                        value={member.roleInGroup}
+                        onValueChange={(value) => handleAction(value as MemberRoleInGroup, member.id)}
+                        disabled={!isCurrentUserAdmin || member.id === authUser?.uid || !member.hasAcceptedInvitation || isProcessing}
+                      >
+                        <SelectTrigger className="w-[120px] text-xs sm:text-sm">
+                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <SelectValue placeholder="Select role" />}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="member">Member</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleAction('remove', member.id)}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`Remove ${member.name}`}
+                        disabled={
+                            (!isCurrentUserAdmin && member.id !== authUser?.uid) ||
+                            (member.id === authUser?.uid && isCurrentUserAdmin && group.adminIds.length <= 1 && members.filter(m => m.hasAcceptedInvitation).length > 1) ||
+                            isProcessing
+                        }
+                        title={!isCurrentUserAdmin && member.id !== authUser?.uid ? "Only admins can remove others" : `Remove ${member.name}`}
+                      >
+                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : (member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />)}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="text-muted-foreground text-center py-4">This group has no members yet.</p>
@@ -431,7 +260,3 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     </>
   );
 }
-    
-
-    
-

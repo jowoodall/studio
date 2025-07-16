@@ -124,3 +124,178 @@ export async function respondToGroupInvitationAction(
         return handleActionError(error, 'respondToGroupInvitationAction');
     }
 }
+
+
+type MemberRoleInGroup = "admin" | "member";
+
+interface DisplayGroupMember {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  dataAiHint?: string;
+  roleInGroup: MemberRoleInGroup;
+  canDrive: boolean;
+  email?: string;
+  hasAcceptedInvitation: boolean; 
+}
+
+interface GroupManagementData {
+    group: GroupData;
+    members: DisplayGroupMember[];
+}
+
+export async function getGroupManagementDataAction(
+    groupId: string,
+    actingUserId: string
+): Promise<{ success: boolean; data?: GroupManagementData; message?: string; }> {
+    if (!groupId || !actingUserId) {
+        return { success: false, message: "Group ID and acting User ID are required." };
+    }
+
+    try {
+        const groupDocRef = db.collection('groups').doc(groupId);
+        const groupDocSnap = await groupDocRef.get();
+        if (!groupDocSnap.exists) {
+            return { success: false, message: `Group with ID "${groupId}" not found.` };
+        }
+        const groupData = { id: groupDocSnap.id, ...groupDocSnap.data() } as GroupData;
+
+        // Authorization check
+        if (!groupData.memberIds.includes(actingUserId)) {
+            return { success: false, message: "You are not a member of this group." };
+        }
+
+        let members: DisplayGroupMember[] = [];
+        if (groupData.memberIds.length > 0) {
+            const memberRefs = groupData.memberIds.map(id => db.collection('users').doc(id));
+            const memberDocs = await db.getAll(...memberRefs);
+            
+            members = memberDocs.map(userDocSnap => {
+                if (!userDocSnap.exists) return null;
+                const userData = userDocSnap.data() as UserProfileData;
+                const hasAccepted = (userData.joinedGroupIds || []).includes(groupId);
+                return {
+                    id: userDocSnap.id,
+                    name: userData.fullName,
+                    avatarUrl: userData.avatarUrl,
+                    dataAiHint: userData.dataAiHint,
+                    roleInGroup: groupData.adminIds.includes(userDocSnap.id) ? "admin" : "member",
+                    canDrive: userData.canDrive || false,
+                    email: userData.email,
+                    hasAcceptedInvitation: hasAccepted,
+                };
+            }).filter(Boolean) as DisplayGroupMember[];
+        }
+
+        return {
+            success: true,
+            data: {
+                group: toSerializableObject(groupData),
+                members,
+            }
+        };
+
+    } catch (error: any) {
+        return handleActionError(error, 'getGroupManagementDataAction');
+    }
+}
+
+
+interface ManageGroupMemberInput {
+    actingUserId: string;
+    groupId: string;
+    action: 'add' | 'remove' | 'promote' | 'demote';
+    targetMemberId?: string; 
+    targetMemberEmail?: string;
+}
+
+export async function manageGroupMemberAction(
+    input: ManageGroupMemberInput
+): Promise<{ success: boolean; message: string; }> {
+    const { actingUserId, groupId, action, targetMemberId, targetMemberEmail } = input;
+    
+    if (!actingUserId || !groupId || !action) {
+        return { success: false, message: "Missing required parameters." };
+    }
+
+    const groupDocRef = db.collection('groups').doc(groupId);
+    
+    try {
+        const actingUserDoc = await db.collection('users').doc(actingUserId).get();
+        if (!actingUserDoc.exists) {
+            return { success: false, message: "Acting user profile not found." };
+        }
+        
+        const groupDoc = await groupDocRef.get();
+        if (!groupDoc.exists) {
+            return { success: false, message: "Group not found." };
+        }
+        const groupData = groupDoc.data() as GroupData;
+
+        const isActingUserAdmin = groupData.adminIds.includes(actingUserId);
+
+        // --- Permission Checks ---
+        if (action !== 'remove' && !isActingUserAdmin) {
+            return { success: false, message: "Only group admins can perform this action." };
+        }
+        if (action === 'remove' && targetMemberId !== actingUserId && !isActingUserAdmin) {
+            return { success: false, message: "Only group admins can remove other members." };
+        }
+
+        const batch = db.batch();
+
+        switch (action) {
+            case 'add':
+                if (!targetMemberEmail) return { success: false, message: "Target member email is required." };
+                const usersSnapshot = await db.collection('users').where("email", "==", targetMemberEmail.trim().toLowerCase()).limit(1).get();
+                if (usersSnapshot.empty) {
+                    return { success: false, message: `No user found with email: ${targetMemberEmail}.` };
+                }
+                const newMemberDoc = usersSnapshot.docs[0];
+                if (groupData.memberIds.includes(newMemberDoc.id)) {
+                    return { success: true, message: `${newMemberDoc.data().fullName} is already in the group.` };
+                }
+                batch.update(groupDocRef, { memberIds: FieldValue.arrayUnion(newMemberDoc.id) });
+                
+                await createNotification(
+                    newMemberDoc.id, `Group Invitation`,
+                    `You have been invited to join the group "${groupData.name}".`,
+                    NotificationTypeEnum.INFO, '/groups'
+                );
+                await batch.commit();
+                return { success: true, message: `${newMemberDoc.data().fullName} has been invited to the group.` };
+
+            case 'remove':
+                if (!targetMemberId) return { success: false, message: "Target member ID is required." };
+                if (targetMemberId === actingUserId && isActingUserAdmin && groupData.adminIds.length <= 1 && groupData.memberIds.length > 1) {
+                    return { success: false, message: "You cannot remove yourself as the last admin if other members remain. Promote another admin first." };
+                }
+                batch.update(groupDocRef, { memberIds: FieldValue.arrayRemove(targetMemberId), adminIds: FieldValue.arrayRemove(targetMemberId) });
+                batch.update(db.collection('users').doc(targetMemberId), { joinedGroupIds: FieldValue.arrayRemove(groupId) });
+                await batch.commit();
+                return { success: true, message: "Member removed successfully." };
+
+            case 'promote':
+                if (!targetMemberId) return { success: false, message: "Target member ID is required." };
+                batch.update(groupDocRef, { adminIds: FieldValue.arrayUnion(targetMemberId) });
+                await batch.commit();
+                return { success: true, message: "Member promoted to admin." };
+            
+            case 'demote':
+                if (!targetMemberId) return { success: false, message: "Target member ID is required." };
+                if (targetMemberId === actingUserId) return { success: false, message: "You cannot demote yourself." };
+                if (groupData.adminIds.length <= 1 && groupData.adminIds.includes(targetMemberId)) {
+                    return { success: false, message: "Cannot demote the last admin." };
+                }
+                batch.update(groupDocRef, { adminIds: FieldValue.arrayRemove(targetMemberId) });
+                await batch.commit();
+                return { success: true, message: "Admin demoted to member." };
+                
+            default:
+                return { success: false, message: "Invalid action." };
+        }
+
+    } catch (error: any) {
+        return handleActionError(error, `manageGroupMemberAction:${action}`);
+    }
+}
