@@ -177,11 +177,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     );
   }
 
-  const eventDate = new Date(eventDetails.eventStartTimestamp as any);
-  const eventEndDate = new Date(eventDetails.eventEndTimestamp as any);
+  // Robust date handling
+  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : null;
+  const eventEndDate = eventDetails.eventEndTimestamp ? new Date(eventDetails.eventEndTimestamp as any) : null;
   
-  const isEventDateValid = !isNaN(eventDate.getTime());
-  const isEventEndDateValid = !isNaN(eventEndDate.getTime());
+  const isEventDateValid = eventDate && !isNaN(eventDate.getTime());
+  const isEventEndDateValid = eventEndDate && !isNaN(eventEndDate.getTime());
   
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
