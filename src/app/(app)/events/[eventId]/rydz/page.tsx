@@ -180,6 +180,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
   const eventDate = new Date(eventDetails.eventStartTimestamp as any || new Date());
   const eventEndDate = new Date(eventDetails.eventEndTimestamp as any || new Date());
   const isEventDateValid = !isNaN(eventDate.getTime());
+  const isEventEndDateValid = !isNaN(eventEndDate.getTime());
+  
   const redirectBackUrl = '/events/' + eventId + '/rydz';
   const isEventManager = authUser && eventDetails.managerIds?.includes(authUser.uid);
 
@@ -253,7 +255,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
             <div>
               <p className="text-muted-foreground">Ends</p>
-              <p className="font-semibold">{isEventDateValid ? format(eventEndDate, "PPP 'at' p") : 'Date TBD'}</p>
+              <p className="font-semibold">{isEventEndDateValid ? format(eventEndDate, "PPP 'at' p") : 'Date TBD'}</p>
             </div>
           </div>
         </CardContent>
@@ -668,4 +670,3 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
-
