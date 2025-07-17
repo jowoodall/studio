@@ -31,6 +31,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { submitPassengerDetailsForActiveRydAction } from "@/actions/activeRydActions";
 import { getVisibleEventsAction } from '@/actions/eventActions';
+import { getManagedStudentsAction } from '@/actions/userActions';
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -302,56 +303,33 @@ export default function RydRequestPage() {
 
   useEffect(() => {
     const fetchManagedStudents = async () => {
-      if (authLoading || isLoadingProfile) {
-        setIsLoadingManagedStudents(true);
-        return;
-      }
-      if (!userProfile || userProfile.role !== UserRole.PARENT) {
-        setManagedStudentsList([]);
+      if (!authUser || !userProfile || userProfile.role !== UserRole.PARENT) {
         setIsLoadingManagedStudents(false);
+        setManagedStudentsList([]);
         return;
       }
-      
+
       setIsLoadingManagedStudents(true);
       try {
-        const validStudentIds = (userProfile.managedStudentIds || []).filter(id => typeof id === 'string' && id.trim() !== '');
-        
-        if (validStudentIds.length === 0) {
+        const result = await getManagedStudentsAction(authUser.uid);
+        if (result.success && result.students) {
+          setManagedStudentsList(result.students);
+        } else {
+          toast({ title: "Error", description: result.message || "Could not load your managed students.", variant: "destructive" });
           setManagedStudentsList([]);
-          setIsLoadingManagedStudents(false);
-          return;
         }
-        
-        const studentPromises = validStudentIds.map(async (studentId) => {
-          try {
-            const studentDocRef = doc(db, "users", studentId); 
-            const studentDocSnap = await getFirestoreDoc(studentDocRef); 
-            if (studentDocSnap.exists()) {
-              const studentData = studentDocSnap.data() as UserProfileData;
-              return { id: studentDocSnap.id, fullName: studentData.fullName };
-            } else {
-              return null;
-            }
-          } catch (studentError) {
-            return null; 
-          }
-        });
-        const studentsData = (await Promise.all(studentPromises));
-        const validStudents = studentsData.filter(Boolean) as ManagedStudentSelectItem[];
-        setManagedStudentsList(validStudents);
-
       } catch (error: any) {
-        toast({ title: "Error", description: "Could not load your managed students. Check console for details.", variant: "destructive" });
+        toast({ title: "Error", description: "An unexpected error occurred while fetching students.", variant: "destructive" });
         setManagedStudentsList([]);
       } finally {
         setIsLoadingManagedStudents(false);
       }
     };
   
-    if (!authLoading && !isLoadingProfile) {
+    if (!authLoading && userProfile) {
       fetchManagedStudents();
     }
-  }, [userProfile, authLoading, isLoadingProfile, toast]);
+  }, [userProfile, authUser, authLoading, toast]);
 
 
   async function onSubmit(data: RydRequestFormValues) { 
@@ -931,5 +909,3 @@ export default function RydRequestPage() {
     </>
   );
 }
-
-

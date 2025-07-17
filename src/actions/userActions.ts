@@ -145,3 +145,52 @@ export async function associateParentWithStudentAction(input: AssociateParentInp
         return handleActionError(error, "associateParentWithStudentAction");
     }
 }
+
+
+interface SimpleStudentInfo {
+    id: string;
+    fullName: string;
+}
+
+export async function getManagedStudentsAction(parentId: string): Promise<{ success: boolean; students?: SimpleStudentInfo[]; message?: string; }> {
+    if (!parentId) {
+        return { success: false, message: "Parent ID is required." };
+    }
+
+    try {
+        const parentDocRef = db.collection('users').doc(parentId);
+        const parentDocSnap = await parentDocRef.get();
+
+        if (!parentDocSnap.exists) {
+            return { success: false, message: "Parent profile not found." };
+        }
+
+        const parentData = parentDocSnap.data() as UserProfileData;
+        if (parentData.role !== UserRole.PARENT) {
+            return { success: false, message: "User is not a parent." };
+        }
+
+        const studentIds = parentData.managedStudentIds || [];
+        if (studentIds.length === 0) {
+            return { success: true, students: [] };
+        }
+
+        const studentRefs = studentIds.map(id => db.collection('users').doc(id));
+        const studentDocs = await db.getAll(...studentRefs);
+
+        const students: SimpleStudentInfo[] = studentDocs
+            .filter(doc => doc.exists)
+            .map(doc => {
+                const data = doc.data() as UserProfileData;
+                return {
+                    id: doc.id,
+                    fullName: data.fullName
+                };
+            });
+
+        return { success: true, students };
+
+    } catch (error) {
+        return handleActionError(error, "getManagedStudentsAction");
+    }
+}
