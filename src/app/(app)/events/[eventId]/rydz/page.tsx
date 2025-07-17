@@ -330,40 +330,40 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-              <CardHeader className="p-4">
+              <CardHeader className="p-3">
                   <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                          <Avatar className="h-10 w-10">
+                          <Avatar className="h-8 w-8">
                               <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
                               <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
-                              <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline truncate block">{driverName}</Link>
+                              <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold text-sm hover:underline truncate block">{driverName}</Link>
                               <p className="text-xs text-muted-foreground truncate">{vehicleDisplay}</p>
                           </div>
                       </div>
-                      <Badge variant="outline" className="w-fit capitalize flex-shrink-0">{activeRyd.status.replace(/_/g, ' ')}</Badge>
+                      <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs">{activeRyd.status.replace(/_/g, ' ')}</Badge>
                   </div>
               </CardHeader>
-              <CardContent className="flex-grow pt-2 pb-4 px-4 space-y-3">
-                <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
+              <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
+                <div className="flex items-center justify-center text-xs font-semibold p-1.5 bg-muted/50 rounded-md">
                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                     Ryd {directionIsToEvent ? "to" : "from"} event
                 </div>
-                <div className="text-sm text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-3">
-                  <div className="flex items-center"> <Clock className="mr-2 h-4 w-4 flex-shrink-0" /> <span>{timeRange}</span> </div>
-                  <div className="flex items-center"> <Users className="mr-2 h-4 w-4 flex-shrink-0" /> <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span> </div>
+                <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
+                  <div className="flex items-center"> <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{timeRange}</span> </div>
+                  <div className="flex items-center"> <Users className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span> </div>
                 </div>
 
                 {displayedPassengers.length > 0 && (
-                    <div className="space-y-1">
+                    <div className="pt-1">
                         <h4 className="text-xs font-semibold text-muted-foreground">Passengers ({currentActivePassengers}/{vehiclePassengerCapacity}):</h4>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1 mt-1">
                             {displayedPassengers.map(pItem => {
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
                                 return (
-                                <Badge key={pItem.userId} variant="secondary" className="font-normal gap-1.5">
-                                    <UserCircle2 className="h-3.5 w-3.5"/>
+                                <Badge key={pItem.userId} variant="secondary" className="font-normal text-xs gap-1">
+                                    <UserCircle2 className="h-3 w-3"/>
                                     {passengerProfile?.fullName || 'User...'}
                                 </Badge>
                                 );
@@ -372,8 +372,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     </div>
                 )}
               </CardContent>
-              <CardFooter className="border-t pt-4 px-4 pb-4 flex flex-col gap-2">
-                <Button type="button" variant="default" className="w-full" asChild>
+              <CardFooter className="border-t p-3 flex flex-col gap-2">
+                <Button type="button" variant="default" size="sm" className="w-full" asChild>
                   <Link href={'/rydz/tracking/' + activeRyd.id}>
                     View Details / Manage
                   </Link>
@@ -383,6 +383,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                    <Button
                     type="button"
                     variant="outline"
+                    size="sm"
                     className="w-full text-green-600 border-green-500 hover:bg-green-500/10 hover:text-green-700"
                     onClick={() => handleRequestSeatForUser(activeRyd.id, authUser!.uid, authUserProfile!.fullName)}
                     disabled={isAddingPassenger[authUser!.uid]}
@@ -397,6 +398,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
+                        size="sm"
                         className="w-full"
                       >
                         <UserPlus className="mr-2 h-4 w-4" />
@@ -432,17 +434,17 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
 
                 {hasCurrentUserRequested && (
-                  <Button type="button" variant="outline" className="w-full" disabled>
+                  <Button type="button" variant="outline" size="sm" className="w-full" disabled>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
                   </Button>
                 )}
                 {isRydFull && !hasCurrentUserRequested && !isCurrentUserTheDriverOfThisRyd && (
-                  <Button type="button" variant="outline" className="w-full" disabled>
+                  <Button type="button" variant="outline" size="sm" className="w-full" disabled>
                       <Info className="mr-2 h-4 w-4 text-orange-500"/> Ryd is Full
                   </Button>
                 )}
                 {!isRydJoinableStatus && !hasCurrentUserRequested && !isCurrentUserTheDriverOfThisRyd && (
-                  <Button type="button" variant="outline" className="w-full" disabled>
+                  <Button type="button" variant="outline" size="sm" className="w-full" disabled>
                       <Info className="mr-2 h-4 w-4 text-muted-foreground"/> Not Accepting Passengers
                   </Button>
                 )}
@@ -530,46 +532,46 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             return (
             <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-              <CardHeader className="p-4">
+              <CardHeader className="p-3">
                  <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                        <Avatar className="h-10 w-10">
+                        <Avatar className="h-8 w-8">
                             <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
                             <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                            <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline text-sm truncate block">{displayNamer}</Link>
+                            <Link href={'/profile/view/' + profileLinkUid} className="font-semibold text-sm hover:underline truncate block">{displayNamer}</Link>
                             <p className="text-xs text-muted-foreground truncate">{cardSubtitle}</p>
                         </div>
                     </div>
-                     <Badge variant="outline" className="w-fit capitalize flex-shrink-0">{request.status.replace(/_/g, ' ')}</Badge>
+                     <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs">{request.status.replace(/_/g, ' ')}</Badge>
                 </div>
               </CardHeader>
-              <CardContent className="flex-grow pt-2 pb-4 px-4 space-y-3">
-                 <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
+              <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
+                 <div className="flex items-center justify-center text-xs font-semibold p-1.5 bg-muted/50 rounded-md">
                      {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                      Ryd {directionIsToEvent ? "to" : "from"} event
                    </div>
-                 <div className="text-sm text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-3">
+                 <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
                     <div className="flex items-center">
-                      <CalendarDays className="mr-2 h-4 w-4 flex-shrink-0" />
+                      <CalendarDays className="mr-1.5 h-4 w-4 flex-shrink-0" />
                       <span>{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
                     </div>
                     {request.pickupLocation && (
                         <div className="flex items-center">
-                           <MapPinIcon className="mr-2 h-4 w-4 flex-shrink-0" /> 
+                           <MapPinIcon className="mr-1.5 h-4 w-4 flex-shrink-0" /> 
                            <span className="truncate">{request.pickupLocation}</span>
                         </div>
                     )}
                  </div>
 
                 {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
-                    <div className="space-y-1">
+                    <div className="pt-1">
                         <h4 className="text-xs font-semibold text-muted-foreground">Passengers ({request.passengerUserProfiles.length}):</h4>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1 mt-1">
                             {request.passengerUserProfiles.map(p => (
-                                <Badge key={p.uid} variant="secondary" className="font-normal gap-1.5">
-                                    <UserCircle2 className="h-3.5 w-3.5"/>
+                                <Badge key={p.uid} variant="secondary" className="font-normal text-xs gap-1">
+                                    <UserCircle2 className="h-3 w-3"/>
                                     {p.fullName || 'User...'}
                                 </Badge>
                             ))}
@@ -577,12 +579,13 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     </div>
                 )}
               </CardContent>
-              <CardFooter className="border-t pt-4 px-4 pb-4">
+              <CardFooter className="border-t p-3">
                 {canCurrentUserOfferToFulfill ? (
                     suitableExistingActiveRydId ? (
                         <Button
                             type="button"
                             variant="default"
+                            size="sm"
                             className="w-full"
                             onClick={() => handleFulfillWithExistingRyd(request.id, suitableExistingActiveRydId!)}
                             disabled={fulfillmentLoading}
@@ -594,6 +597,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         <Button
                             type="button"
                             variant="outline"
+                            size="sm"
                             className="w-full"
                             asChild
                         >
@@ -603,7 +607,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                         </Button>
                     )
                 ) : (
-                     <Button type="button" variant="outline" className="w-full" disabled>
+                     <Button type="button" variant="outline" size="sm" className="w-full" disabled>
                         <Car className="mr-2 h-4 w-4 text-muted-foreground"/> (Drivers can offer to fulfill)
                     </Button>
                 )}
