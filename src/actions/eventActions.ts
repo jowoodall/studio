@@ -285,3 +285,70 @@ export async function updateEventAction(
         return handleActionError(error, "updateEventAction");
     }
 }
+
+
+export async function getVisibleEventsAction(userId: string): Promise<{ success: boolean; events?: EventData[]; message?: string; }> {
+    if (!userId) {
+        return { success: false, message: "User ID is required." };
+    }
+
+    try {
+        const userDocRef = db.collection('users').doc(userId);
+        const userDocSnap = await userDocRef.get();
+        if (!userDocSnap.exists()) {
+            return { success: false, message: "User profile not found." };
+        }
+        const userProfile = userDocSnap.data() as UserProfileData;
+
+        const userGroupIds = userProfile.joinedGroupIds || [];
+        const eventsMap = new Map<string, EventData>();
+
+        // Query 1: Events for user's groups
+        if (userGroupIds.length > 0) {
+            const groupChunks: string[][] = [];
+            for (let i = 0; i < userGroupIds.length; i += 30) {
+                groupChunks.push(userGroupIds.slice(i, i + 30));
+            }
+            const groupPromises = groupChunks.map(chunk => {
+                if (chunk.length === 0) return Promise.resolve(null);
+                const groupEventsQuery = db.collection("events")
+                    .where("status", "==", EventStatusEnum.ACTIVE)
+                    .where("associatedGroupIds", "array-contains-any", chunk);
+                return groupEventsQuery.get();
+            });
+            const groupSnapshots = (await Promise.all(groupPromises)).filter(Boolean);
+            groupSnapshots.forEach(snapshot => {
+                snapshot!.docs.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+            });
+        }
+
+        // Query 2: Events managed by user
+        const managedEventsQuery = db.collection("events")
+            .where("status", "==", EventStatusEnum.ACTIVE)
+            .where("managerIds", "array-contains", userId);
+        const managedEventsSnapshot = await managedEventsQuery.get();
+        managedEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+
+        const allVisibleEvents = Array.from(eventsMap.values());
+
+        // Filter for upcoming events and sort
+        const upcomingEvents = allVisibleEvents
+            .filter(event => {
+                const eventDate = event.eventStartTimestamp ? event.eventStartTimestamp.toDate() : new Date(0);
+                return eventDate >= new Date();
+            })
+            .sort((a, b) => {
+                const timeA = a.eventStartTimestamp?.toMillis() || 0;
+                const timeB = b.eventStartTimestamp?.toMillis() || 0;
+                return timeA - timeB;
+            });
+
+        // Serialize the data before sending to the client
+        const serializableEvents = toSerializableObject(upcomingEvents);
+
+        return { success: true, events: serializableEvents };
+
+    } catch (error: any) {
+        return handleActionError(error, 'getVisibleEventsAction');
+    }
+}

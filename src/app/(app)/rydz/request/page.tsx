@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter, useSearchParams } from "next/navigation"; 
 import Link from "next/link";
 import { submitPassengerDetailsForActiveRydAction } from "@/actions/activeRydActions";
+import { getVisibleEventsAction } from '@/actions/eventActions';
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -177,9 +178,9 @@ export default function RydRequestPage() {
         
         let rydEventDate: Date;
         if (fetchedEvent?.eventTimestamp) {
-            rydEventDate = fetchedEvent.eventTimestamp.toDate();
+            rydEventDate = new Date(fetchedEvent.eventTimestamp as any);
         } else if (fetchedActiveRyd.plannedArrivalTime) {
-            rydEventDate = fetchedActiveRyd.plannedArrivalTime.toDate(); 
+            rydEventDate = new Date(fetchedActiveRyd.plannedArrivalTime as any); 
         } else {
             rydEventDate = new Date(); 
             console.warn("Could not determine event date for prefill from ActiveRyd or Event.");
@@ -203,8 +204,8 @@ export default function RydRequestPage() {
                     console.log(`[RydRequestPage] Pre-filled pickupLocation from original request: ${originalRydData.pickupLocation}`);
                 }
                 if (originalRydData.earliestPickupTimestamp) {
-                    form.setValue("earliestPickupTime", format(originalRydData.earliestPickupTimestamp.toDate(), "HH:mm"));
-                     console.log(`[RydRequestPage] Pre-filled earliestPickupTime from original request: ${format(originalRydData.earliestPickupTimestamp.toDate(), "HH:mm")}`);
+                    form.setValue("earliestPickupTime", format(new Date(originalRydData.earliestPickupTimestamp as any), "HH:mm"));
+                     console.log(`[RydRequestPage] Pre-filled earliestPickupTime from original request: ${format(new Date(originalRydData.earliestPickupTimestamp as any), "HH:mm")}`);
                 }
                 if (originalRydData.notes) {
                     originalRydNotes = originalRydData.notes;
@@ -280,48 +281,15 @@ export default function RydRequestPage() {
 
         setIsLoadingEvents(true);
         try {
-            const userGroupIds = userProfile.joinedGroupIds || [];
-            const userId = authUser.uid;
-            
-            const eventsMap = new Map<string, EventData>();
-
-            // Query 1: Events for user's groups
-            if (userGroupIds.length > 0) {
-                const groupEventsQuery = query(
-                    collection(db, "events"),
-                    where("status", "==", "active"),
-                    where("associatedGroupIds", "array-contains-any", userGroupIds)
-                );
-                const groupEventsSnapshot = await getDocs(groupEventsQuery);
-                groupEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+            const result = await getVisibleEventsAction(authUser.uid);
+            if (result.success && result.events) {
+              setAvailableEvents(result.events);
+            } else {
+              throw new Error(result.message || "Could not fetch available events.");
             }
-
-            // Query 2: Events managed by user
-            const managedEventsQuery = query(
-                collection(db, "events"),
-                where("status", "==", "active"),
-                where("managerIds", "array-contains", userId)
-            );
-            const managedEventsSnapshot = await getDocs(managedEventsQuery);
-            managedEventsSnapshot.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
-            
-            const allVisibleEvents = Array.from(eventsMap.values());
-
-            // Filter for upcoming events
-            const upcomingEvents = allVisibleEvents.filter(event => {
-                const eventDate = event.eventTimestamp instanceof Timestamp ? event.eventTimestamp.toDate() : new Date(0);
-                return eventDate >= new Date();
-            }).sort((a, b) => {
-                const timeA = a.eventTimestamp?.toMillis() || 0;
-                const timeB = b.eventTimestamp?.toMillis() || 0;
-                return timeA - timeB;
-            });
-            
-            setAvailableEvents(upcomingEvents);
-
         } catch (error: any) {
             console.error("Error fetching visible events:", error);
-            toast({ title: "Error", description: "Could not load available events.", variant: "destructive" });
+            toast({ title: "Error", description: error.message, variant: "destructive" });
         } finally {
             setIsLoadingEvents(false);
         }
@@ -406,9 +374,9 @@ export default function RydRequestPage() {
         }
         let eventDateForAction: Date;
         if (eventForActiveRyd?.eventTimestamp) {
-            eventDateForAction = eventForActiveRyd.eventTimestamp.toDate();
+            eventDateForAction = new Date(eventForActiveRyd.eventTimestamp as any);
         } else if (activeRydBeingUpdated.plannedArrivalTime) {
-            eventDateForAction = activeRydBeingUpdated.plannedArrivalTime.toDate();
+            eventDateForAction = new Date(activeRydBeingUpdated.plannedArrivalTime as any);
         } else {
              toast({title: "Error", description: "Cannot determine event date for pickup time.", variant: "destructive"});
              setIsSubmitting(false);
@@ -523,7 +491,7 @@ export default function RydRequestPage() {
         }
         form.setValue("eventName", ""); // Reset custom event name
         if (event.eventTimestamp) {
-            const eventDate = event.eventTimestamp.toDate();
+            const eventDate = new Date(event.eventTimestamp as any);
             form.setValue("date", eventDate);
             form.setValue("time", format(eventDate, "HH:mm"));
         }
@@ -669,7 +637,7 @@ export default function RydRequestPage() {
                                 </FormControl>
                                 <SelectContent>
                                 {!isLoadingEvents && availableEvents.map(event => (
-                                    <SelectItem key={event.id} value={event.id}>{event.name} ({event.eventTimestamp instanceof Timestamp ? format(event.eventTimestamp.toDate(), "MMM d, p") : 'Invalid Date'})</SelectItem>
+                                    <SelectItem key={event.id} value={event.id}>{event.name} ({new Date(event.eventStartTimestamp as any) ? format(new Date(event.eventStartTimestamp as any), "MMM d, p") : 'Invalid Date'})</SelectItem>
                                 ))}
                                 <SelectItem value="custom">Other (Specify Below)</SelectItem>
                                 </SelectContent>
@@ -963,4 +931,5 @@ export default function RydRequestPage() {
     </>
   );
 }
+
 
