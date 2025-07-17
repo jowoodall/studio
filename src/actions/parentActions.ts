@@ -2,8 +2,8 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import { FieldValue } from 'firebase-admin/firestore';
-import type { UserProfileData, ActiveRyd, NotificationType } from '@/types';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import type { UserProfileData, ActiveRyd, NotificationType, FamilyData } from '@/types';
 import { PassengerManifestStatus, UserRole, NotificationType as NotificationTypeEnum } from '@/types';
 import { createNotification } from './notificationActions';
 
@@ -38,6 +38,121 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
     }
     return { success: false, message: `An unexpected error occurred: ${errorMessage}` };
 };
+
+export interface ApprovalRequest {
+  activeRydId: string;
+  student: { uid: string; fullName: string; };
+  driver: { uid: string; fullName: string; avatarUrl?: string; dataAiHint?: string; };
+  rydDetails: { eventName: string; destination: string; };
+}
+
+export interface UserDisplayInfo {
+  uid: string;
+  fullName: string;
+  avatarUrl?: string;
+  dataAiHint?: string;
+  email: string;
+}
+
+export interface ParentApprovalsPageData {
+  pendingApprovals: ApprovalRequest[];
+  approvedDrivers: UserDisplayInfo[];
+  declinedDrivers: UserDisplayInfo[];
+  managedStudents: UserDisplayInfo[];
+}
+
+
+export async function getParentApprovalsPageData(userId: string): Promise<{
+    success: boolean;
+    data?: ParentApprovalsPageData;
+    message?: string;
+}> {
+    if (!userId) {
+        return { success: false, message: 'User ID is required.' };
+    }
+
+    try {
+        const parentDocRef = db.collection('users').doc(userId);
+        const parentDocSnap = await parentDocRef.get();
+        if (!parentDocSnap.exists() || parentDocSnap.data()?.role !== UserRole.PARENT) {
+            return { success: false, message: 'This page is for parents only.' };
+        }
+        const userProfile = parentDocSnap.data() as UserProfileData;
+        const studentIds = userProfile.managedStudentIds || [];
+
+        let fetchedApprovals: ApprovalRequest[] = [];
+        if (studentIds.length > 0) {
+            const activeRydzRef = db.collection('activeRydz');
+            const q = query(activeRydzRef, where('uidsPendingParentalApproval', 'array-contains-any', studentIds));
+            const querySnapshot = await q.get();
+            const approvalPromises = querySnapshot.docs.flatMap(docSnap => {
+                const rydData = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
+                const relevantPassengers = rydData.passengerManifest.filter(p => studentIds.includes(p.userId) && p.status === PassengerManifestStatus.PENDING_PARENT_APPROVAL);
+                return relevantPassengers.map(async (passenger) => {
+                    try {
+                        const [driverDoc, studentDoc] = await Promise.all([
+                            getDoc(doc(db, "users", rydData.driverId)),
+                            getDoc(doc(db, "users", passenger.userId))
+                        ]);
+                        if (!driverDoc.exists() || !studentDoc.exists()) return null;
+                        const driverData = driverDoc.data() as UserProfileData;
+                        const studentData = studentDoc.data() as UserProfileData;
+                        return {
+                            activeRydId: rydData.id,
+                            student: { uid: studentData.uid, fullName: studentData.fullName },
+                            driver: { uid: driverData.uid, fullName: driverData.fullName, avatarUrl: driverData.avatarUrl, dataAiHint: driverData.dataAiHint },
+                            rydDetails: { eventName: rydData.eventName || 'Unnamed Ryd', destination: rydData.finalDestinationAddress || 'N/A' },
+                        };
+                    } catch (e) {
+                        console.error("Error processing an individual approval request:", e);
+                        return null;
+                    }
+                });
+            });
+            fetchedApprovals = (await Promise.all(approvalPromises)).filter(Boolean) as ApprovalRequest[];
+        }
+
+        const fetchProfiles = async (ids: string[]): Promise<UserDisplayInfo[]> => {
+            if (ids.length === 0) return [];
+            const profilePromises = ids.map(async (id) => {
+                try {
+                    const docRef = doc(db, "users", id);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data() as UserProfileData;
+                        return { uid: id, fullName: data.fullName, avatarUrl: data.avatarUrl, dataAiHint: data.dataAiHint, email: data.email };
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Failed to fetch profile for ID ${id}`, e);
+                    return null;
+                }
+            });
+            return (await Promise.all(profilePromises)).filter(Boolean) as UserDisplayInfo[];
+        };
+
+        const approvedDriverIds = Object.keys(userProfile.approvedDrivers || {});
+        const [approvedList, declinedList, studentList] = await Promise.all([
+            fetchProfiles(approvedDriverIds),
+            fetchProfiles(userProfile.declinedDriverIds || []),
+            fetchProfiles(userProfile.managedStudentIds || [])
+        ]);
+
+        return {
+            success: true,
+            data: {
+                pendingApprovals: fetchedApprovals,
+                approvedDrivers: approvedList,
+                declinedDrivers: declinedList,
+                managedStudents: studentList,
+            }
+        };
+
+    } catch (error: any) {
+        return handleActionError(error, "getParentApprovalsPageData");
+    }
+}
+
 
 export interface ManageDriverApprovalInput {
   parentUserId: string;
@@ -245,3 +360,5 @@ export async function addApprovedDriverByEmailAction(
         return handleActionError(error, 'addApprovedDriverByEmailAction');
     }
 }
+
+    
