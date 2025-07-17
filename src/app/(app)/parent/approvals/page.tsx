@@ -16,7 +16,7 @@ import { UserRole } from '@/types';
 
 async function getUserId() {
   const cookieStore = cookies();
-  const token = cookieStore.get('firebaseIdToken');
+  const token = cookieStore.get('session'); // Use the 'session' cookie
   if (!token?.value) return null;
   try {
     const decodedToken = await admin.auth().verifyIdToken(token.value);

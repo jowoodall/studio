@@ -88,6 +88,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
       setUser(firebaseUser);
       await fetchUserProfile(firebaseUser);
+
+      // Set or clear the session cookie for server components
+      if (firebaseUser) {
+        const token = await firebaseUser.getIdToken();
+        document.cookie = `session=${token};path=/;max-age=3600`; // expires in 1 hour
+      } else {
+        document.cookie = 'session=;path=/;max-age=0'; // clear cookie
+      }
+      
       setLoading(false);
     });
     return () => unsubscribe();
