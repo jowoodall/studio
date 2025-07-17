@@ -350,9 +350,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                     Ryd {directionIsToEvent ? "to" : "from"} event
                 </div>
-                <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
-                  <div className="flex items-center"> <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{timeRange}</span> </div>
-                  <div className="flex items-center"> <Users className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span> </div>
+                <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t pt-2">
+                    <div className="flex items-center"> <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{timeRange}</span> </div>
+                    <div className="flex items-center"> <Users className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span> </div>
                 </div>
 
                 {displayedPassengers.length > 0 && (
@@ -552,7 +552,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                      Ryd {directionIsToEvent ? "to" : "from"} event
                    </div>
-                 <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
+                 <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t pt-2">
                     <div className="flex items-center">
                       <CalendarDays className="mr-1.5 h-4 w-4 flex-shrink-0" />
                       <span>{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
