@@ -407,6 +407,11 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const eventDate = getValidDate(eventDetails.eventStartTimestamp);
   const isEventDateValid = eventDate && isValid(eventDate);
 
+  const departureLabel = direction === RydDirection.FROM_EVENT ? "Proposed Departure Time from Event" : "Proposed Departure Time";
+  const departureDescription = direction === RydDirection.FROM_EVENT ? "When you plan to leave the event." : "When you plan to leave your start location.";
+  const arrivalLabel = direction === RydDirection.FROM_EVENT ? "Latest Arrival Time to Destination" : "Planned Arrival Time at Event";
+  const arrivalDescription = direction === RydDirection.FROM_EVENT ? "When you aim to arrive at the final destination." : (requestId ? "Arrival time set by request." : "When you aim to arrive at the event.");
+
   return (
     <>
       <PageHeader
@@ -599,11 +604,11 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     name="proposedDepartureTime"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel className="flex items-center"><Clock className="mr-2 h-4 w-4 text-muted-foreground"/>Proposed Departure Time</FormLabel>
+                        <FormLabel className="flex items-center"><Clock className="mr-2 h-4 w-4 text-muted-foreground"/>{departureLabel}</FormLabel>
                         <FormControl>
                             <Input type="time" {...field} />
                         </FormControl>
-                        <FormDescription>When you plan to leave your start location.</FormDescription>
+                        <FormDescription>{departureDescription}</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
@@ -613,11 +618,11 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     name="plannedArrivalTime"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel className="flex items-center"><CalendarCheck2 className="mr-2 h-4 w-4 text-muted-foreground"/>Planned Arrival Time at Event</FormLabel>
+                        <FormLabel className="flex items-center"><CalendarCheck2 className="mr-2 h-4 w-4 text-muted-foreground"/>{arrivalLabel}</FormLabel>
                         <FormControl>
                             <Input type="time" {...field} className={requestId ? "bg-muted/50" : ""} readOnly={!!requestId} />
                         </FormControl>
-                        <FormDescription>{requestId ? "Arrival time set by request." : "When you aim to arrive at the event."}</FormDescription>
+                        <FormDescription>{arrivalDescription}</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
