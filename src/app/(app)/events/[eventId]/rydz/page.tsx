@@ -281,7 +281,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             
             const proposedDeparture = activeRyd.proposedDepartureTime ? new Date(activeRyd.proposedDepartureTime as any) : null;
             const plannedArrival = activeRyd.plannedArrivalTime ? new Date(activeRyd.plannedArrivalTime as any) : null;
-            const actualDeparture = activeRyd.actualDepartureTime ? new Date(activeRyd.actualDepartureTime as any) : null;
             
             const currentActivePassengers = activeRyd.passengerManifest.filter(
               p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
@@ -327,7 +326,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="p-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-start gap-3 flex-wrap">
                       <div className="flex items-center gap-3 min-w-0">
                           <Avatar className="h-8 w-8">
                               <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
@@ -338,7 +337,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                               <p className="text-xs text-muted-foreground truncate">{vehicleDisplay}</p>
                           </div>
                       </div>
-                      <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs">{activeRyd.status.replace(/_/g, ' ')}</Badge>
+                      <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs ml-auto">{activeRyd.status.replace(/_/g, ' ')}</Badge>
                   </div>
               </CardHeader>
               <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
@@ -347,7 +346,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     Ryd {directionIsToEvent ? "to" : "from"} event
                 </div>
                 
-                <div className="flex flex-col gap-1 border-t pt-2 text-xs text-muted-foreground">
+                <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
                     <div className="flex items-center">
                         <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" />
                         <span>{proposedDeparture ? format(proposedDeparture, 'p') : 'Time TBD'} to {plannedArrival ? format(plannedArrival, 'p') : 'TBD'}</span>
