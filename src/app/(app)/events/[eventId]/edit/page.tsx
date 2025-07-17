@@ -256,23 +256,22 @@ export default function EditEventPage({ params: paramsPromise }: { params: Promi
       const [startHours, startMinutes] = data.eventStartTime.split(':').map(Number);
       const startDateTime = new Date(data.eventDate);
       startDateTime.setHours(startHours, startMinutes, 0, 0);
-      const eventStartTimestamp = Timestamp.fromDate(startDateTime);
 
       const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
       const endDateTime = new Date(data.eventDate);
       endDateTime.setHours(endHours, endMinutes, 0, 0);
-      const eventEndTimestamp = Timestamp.fromDate(endDateTime);
       
       const managerIds = managers.map(m => m.uid);
 
-      const updateData: Partial<EventData> = {
+      // Pass ISO strings to the server action
+      const updateData = {
         name: data.eventName,
         location: data.eventLocation,
         description: data.description || "",
         eventType: data.eventType,
         status: data.status,
-        eventStartTimestamp: eventStartTimestamp,
-        eventEndTimestamp: eventEndTimestamp,
+        eventStartTimestamp: startDateTime.toISOString(),
+        eventEndTimestamp: endDateTime.toISOString(),
         managerIds: managerIds,
         associatedGroupIds: data.selectedGroups || [],
       };

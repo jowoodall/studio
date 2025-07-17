@@ -22,8 +22,6 @@ import { CalendarIcon, PlusCircle, Loader2, Users, Check, X, MapPin } from "luci
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useAuth } from "@/context/AuthContext";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import type { EventData, GroupData, SavedLocation, EventStatus } from "@/types";
 import { createEventAction } from "@/actions/eventActions";
@@ -150,13 +148,11 @@ export default function CreateEventPage() {
       const [startHours, startMinutes] = data.eventStartTime.split(':').map(Number);
       const startDateTime = new Date(data.eventDate);
       startDateTime.setHours(startHours, startMinutes, 0, 0);
-      const eventStartTimestamp = Timestamp.fromDate(startDateTime);
-      
+
       const [endHours, endMinutes] = data.eventEndTime.split(':').map(Number);
       const endDateTime = new Date(data.eventDate);
       endDateTime.setHours(endHours, endMinutes, 0, 0);
-      const eventEndTimestamp = Timestamp.fromDate(endDateTime);
-
+      
       const finalLocation = data.eventLocation;
       if (finalLocation.trim() === "") {
         toast({ title: "Location Missing", description: "Please provide an event location/address.", variant: "destructive" });
@@ -164,10 +160,11 @@ export default function CreateEventPage() {
         return;
       }
 
-      const newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
+      // Pass ISO strings to the server action
+      const newEventData = {
         name: data.eventName,
-        eventStartTimestamp: eventStartTimestamp,
-        eventEndTimestamp: eventEndTimestamp,
+        eventStartTimestamp: startDateTime.toISOString(),
+        eventEndTimestamp: endDateTime.toISOString(),
         location: finalLocation,
         description: data.description || "",
         eventType: data.eventType,
@@ -176,6 +173,7 @@ export default function CreateEventPage() {
         createdBy: authUser.uid,
       };
       
+      // The `createEventAction` expects a plain object, which newEventData now is.
       const result = await createEventAction(newEventData, authUser.uid);
 
       if (result.success && result.eventId) {

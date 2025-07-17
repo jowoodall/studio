@@ -201,7 +201,7 @@ async function notifyGroupMembersOfEvent(
         const notificationPromises = Array.from(memberIdsToNotify).map(userId => {
             const title = `Event ${action === 'created' ? 'Created' : 'Updated'}`;
             const message = `The event "${eventName}" which is associated with one of your groups has been ${action}.`;
-            return createNotification(userId, title, NotificationTypeEnum.INFO, `/events/${eventId}/rydz`);
+            return createNotification(userId, title, message, NotificationTypeEnum.INFO, `/events/${eventId}/rydz`);
         });
 
         await Promise.all(notificationPromises);
@@ -215,12 +215,19 @@ async function notifyGroupMembersOfEvent(
 
 
 export async function createEventAction(
-    newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt' | 'status'>,
+    // The client sends plain objects, including date strings
+    newEventData: Omit<EventData, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'eventStartTimestamp' | 'eventEndTimestamp'> & { eventStartTimestamp: string, eventEndTimestamp: string },
     creatorId: string,
 ): Promise<{ success: boolean; message: string; eventId?: string }> {
     try {
+        // Convert ISO strings back to Firestore Timestamps on the server
+        const eventStartTimestamp = Timestamp.fromDate(new Date(newEventData.eventStartTimestamp));
+        const eventEndTimestamp = Timestamp.fromDate(new Date(newEventData.eventEndTimestamp));
+
         const dataToSave = {
             ...newEventData,
+            eventStartTimestamp,
+            eventEndTimestamp,
             status: EventStatusEnum.ACTIVE,
             createdBy: creatorId,
             createdAt: FieldValue.serverTimestamp(),
@@ -242,16 +249,26 @@ export async function createEventAction(
 
 export async function updateEventAction(
     eventId: string,
-    updateData: Partial<Omit<EventData, 'id' | 'createdAt' | 'updatedAt'>>,
+    // The client sends plain objects, including date strings
+    updateData: Partial<Omit<EventData, 'id' | 'createdAt' | 'updatedAt' | 'eventStartTimestamp' | 'eventEndTimestamp'>> & { eventStartTimestamp?: string, eventEndTimestamp?: string },
     actingUserId: string,
 ): Promise<{ success: boolean; message: string }> {
     try {
         const eventDocRef = db.collection('events').doc(eventId);
         
-        const dataToUpdate = {
+        const dataToUpdate: { [key: string]: any } = {
             ...updateData,
             updatedAt: FieldValue.serverTimestamp(),
         };
+        
+        // Convert date strings back to Timestamps if they exist
+        if (updateData.eventStartTimestamp) {
+            dataToUpdate.eventStartTimestamp = Timestamp.fromDate(new Date(updateData.eventStartTimestamp));
+        }
+        if (updateData.eventEndTimestamp) {
+            dataToUpdate.eventEndTimestamp = Timestamp.fromDate(new Date(updateData.eventEndTimestamp));
+        }
+
 
         await eventDocRef.update(dataToUpdate);
         
