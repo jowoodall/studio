@@ -195,7 +195,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         actions={
           <div className="flex flex-col sm:flex-row gap-y-2 sm:gap-x-2">
             {isEventManager && (
-              <Button variant="secondary" asChild>
+              <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/edit`}>
                   <Edit className="mr-2 h-4 w-4" /> Edit Event
                 </Link>
@@ -208,7 +208,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 </span>
               </Link>
             </Button>
-            <Button variant="outline" asChild>
+            <Button variant="secondary" asChild>
                 <Link href={'/events/' + eventId + '/offer-drive'}>
                     <Car className="mr-2 h-4 w-4" /> Offer a Ryd
                 </Link>
@@ -218,16 +218,16 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
       />
 
       {eventManagers.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0">
           <p className="text-sm font-medium text-muted-foreground">Managed by:</p>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 min-w-0">
             {eventManagers.map(manager => (
               <div key={manager.uid} className="flex items-center gap-2">
                 <Avatar className="h-6 w-6">
                   <AvatarImage src={manager.avatarUrl} alt={manager.fullName} />
                   <AvatarFallback className="text-xs">{manager.fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                 </Avatar>
-                <Link href={`/profile/view/${manager.uid}`} className="text-sm font-semibold hover:underline">{manager.fullName}</Link>
+                <Link href={`/profile/view/${manager.uid}`} className="text-sm font-semibold hover:underline break-all">{manager.fullName}</Link>
               </div>
             ))}
           </div>
@@ -238,12 +238,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         <CardHeader className="p-4">
           <CardTitle>Event Details</CardTitle>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm p-4 pt-0">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm p-4 pt-0">
           <div className="flex items-start gap-3">
-            <MapPinIcon className="h-5 w-5 text-muted-foreground mt-0.5" />
-            <div>
+            <MapPinIcon className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+            <div className="min-w-0">
               <p className="text-muted-foreground">Location</p>
-              <p className="font-semibold">{eventDetails.location}</p>
+              <p className="font-semibold break-words">{eventDetails.location}</p>
             </div>
           </div>
           <div className="flex items-start gap-3">
