@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, use, useMemo } from "react";
@@ -100,6 +101,20 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     }
   }, [userProfile, form, sortedSavedLocations]);
 
+  const getValidDate = (timestamp: any): Date | null => {
+    if (!timestamp) return null;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') { // Firebase Timestamp object
+        return timestamp.toDate();
+    }
+    if (typeof timestamp.seconds === 'number') { // Serialized Firestore Timestamp
+        return new Date(timestamp.seconds * 1000);
+    }
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+        const date = new Date(timestamp);
+        return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  };
 
   useEffect(() => {
     const fetchEventDetails = async () => {
@@ -118,10 +133,9 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           setEventDetails(fetchedEvent);
           // Pre-fill times only if not fulfilling a specific request (request times will override)
           if (!requestId && fetchedEvent.eventStartTimestamp) {
-            const eventDateObj = new Date(fetchedEvent.eventStartTimestamp as any);
-            const currentPlannedArrivalTime = form.getValues("plannedArrivalTime");
+            const eventDateObj = getValidDate(fetchedEvent.eventStartTimestamp);
             
-            if (isValid(eventDateObj)) {
+            if (eventDateObj && isValid(eventDateObj)) {
                 const eventStartTimeStr = format(eventDateObj, "HH:mm");
                 form.setValue("plannedArrivalTime", eventStartTimeStr);
                 const departureDateObj = new Date(eventDateObj.getTime());
@@ -371,7 +385,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const startLocationLabel = direction === RydDirection.TO_EVENT ? "Your Starting Location" : "Pickup Location (Event)";
   const endLocationLabel = direction === RydDirection.TO_EVENT ? "Destination (Event)" : "Your Drop-off Destination";
   
-  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : null;
+  const eventDate = getValidDate(eventDetails.eventStartTimestamp);
   const isEventDateValid = eventDate && isValid(eventDate);
 
   return (
