@@ -535,7 +535,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             return (
             <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader className="p-3">
-                 <div className="flex items-center justify-between gap-3">
+                 <div className="flex items-center justify-start gap-3 flex-wrap">
                     <div className="flex items-center gap-3 min-w-0">
                         <Avatar className="h-8 w-8">
                             <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
@@ -546,7 +546,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                             <p className="text-xs text-muted-foreground truncate">{cardSubtitle}</p>
                         </div>
                     </div>
-                     <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs">{request.status.replace(/_/g, ' ')}</Badge>
+                     <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs ml-auto">{request.status.replace(/_/g, ' ')}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
@@ -638,3 +638,5 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
+
+    
