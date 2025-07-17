@@ -19,7 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { type EventData, type RydData, type UserProfileData, PassengerManifestStatus, RydDirection } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
-import { format, parse } from 'date-fns';
+import { format, parse, isValid } from 'date-fns';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas';
@@ -121,7 +121,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
             const eventDateObj = new Date(fetchedEvent.eventStartTimestamp as any);
             const currentPlannedArrivalTime = form.getValues("plannedArrivalTime");
             
-            if (!isNaN(eventDateObj.getTime())) {
+            if (isValid(eventDateObj)) {
                 const eventStartTimeStr = format(eventDateObj, "HH:mm");
                 form.setValue("plannedArrivalTime", eventStartTimeStr);
                 const departureDateObj = new Date(eventDateObj.getTime());
@@ -371,13 +371,14 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const startLocationLabel = direction === RydDirection.TO_EVENT ? "Your Starting Location" : "Pickup Location (Event)";
   const endLocationLabel = direction === RydDirection.TO_EVENT ? "Destination (Event)" : "Your Drop-off Destination";
   
-  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : new Date();
+  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : null;
+  const isEventDateValid = eventDate && isValid(eventDate);
 
   return (
     <>
       <PageHeader
         title={`Offer to Drive: ${eventDetails.name}`}
-        description={`Event at ${eventDetails.location} on ${format(eventDate, "PPP")}. Specify your ryd details.`}
+        description={`Event at ${eventDetails.location} on ${isEventDateValid ? format(eventDate, "PPP") : 'Date TBD'}. Specify your ryd details.`}
         actions={
             <Button variant="outline" asChild>
                 <Link href={`/events/${eventId}/rydz`}>
