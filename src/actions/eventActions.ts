@@ -295,7 +295,7 @@ export async function getVisibleEventsAction(userId: string): Promise<{ success:
     try {
         const userDocRef = db.collection('users').doc(userId);
         const userDocSnap = await userDocRef.get();
-        if (!userDocSnap.exists()) {
+        if (!userDocSnap.exists) { // Corrected from .exists()
             return { success: false, message: "User profile not found." };
         }
         const userProfile = userDocSnap.data() as UserProfileData;
@@ -306,6 +306,7 @@ export async function getVisibleEventsAction(userId: string): Promise<{ success:
         // Query 1: Events for user's groups
         if (userGroupIds.length > 0) {
             const groupChunks: string[][] = [];
+            // Firestore 'in' query has a limit of 30 items
             for (let i = 0; i < userGroupIds.length; i += 30) {
                 groupChunks.push(userGroupIds.slice(i, i + 30));
             }
