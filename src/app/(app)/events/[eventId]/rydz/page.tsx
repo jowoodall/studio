@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CalendarDays, Car, PlusCircle, AlertTriangle, Users, Check, X, Info, UserCircle2, Star,
-  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck, Edit, ShieldCheck
+  CheckCircle2, Loader2, MapPin as MapPinIcon, Clock, MapPinned, ThumbsUp, UserPlus, Flag, UserCheck, Edit, ShieldCheck, ArrowRight, ArrowLeft
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import type { EventData, UserProfileData, RydData, RydStatus, ActiveRyd, PassengerManifestItem, DisplayActiveRyd, DisplayRydRequestData } from "@/types";
-import { PassengerManifestStatus, UserRole, ActiveRydStatus } from "@/types";
+import { PassengerManifestStatus, UserRole, ActiveRydStatus, RydDirection } from "@/types";
 import { format } from 'date-fns';
 import { useAuth } from "@/context/AuthContext";
 import { requestToJoinActiveRydAction, fulfillRequestWithExistingRydAction } from "@/actions/activeRydActions";
@@ -265,10 +265,10 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
       <Separator className="my-8"/>
 
-      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz for this Event</h3>
-      {activeRydzList.length > 0 && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {activeRydzList.map((activeRyd) => {
+      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Offered Rydz ({activeRydzList.length})</h3>
+      <div className="space-y-4">
+        {activeRydzList.length > 0 ? (
+          activeRydzList.map((activeRyd) => {
             const driverName = activeRyd.driverProfile?.fullName || "Unknown Driver";
             const driverAvatar = activeRyd.driverProfile?.avatarUrl || 'https://placehold.co/100x100.png?text=' + driverName.split(" ").map(n=>n[0]).join("");
             const driverDataAiHint = activeRyd.driverProfile?.dataAiHint || "driver photo";
@@ -279,8 +279,8 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const vehicleLicense = activeRyd.vehicleDetails?.licensePlate || "";
             const vehiclePassengerCapacity = parseInt(activeRyd.vehicleDetails?.passengerCapacity || "0", 10);
             let vehicleDisplay = (vehicleMake + ' ' + vehicleModel).trim();
-            if (vehicleColor) vehicleDisplay += ', ' + vehicleColor;
-            if (vehicleLicense) vehicleDisplay += ' (Plate: ' + vehicleLicense + ')';
+            if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
+            if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
             if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
 
             const proposedDeparture = activeRyd.proposedDepartureTime ? new Date(activeRyd.proposedDepartureTime as any) : null;
@@ -314,7 +314,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
 
             const isCurrentUserParent = authUserProfile?.role === UserRole.PARENT;
 
-            // Logic for Parent "Join / Add" button
             const studentsNotOnRyd = isCurrentUserParent ? (authUserProfile.managedStudentIds || []).filter(
               studentId => !activeRyd.passengerManifest.some(p =>
                 p.userId === studentId &&
@@ -330,62 +329,65 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             }
             const canParentAddSomeone = isCurrentUserParent && peopleToAddList.length > 0 && isRydJoinableStatus && !isRydFull;
             
-            // Logic for Student "Join" button
             const canStudentRequestToJoin = authUserProfile?.role === UserRole.STUDENT && isRydJoinableStatus && !isRydFull && !hasCurrentUserRequested && !isCurrentUserTheDriverOfThisRyd;
 
+            const directionIsToEvent = activeRyd.direction === RydDirection.TO_EVENT;
 
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader>
-                <div className="flex items-center gap-3 mb-2">
-                    <Avatar className="h-12 w-12">
-                        <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
-                        <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                        <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline">{driverName}</Link>
-                        <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-3">
+                        <Avatar className="h-12 w-12">
+                            <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
+                            <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                            <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline">{driverName}</Link>
+                            <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
+                        </div>
                     </div>
-                </div>
-                <Badge variant="outline" className="w-fit capitalize">{activeRyd.status.replace(/_/g, ' ')}</Badge>
+                     <Badge variant="outline" className="w-fit capitalize">{activeRyd.status.replace(/_/g, ' ')}</Badge>
+                  </div>
+                   <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
+                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
+                     Ryd {directionIsToEvent ? "to" : "from"} event
+                   </div>
               </CardHeader>
-              <CardContent className="flex-grow pt-2 space-y-1.5">
-                <div className="text-sm text-muted-foreground space-y-1">
-                  {displayDepartureTime && (
-                    <div className="flex items-center">
-                      <Clock className="mr-1.5 h-4 w-4" />
-                      Departs: {format(displayDepartureTime, "MMM d, p")} {actualDeparture ? "(Actual)" : "(Proposed)"}
-                    </div>
-                  )}
-                  {plannedArrival && (
-                     <div className="flex items-center">
-                      <CalendarDays className="mr-1.5 h-4 w-4" />
-                      Arrives by: {format(plannedArrival, "MMM d, p")} (Planned)
-                    </div>
-                  )}
-                  {activeRyd.startLocationAddress && (
-                    <div className="flex items-center"><MapPinned className="mr-1.5 h-4 w-4" /> From: {activeRyd.startLocationAddress}</div>
-                  )}
+              <CardContent className="flex-grow pt-2 space-y-3">
+                <div className="text-sm text-muted-foreground grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   <div className="flex items-center">
-                    <Users className="mr-1.5 h-4 w-4" />
-                    Seats Offered: {vehiclePassengerCapacity} ({vehiclePassengerCapacity - currentActivePassengers} available)
+                    <Clock className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span className="font-medium">Departs:</span>
+                    <span className="ml-1.5">{displayDepartureTime ? format(displayDepartureTime, "p") : 'TBD'}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <CalendarDays className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span className="font-medium">Arrives:</span>
+                    <span className="ml-1.5">{plannedArrival ? format(plannedArrival, "p") : 'TBD'}</span>
+                  </div>
+                  <div className="flex items-center">
+                     <Users className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span className="font-medium">Seats:</span>
+                    <span className="ml-1.5">{vehiclePassengerCapacity} offered ({vehiclePassengerCapacity - currentActivePassengers} open)</span>
                   </div>
                 </div>
 
                 {displayedPassengers.length > 0 && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({currentActivePassengers} / {vehiclePassengerCapacity}):</h4>
-                        <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
+                        <div className="flex flex-wrap gap-2">
                             {displayedPassengers.map(pItem => {
                                 const passengerProfile = activeRyd.passengerProfiles?.find(pp => pp.uid === pItem.userId);
                                 return (
-                                <li key={pItem.userId}>
-                                    {passengerProfile?.fullName || 'User ' + pItem.userId.substring(0,6) + '...'}
-                                    <span className="text-muted-foreground/80 ml-1 capitalize">({pItem.status.replace(/_/g, ' ')})</span>
-                                </li>
+                                <div key={pItem.userId} className="flex items-center gap-1.5 text-xs p-1 bg-background border rounded-md">
+                                    <UserCircle2 className="h-4 w-4 text-muted-foreground"/>
+                                    <span>{passengerProfile?.fullName || 'User...'}</span>
+                                    <span className="text-muted-foreground/80 capitalize">({pItem.status.replace(/_/g, ' ')})</span>
+                                </div>
                                 );
                             })}
-                        </ul>
+                        </div>
                     </div>
                 )}
                  {displayedPassengers.length === 0 && (
@@ -395,7 +397,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 {activeRyd.notes && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Driver Notes:</h4>
-                        <p className="text-xs bg-muted/30 p-2 rounded-md whitespace-pre-wrap">{activeRyd.notes}</p>
+                        <p className="text-sm bg-muted/30 p-2 rounded-md whitespace-pre-wrap">{activeRyd.notes}</p>
                     </div>
                 )}
               </CardContent>
@@ -406,7 +408,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </Link>
                 </Button>
 
-                {/* Student Join Button */}
                 {canStudentRequestToJoin && (
                    <Button
                     type="button"
@@ -420,7 +421,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </Button>
                 )}
 
-                {/* Parent Join/Add Button */}
                 {canParentAddSomeone && (
                   <Popover open={addPassengerPopoverOpen[activeRyd.id] || false} onOpenChange={(isOpen) => setAddPassengerPopoverOpen(p => ({...p, [activeRyd.id]: isOpen}))}>
                     <PopoverTrigger asChild>
@@ -460,7 +460,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                   </Popover>
                 )}
 
-                {/* Disabled State Buttons */}
                 {hasCurrentUserRequested && (
                   <Button type="button" variant="outline" className="w-full" disabled>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-500"/> Request Sent / On Ryd
@@ -478,33 +477,31 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
               </CardFooter>
             </Card>
-          )})}
-        </div>
-      )}
+          )})
+        ) : (
+          <Card className="text-center py-12 shadow-md">
+            <CardHeader>
+              <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <CardTitle className="font-headline text-2xl">No Rydz Offered Yet</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-6">
+                There are currently no specific rydz offered by drivers for {eventDetails.name}.
+              </CardDescription>
+              <Button variant="outline" asChild>
+                  <Link href={'/events/' + eventId + '/offer-drive'}>
+                      <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
+                  </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
-      {activeRydzList.length === 0 && (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Rydz Offered Yet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              There are currently no specific rydz offered by drivers for {eventDetails.name}.
-            </CardDescription>
-            <Button variant="outline" asChild>
-                <Link href={'/events/' + eventId + '/offer-drive'}>
-                    <Car className="mr-2 h-4 w-4" /> Offer Your Ryd
-                </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Requested Rydz for this Event</h3>
-      {rydRequestsList.length > 0 && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {rydRequestsList.map((request) => {
+      <h3 className="font-headline text-xl font-semibold text-primary mt-8 mb-4">Requested Rydz ({rydRequestsList.length})</h3>
+       <div className="space-y-4">
+        {rydRequestsList.length > 0 ? (
+          rydRequestsList.map((request) => {
             const primaryPassenger = request.passengerUserProfiles && request.passengerUserProfiles.length > 0 
                                      ? request.passengerUserProfiles[0] 
                                      : null;
@@ -558,61 +555,70 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 }
             }
             const fulfillmentLoading = isFulfillingWithExisting[request.id];
+             const directionIsToEvent = request.direction === RydDirection.TO_EVENT;
 
             return (
             <Card key={request.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader>
-                 <div className="flex items-center gap-3 mb-2">
-                    <Avatar className="h-12 w-12">
-                        <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
-                        <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                        <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline">{displayNamer}</Link>
-                        <p className="text-xs text-muted-foreground">{cardSubtitle}</p>
+                 <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                        <Avatar className="h-12 w-12">
+                            <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
+                            <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                            <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline">{displayNamer}</Link>
+                            <p className="text-xs text-muted-foreground">{cardSubtitle}</p>
+                        </div>
                     </div>
+                     <Badge variant="outline" className="w-fit capitalize">{request.status.replace(/_/g, ' ')}</Badge>
                 </div>
-                <Badge variant="outline" className="w-fit capitalize">{request.status.replace(/_/g, ' ')}</Badge>
+                 <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
+                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
+                     Ryd {directionIsToEvent ? "to" : "from"} event
+                   </div>
               </CardHeader>
-              <CardContent className="flex-grow pt-2 space-y-1.5">
-                <div className="text-sm text-muted-foreground space-y-1">
-                  {rydDateTime && (
+              <CardContent className="flex-grow pt-2 space-y-3">
+                 <div className="text-sm text-muted-foreground grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                     <div className="flex items-center">
-                      <CalendarDays className="mr-1.5 h-4 w-4" />
-                      Needed by: {format(rydDateTime, "MMM d, p")}
+                      <CalendarDays className="mr-2 h-4 w-4 flex-shrink-0" />
+                      <span className="font-medium">Needed by:</span>
+                      <span className="ml-1.5">{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
                     </div>
-                  )}
-                   {earliestPickup && (
                     <div className="flex items-center">
-                      <Clock className="mr-1.5 h-4 w-4" />
-                      Earliest Pickup: {format(earliestPickup, "p")}
+                      <Clock className="mr-2 h-4 w-4 flex-shrink-0" />
+                      <span className="font-medium">Pickup after:</span>
+                      <span className="ml-1.5">{earliestPickup ? format(earliestPickup, "p") : 'Any'}</span>
                     </div>
-                  )}
-                  {request.pickupLocation && (
-                    <div className="flex items-center"><MapPinIcon className="mr-1.5 h-4 w-4" /> From: {request.pickupLocation}</div>
-                  )}
-                  {request.destination && (
-                    <div className="flex items-center"><Flag className="mr-1.5 h-4 w-4" /> To: {request.eventName || request.destination}</div>
-                  )}
-                </div>
+                    {request.pickupLocation && (
+                        <div className="flex items-start col-span-full">
+                           <MapPinIcon className="mr-2 h-4 w-4 mt-0.5 flex-shrink-0" /> 
+                           <div>
+                                <span className="font-medium">From:</span>
+                                <span className="ml-1.5">{request.pickupLocation}</span>
+                            </div>
+                        </div>
+                    )}
+                 </div>
 
                 {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
                     <div className="mt-3">
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({request.passengerUserProfiles.length}):</h4>
-                        <ul className="list-disc list-inside text-xs space-y-0.5 pl-2">
+                        <div className="flex flex-wrap gap-2">
                             {request.passengerUserProfiles.map(p => (
-                                <li key={p.uid}>
-                                    {p.fullName || 'User ' + p.uid.substring(0,6) + '...'}
-                                </li>
+                                <div key={p.uid} className="flex items-center gap-1.5 text-xs p-1 bg-background border rounded-md">
+                                    <UserCircle2 className="h-4 w-4 text-muted-foreground"/>
+                                    <span>{p.fullName || 'User...'}</span>
+                                </div>
                             ))}
-                        </ul>
+                        </div>
                     </div>
                 )}
 
                 {request.notes && (
                     <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Notes:</h4>
-                        <p className="text-xs bg-muted/30 p-2 rounded-md whitespace-pre-wrap">{request.notes}</p>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Requester Notes:</h4>
+                        <p className="text-sm bg-muted/30 p-2 rounded-md whitespace-pre-wrap">{request.notes}</p>
                     </div>
                 )}
               </CardContent>
@@ -648,27 +654,26 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                 )}
               </CardFooter>
             </Card>
-          )})}
-        </div>
-      )}
-      {rydRequestsList.length === 0 && (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <UserPlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="font-headline text-2xl">No Ryd Requests Yet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              There are currently no ryd requests for {eventDetails.name}.
-            </CardDescription>
-            <Button asChild>
-               <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Be the First to Request
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          )})
+        ) : (
+          <Card className="text-center py-12 shadow-md">
+            <CardHeader>
+              <UserPlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <CardTitle className="font-headline text-2xl">No Ryd Requests Yet</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-6">
+                There are currently no ryd requests for {eventDetails.name}.
+              </CardDescription>
+              <Button asChild>
+                 <Link href={'/rydz/request?eventId=' + eventId + '&redirectUrl=' + encodeURIComponent(redirectBackUrl)}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Be the First to Request
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </>
   );
 }
