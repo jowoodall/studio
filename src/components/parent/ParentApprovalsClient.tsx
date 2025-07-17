@@ -17,7 +17,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label';
+import { Label } from '@/components/ui/label';
 
 interface ParentApprovalsClientProps {
     initialData: ParentApprovalsPageData;
@@ -99,14 +99,17 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
   };
 
   const handleFindDriverByEmail = async (emailToFind?: string) => {
+    if (!authUser) return;
     const targetEmail = emailToFind || addDriverEmail;
     if (!targetEmail.trim()) {
       toast({ title: "Email required", description: "Please enter a driver's email.", variant: "destructive"});
       return;
     }
+    
     setIsAddingDriver(true);
+
     const result = await addApprovedDriverByEmailAction({
-        parentUserId: authUser!.uid,
+        parentUserId: authUser.uid,
         driverEmail: targetEmail.trim(),
         studentIds: [] // We pass an empty array because we just want to find the driver first.
     });
