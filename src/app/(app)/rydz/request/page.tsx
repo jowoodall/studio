@@ -455,9 +455,11 @@ export default function RydRequestPage() {
   const direction = form.watch("direction");
 
   useEffect(() => {
-    if (isJoinOfferContext) return; 
+    if (isJoinOfferContext) return;
 
-    const event = selectedEventId && selectedEventId !== 'custom' ? availableEvents.find(e => e.id === selectedEventId) : null;
+    const event = selectedEventId && selectedEventId !== 'custom'
+        ? availableEvents.find(e => e.id === selectedEventId)
+        : null;
 
     if (event) {
         if (direction === RydDirection.TO_EVENT) {
@@ -468,14 +470,22 @@ export default function RydRequestPage() {
             form.setValue("destination", "");
         }
         form.setValue("eventName", ""); // Reset custom event name
-        if (event.eventTimestamp) {
-            const eventDate = new Date(event.eventTimestamp as any);
-            form.setValue("date", eventDate);
-            form.setValue("time", format(eventDate, "HH:mm"));
+
+        // Correctly handle the timestamp string from the server action
+        if (event.eventStartTimestamp && typeof event.eventStartTimestamp === 'string') {
+            const eventDate = new Date(event.eventStartTimestamp);
+            if (!isNaN(eventDate.getTime())) {
+                form.setValue("date", eventDate);
+                form.setValue("time", format(eventDate, "HH:mm"));
+            } else {
+                 form.setValue("date", null);
+            }
+        } else {
+             form.setValue("date", null);
         }
     } else { // Custom event or no event selected
         if (direction === RydDirection.TO_EVENT) {
-             form.setValue("destination", form.getValues("destination") || ""); 
+             form.setValue("destination", form.getValues("destination") || "");
         } else { // FROM_EVENT
              form.setValue("pickupLocation", form.getValues("pickupLocation") || "");
         }
