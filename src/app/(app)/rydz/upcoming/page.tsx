@@ -105,7 +105,8 @@ export default function UpcomingRydzPage() {
   }
 
   const renderRydCard = (ryd: DisplayRydData, isPendingRequest: boolean = false) => {
-    const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp) : null;
+    // Correctly handle the ISO string from the server action.
+    const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp as any) : null;
     const driverName = ryd.driverProfile?.fullName || "Pending";
     const trackable = !!ryd.assignedActiveRydId;
     const isDriver = !!ryd.isDriver;
