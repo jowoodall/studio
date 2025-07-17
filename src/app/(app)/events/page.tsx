@@ -66,7 +66,6 @@ export default function EventsPage() {
       const eventsMap = new Map<string, EventData>();
 
       // Query 1: Events for user's groups
-      let groupEventsPromise = Promise.resolve<EventData[]>([]);
       if (userGroupIds.length > 0) {
         // Firestore 'in' query has a limit of 30 items
         const groupChunks: string[][] = [];
@@ -75,6 +74,7 @@ export default function EventsPage() {
         }
 
         const groupPromises = groupChunks.map(chunk => {
+          if (chunk.length === 0) return Promise.resolve(null);
           const groupEventsQuery = query(
             collection(db, "events"), 
             where("status", "==", EventStatus.ACTIVE), 
@@ -83,11 +83,10 @@ export default function EventsPage() {
           return getDocs(groupEventsQuery);
         });
 
-        const groupSnapshots = await Promise.all(groupPromises);
-        const groupEvents = groupSnapshots.flatMap(snapshot => 
-          snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventData))
-        );
-        groupEvents.forEach(event => eventsMap.set(event.id, event));
+        const groupSnapshots = (await Promise.all(groupPromises)).filter(Boolean);
+        groupSnapshots.forEach(snapshot => {
+            snapshot!.docs.forEach(doc => eventsMap.set(doc.id, { id: doc.id, ...doc.data() } as EventData));
+        });
       }
 
       // Query 2: Events managed by user
@@ -102,22 +101,19 @@ export default function EventsPage() {
       const combinedEvents = Array.from(eventsMap.values());
       
       // Sort by event timestamp on the client
-      combinedEvents.sort((a, b) => {
-        const getSortableTime = (timestamp: any): number => {
+      const getSortableTime = (timestamp: any): number => {
           if (!timestamp) return 0;
-          // Check if it's a Firestore Timestamp object with the toMillis method
-          if (typeof timestamp.toMillis === 'function') {
-            return timestamp.toMillis();
+          if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+            return timestamp.toDate().getTime();
           }
-          // Fallback for plain objects from server actions
           if (typeof timestamp.seconds === 'number') {
             return new Date(timestamp.seconds * 1000).getTime();
           }
-          // Fallback for ISO strings
           const date = new Date(timestamp);
           return isNaN(date.getTime()) ? 0 : date.getTime();
-        };
+      };
 
+      combinedEvents.sort((a, b) => {
         const timeA = getSortableTime(a.eventStartTimestamp);
         const timeB = getSortableTime(b.eventStartTimestamp);
         return timeA - timeB;
@@ -163,12 +159,12 @@ export default function EventsPage() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Error Loading Events</h2>
-        <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
-        <Button onClick={fetchEvents} className="mt-4">Try Again</Button>
-      </div>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+            <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Error Loading Events</h2>
+            <p className="text-muted-foreground px-4 whitespace-pre-line">{error}</p>
+            <Button onClick={fetchEvents} className="mt-4">Try Again</Button>
+        </div>
     );
   }
 
@@ -196,7 +192,19 @@ export default function EventsPage() {
       {events.length > 0 ? (
          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => {
-            const eventDate = event.eventStartTimestamp instanceof Timestamp ? event.eventStartTimestamp.toDate() : new Date();
+            const getValidDate = (timestamp: any): Date | null => {
+                if (!timestamp) return null;
+                if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+                    return timestamp.toDate();
+                }
+                if (typeof timestamp.seconds === 'number') {
+                    return new Date(timestamp.seconds * 1000);
+                }
+                const date = new Date(timestamp);
+                return isNaN(date.getTime()) ? null : date;
+            };
+            const eventDate = getValidDate(event.eventStartTimestamp);
+            
             return (
             <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
                <CardHeader className="relative h-40">
@@ -214,7 +222,7 @@ export default function EventsPage() {
                 <div className="text-sm text-muted-foreground space-y-1 mb-2">
                     <div className="flex items-center">
                         <CalendarDays className="mr-1.5 h-4 w-4" /> 
-                        {format(eventDate, "PPP 'at' p")}
+                        {eventDate ? format(eventDate, "PPP 'at' p") : 'Date TBD'}
                     </div>
                     <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> {event.location}</div>
                 </div>
