@@ -11,15 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2, Info, Users } from "lucide-react";
+import { AlertTriangle, Car, Loader2, ArrowLeft, Clock, Palette, Shield, CalendarCheck2, Info, Users, ArrowRight, ArrowLeftRight } from "lucide-react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { type EventData, type RydData, type UserProfileData, PassengerManifestStatus } from "@/types";
+import { type EventData, type RydData, type UserProfileData, PassengerManifestStatus, RydDirection } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
 import { format, parse } from 'date-fns';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas';
 
@@ -61,6 +62,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   const form = useForm<OfferDriveFormValues>({
     resolver: zodResolver(offerDriveFormSchema),
     defaultValues: {
+      direction: RydDirection.TO_EVENT,
       eventId: eventId || "",
       seatsAvailable: 2,
       notes: "",
@@ -70,6 +72,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       vehicleColor: "",
       licensePlate: "",
       driverStartLocation: "",
+      driverEndLocation: "",
     },
   });
 
@@ -85,11 +88,12 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         form.setValue("vehicleMakeModel", userProfile.driverDetails.primaryVehicle);
       }
       const defaultLocation = sortedSavedLocations.length > 0 && sortedSavedLocations[0].id === userProfile.defaultLocationId ? sortedSavedLocations[0] : null;
-
-      if (defaultLocation && !form.getValues("driverStartLocation")) {
-        form.setValue("driverStartLocation", defaultLocation.address);
-      } else if (!form.getValues("driverStartLocation") && userProfile.address?.street) {
-         form.setValue("driverStartLocation", `${userProfile.address.street}, ${userProfile.address.city || ''}`.trim().replace(/,$/, ''));
+      
+      const direction = form.getValues("direction");
+      if (direction === RydDirection.TO_EVENT && defaultLocation && !form.getValues("driverStartLocation")) {
+         form.setValue("driverStartLocation", defaultLocation.address);
+      } else if (direction === RydDirection.FROM_EVENT && defaultLocation && !form.getValues("driverEndLocation")) {
+         form.setValue("driverEndLocation", defaultLocation.address);
       }
     }
   }, [userProfile, form, sortedSavedLocations]);
@@ -111,28 +115,16 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           const fetchedEvent = { id: eventDocSnap.id, ...eventDocSnap.data() } as EventData;
           setEventDetails(fetchedEvent);
           // Pre-fill times only if not fulfilling a specific request (request times will override)
-          if (!requestId && fetchedEvent.eventTimestamp) {
-            const eventDateObj = fetchedEvent.eventTimestamp.toDate();
+          if (!requestId && fetchedEvent.eventStartTimestamp) {
+            const eventDateObj = new Date(fetchedEvent.eventStartTimestamp as any);
             const currentPlannedArrivalTime = form.getValues("plannedArrivalTime");
-            const currentProposedDepartureTime = form.getValues("proposedDepartureTime");
-
-            if (!currentPlannedArrivalTime || currentPlannedArrivalTime === "17:30") {
-              const eventStartTimeStr = format(eventDateObj, "HH:mm");
-              form.setValue("plannedArrivalTime", eventStartTimeStr);
-              const departureDateObj = new Date(eventDateObj.getTime());
-              departureDateObj.setHours(departureDateObj.getHours() - 1);
-              form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
-            } else {
-              if (!currentProposedDepartureTime || currentProposedDepartureTime === "17:00") {
-                  const [arrHours, arrMinutes] = currentPlannedArrivalTime.split(':').map(Number);
-                  if (!isNaN(arrHours) && !isNaN(arrMinutes)) {
-                      const arrivalDateTimeForCalc = new Date(eventDateObj);
-                      arrivalDateTimeForCalc.setHours(arrHours, arrMinutes, 0, 0);
-                      const departureDateObj = new Date(arrivalDateTimeForCalc.getTime());
-                      departureDateObj.setHours(departureDateObj.getHours() - 1);
-                      form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
-                  }
-              }
+            
+            if (!isNaN(eventDateObj.getTime())) {
+                const eventStartTimeStr = format(eventDateObj, "HH:mm");
+                form.setValue("plannedArrivalTime", eventStartTimeStr);
+                const departureDateObj = new Date(eventDateObj.getTime());
+                departureDateObj.setHours(departureDateObj.getHours() - 1);
+                form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
             }
           }
         } else {
@@ -150,7 +142,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     if (eventId) {
         fetchEventDetails();
     }
-  }, [eventId, form, requestId]); // Add requestId to dependency array
+  }, [eventId, form, requestId]);
 
   useEffect(() => {
     const fetchRydRequestDetails = async () => {
@@ -175,12 +167,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
             setPassengerNamesToFulfill(names.join(', '));
           }
           
-          // Pre-fill form based on request
           if (requestData.rydTimestamp instanceof Timestamp) {
             const rydDateTime = requestData.rydTimestamp.toDate();
             form.setValue("plannedArrivalTime", format(rydDateTime, "HH:mm"));
-             // Calculate proposed departure (e.g., 1 hour before planned arrival at event)
-            const departureTime = new Date(rydDateTime.getTime() - (60 * 60 * 1000)); // 1 hour earlier
+            const departureTime = new Date(rydDateTime.getTime() - (60 * 60 * 1000));
             form.setValue("proposedDepartureTime", format(departureTime, "HH:mm"));
           }
           if (requestData.notes) {
@@ -191,8 +181,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
           if (requestData.passengerIds && requestData.passengerIds.length > 0) {
             form.setValue("seatsAvailable", Math.max(form.getValues("seatsAvailable"), requestData.passengerIds.length));
           }
-          // Destination and event name are tied to the event, usually not from request.
-          // Pickup location from request could be complex to auto-fill into 'driverStartLocation', so driver inputs their start.
 
         } else {
           setRydRequestError(`Ryd request with ID "${requestId}" not found.`);
@@ -213,9 +201,21 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
   }, [requestId, eventDetails, form]);
 
 
-  async function onSubmit(data: OfferDriveFormValues) {
-    // console.log("[OfferDrivePage] onSubmit triggered. Client form data:", data);
+  const direction = form.watch("direction");
+  useEffect(() => {
+    if(eventDetails?.location) {
+      if(direction === RydDirection.TO_EVENT) {
+        form.setValue("driverEndLocation", eventDetails.location);
+        form.setValue("driverStartLocation", "");
+      } else {
+        form.setValue("driverStartLocation", eventDetails.location);
+        form.setValue("driverEndLocation", "");
+      }
+    }
+  }, [direction, eventDetails, form]);
 
+
+  async function onSubmit(data: OfferDriveFormValues) {
     if (!authUser || !userProfile) {
       toast({ title: "Authentication Error", description: "You must be logged in and profile loaded.", variant: "destructive" });
       return;
@@ -229,14 +229,12 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         return;
     }
 
-
     setIsSubmitting(true);
 
     let idToken;
     try {
       idToken = await authUser.getIdToken();
     } catch (error) {
-      // console.error("[OfferDrivePage] Error getting ID token:", error);
       toast({ title: "Authentication Error", description: "Could not get user ID token. Please try logging in again.", variant: "destructive" });
       setIsSubmitting(false);
       return;
@@ -247,8 +245,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
       payload.fulfillingRequestId = originalRydRequest.id;
       payload.passengersToFulfill = originalRydRequest.passengerIds;
     }
-
-    // console.log("[OfferDrivePage] Payload for API route:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch('/api/offer-drive', {
@@ -264,8 +260,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
           const result = await response.json();
-          // console.log("[OfferDrivePage] API route response:", result);
-
           if (result.success) {
             toast({
               title: originalRydRequest ? "Ryd Fulfillment Offer Submitted!" : "Offer Submitted!",
@@ -298,11 +292,10 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
         const errorText = await response.text();
         let errorMessage = `Server error: ${response.status} ${response.statusText}.`;
         try {
-            const errorJson = JSON.parse(errorText); // Try to parse as JSON first
+            const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.message || errorJson.errorDetails || errorMessage;
         } catch (e) {
-            // If not JSON, it could be HTML or plain text error
-            console.error("[OfferDrivePage] Non-OK response was not JSON:", errorText.substring(0, 500)); // Log first 500 chars
+            console.error("[OfferDrivePage] Non-OK response was not JSON:", errorText.substring(0, 500));
         }
         toast({
             title: "Submission Failed (Server)",
@@ -371,8 +364,12 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     );
   }
 
-
-  const eventDate = eventDetails.eventTimestamp instanceof Timestamp ? eventDetails.eventTimestamp.toDate() : new Date();
+  const isDestinationDisabled = direction === RydDirection.TO_EVENT;
+  const isStartLocationDisabled = direction === RydDirection.FROM_EVENT;
+  const startLocationLabel = direction === RydDirection.TO_EVENT ? "Your Starting Location" : "Pickup Location (Event)";
+  const endLocationLabel = direction === RydDirection.TO_EVENT ? "Destination (Event)" : "Your Drop-off Destination";
+  
+  const eventDate = eventDetails.eventStartTimestamp ? new Date(eventDetails.eventStartTimestamp as any) : new Date();
 
   return (
     <>
@@ -431,23 +428,73 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
             </Card>
           )}
 
-
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-               <FormField
+              <FormField
                 control={form.control}
-                name="eventId"
+                name="direction"
                 render={({ field }) => (
-                  <FormItem className="hidden">
-                    <FormLabel>Event ID</FormLabel>
+                  <FormItem className="space-y-3">
+                    <FormLabel>Ryd Direction</FormLabel>
                     <FormControl>
-                      <Input {...field} readOnly />
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        className="flex flex-col sm:flex-row gap-4"
+                      >
+                        <FormItem className="flex items-center space-x-3 space-y-0 flex-1 border p-4 rounded-md has-[:checked]:border-primary">
+                          <FormControl>
+                            <RadioGroupItem value={RydDirection.TO_EVENT} />
+                          </FormControl>
+                          <FormLabel className="font-normal flex items-center gap-2">
+                             <ArrowRight className="h-4 w-4"/> To Event
+                          </FormLabel>
+                        </FormItem>
+                        <FormItem className="flex items-center space-x-3 space-y-0 flex-1 border p-4 rounded-md has-[:checked]:border-primary">
+                          <FormControl>
+                            <RadioGroupItem value={RydDirection.FROM_EVENT} />
+                          </FormControl>
+                          <FormLabel className="font-normal flex items-center gap-2">
+                            <ArrowLeft className="h-4 w-4"/> From Event
+                          </FormLabel>
+                        </FormItem>
+                      </RadioGroup>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="driverStartLocation"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{startLocationLabel}</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., My home (123 Main St)" {...field} disabled={isStartLocationDisabled} className={isStartLocationDisabled ? "bg-muted/50" : ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="driverEndLocation"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{endLocationLabel}</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+              </div>
+
+               <FormField
                 control={form.control}
                 name="seatsAvailable"
                 render={({ field }) => (
@@ -456,7 +503,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     <Select 
                       onValueChange={(value) => field.onChange(parseInt(value))} 
                       defaultValue={String(field.value)}
-                      value={String(field.value)} // Ensure select is controlled
+                      value={String(field.value)}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -510,44 +557,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     )}
                 />
               </div>
-
-              <FormField
-                  control={form.control}
-                  name="driverStartLocation"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Your Starting Location / General Pickup Area</FormLabel>
-                       {sortedSavedLocations.length > 0 && (
-                        <Select
-                          onValueChange={(value) => {
-                            const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
-                            if (selectedLoc) {
-                              form.setValue("driverStartLocation", selectedLoc.address);
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger className="mt-1 mb-2">
-                              <SelectValue placeholder="Or use a saved location..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {sortedSavedLocations.map((loc) => (
-                              <SelectItem key={loc.id} value={loc.id}>
-                                {`${loc.name} (${loc.address})`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <FormControl>
-                        <Input placeholder="e.g., My home (123 Main St), or 'Downtown Area'" {...field} />
-                      </FormControl>
-                      <FormDescription>Where will you be starting your ryd from?</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
               <FormField
                   control={form.control}
@@ -611,14 +620,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                   </FormItem>
                 )}
               />
-
-              <div className="p-3 bg-muted/50 rounded-md text-sm space-y-1">
-                <p><span className="font-semibold">Event:</span> {eventDetails.name}</p>
-                <p><span className="font-semibold">Date:</span> {format(eventDate, "PPP")}</p>
-                <p><span className="font-semibold">Location:</span> {eventDetails.location}</p>
-                 {originalRydRequest && <p><span className="font-semibold">Event Time from Request:</span> {format(originalRydRequest.rydTimestamp.toDate(), "p")}</p>}
-                 {!originalRydRequest && <p><span className="font-semibold">Event Time from Event Details:</span> {format(eventDate, "p")}</p>}
-              </div>
 
               <Button type="submit" className="w-full" disabled={isSubmitting || authLoading || isLoadingProfile || isLoadingEvent || isLoadingRydRequest}>
                 {isSubmitting ? (
