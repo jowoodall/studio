@@ -5,10 +5,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, Clock, Users } from "lucide-react";
+import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, Clock, Users, ArrowRight, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/context/AuthContext';
-import { type DisplayRydData } from '@/types';
+import { type DisplayRydData, RydDirection } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cancelRydRequestByUserAction } from '@/actions/activeRydActions';
@@ -119,6 +119,8 @@ export default function UpcomingRydzPage() {
     const vehiclePassengerCapacity = parseInt(ryd.vehicleDetails?.passengerCapacity || "0", 10);
     const seatsOpen = vehiclePassengerCapacity - passengerCount;
 
+    const directionIsToEvent = ryd.direction === RydDirection.TO_EVENT;
+
     return (
       <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
         <CardHeader className="p-3">
@@ -139,6 +141,10 @@ export default function UpcomingRydzPage() {
             </div>
         </CardHeader>
         <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
+            <div className="flex items-center justify-center text-xs font-semibold p-1.5 bg-muted/50 rounded-md">
+                {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
+                Ryd {directionIsToEvent ? "to" : "from"} event
+            </div>
             <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
                 <div className="flex items-center">
                     <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" />
