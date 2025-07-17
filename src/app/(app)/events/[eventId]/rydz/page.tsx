@@ -279,8 +279,6 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const vehicleLicense = activeRyd.vehicleDetails?.licensePlate || "";
             const vehiclePassengerCapacity = parseInt(activeRyd.vehicleDetails?.passengerCapacity || "0", 10);
             let vehicleDisplay = (vehicleMake + ' ' + vehicleModel).trim();
-            if (vehicleColor) vehicleDisplay += `, ${vehicleColor}`;
-            if (vehicleLicense) vehicleDisplay += ` (Plate: ${vehicleLicense})`;
             if (vehicleDisplay === "") vehicleDisplay = "Vehicle not specified";
 
             const proposedDeparture = activeRyd.proposedDepartureTime ? new Date(activeRyd.proposedDepartureTime as any) : null;
@@ -288,6 +286,9 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const actualDeparture = activeRyd.actualDepartureTime ? new Date(activeRyd.actualDepartureTime as any) : null;
 
             const displayDepartureTime = actualDeparture || proposedDeparture;
+            const timeRange = displayDepartureTime && plannedArrival 
+                              ? `${format(displayDepartureTime, "p")} - ${format(plannedArrival, "p")}` 
+                              : 'Time TBD';
 
             const currentActivePassengers = activeRyd.passengerManifest.filter(
               p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
@@ -336,45 +337,36 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             return (
             <Card key={activeRyd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
               <CardHeader>
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="flex items-center gap-3">
-                        <Avatar className="h-12 w-12">
-                            <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
-                            <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                            <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline">{driverName}</Link>
-                            <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
-                        </div>
-                    </div>
-                     <Badge variant="outline" className="w-fit capitalize">{activeRyd.status.replace(/_/g, ' ')}</Badge>
+                  <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                          <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
+                          <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                          <Link href={'/profile/view/' + activeRyd.driverId} className="font-semibold hover:underline">{driverName}</Link>
+                          <p className="text-xs text-muted-foreground">{vehicleDisplay}</p>
+                      </div>
+                      <Badge variant="outline" className="w-fit capitalize">{activeRyd.status.replace(/_/g, ' ')}</Badge>
                   </div>
-                   <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
-                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
-                     Ryd {directionIsToEvent ? "to" : "from"} event
-                   </div>
               </CardHeader>
               <CardContent className="flex-grow pt-2 space-y-3">
-                <div className="text-sm text-muted-foreground grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                 <div className="flex items-center justify-center text-sm font-semibold p-2 bg-muted/50 rounded-md">
+                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
+                     Ryd {directionIsToEvent ? "to" : "from"} event
+                 </div>
+                <div className="text-sm text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b py-2">
                   <div className="flex items-center">
                     <Clock className="mr-2 h-4 w-4 flex-shrink-0" />
-                    <span className="font-medium">Departs:</span>
-                    <span className="ml-1.5">{displayDepartureTime ? format(displayDepartureTime, "p") : 'TBD'}</span>
-                  </div>
-                  <div className="flex items-center">
-                    <CalendarDays className="mr-2 h-4 w-4 flex-shrink-0" />
-                    <span className="font-medium">Arrives:</span>
-                    <span className="ml-1.5">{plannedArrival ? format(plannedArrival, "p") : 'TBD'}</span>
+                    <span>{timeRange}</span>
                   </div>
                   <div className="flex items-center">
                      <Users className="mr-2 h-4 w-4 flex-shrink-0" />
-                    <span className="font-medium">Seats:</span>
-                    <span className="ml-1.5">{vehiclePassengerCapacity} offered ({vehiclePassengerCapacity - currentActivePassengers} open)</span>
+                    <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span>
                   </div>
                 </div>
 
                 {displayedPassengers.length > 0 && (
-                    <div className="mt-3">
+                    <div>
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Passengers ({currentActivePassengers} / {vehiclePassengerCapacity}):</h4>
                         <div className="flex flex-wrap gap-2">
                             {displayedPassengers.map(pItem => {
@@ -391,7 +383,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     </div>
                 )}
                  {displayedPassengers.length === 0 && (
-                     <p className="text-xs text-muted-foreground mt-2">No active passengers currently listed for this ryd.</p>
+                     <p className="text-xs text-muted-foreground mt-2">No passengers currently listed.</p>
                  )}
 
                 {activeRyd.notes && (
@@ -562,12 +554,12 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
               <CardHeader>
                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
-                        <Avatar className="h-12 w-12">
+                        <Avatar className="h-10 w-10">
                             <AvatarImage src={displayAvatar} alt={displayNamer} data-ai-hint={displayAvatarHint}/>
                             <AvatarFallback>{displayNamer.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                         </Avatar>
                         <div>
-                            <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline">{displayNamer}</Link>
+                            <Link href={'/profile/view/' + profileLinkUid} className="font-semibold hover:underline text-sm">{displayNamer}</Link>
                             <p className="text-xs text-muted-foreground">{cardSubtitle}</p>
                         </div>
                     </div>
@@ -579,24 +571,15 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                    </div>
               </CardHeader>
               <CardContent className="flex-grow pt-2 space-y-3">
-                 <div className="text-sm text-muted-foreground grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                 <div className="text-sm text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b py-2">
                     <div className="flex items-center">
                       <CalendarDays className="mr-2 h-4 w-4 flex-shrink-0" />
-                      <span className="font-medium">Needed by:</span>
-                      <span className="ml-1.5">{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Clock className="mr-2 h-4 w-4 flex-shrink-0" />
-                      <span className="font-medium">Pickup after:</span>
-                      <span className="ml-1.5">{earliestPickup ? format(earliestPickup, "p") : 'Any'}</span>
+                      <span>{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
                     </div>
                     {request.pickupLocation && (
-                        <div className="flex items-start col-span-full">
-                           <MapPinIcon className="mr-2 h-4 w-4 mt-0.5 flex-shrink-0" /> 
-                           <div>
-                                <span className="font-medium">From:</span>
-                                <span className="ml-1.5">{request.pickupLocation}</span>
-                            </div>
+                        <div className="flex items-center">
+                           <MapPinIcon className="mr-2 h-4 w-4 flex-shrink-0" /> 
+                           <span className="truncate">{request.pickupLocation}</span>
                         </div>
                     )}
                  </div>
@@ -677,3 +660,4 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
     </>
   );
 }
+
