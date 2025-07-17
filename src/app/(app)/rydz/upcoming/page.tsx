@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarDays, MapPin, Car, Eye, AlertTriangle, Loader2, User, XCircle, Clock, Users } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import { useAuth } from '@/context/AuthContext';
 import { type DisplayRydData } from '@/types';
 import { useToast } from '@/hooks/use-toast';
@@ -17,6 +16,7 @@ import { getUpcomingRydzAction } from '@/actions/rydActions';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { updateStaleEventsAction, updateStaleRydzAction } from '@/actions/systemActions';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function UpcomingRydzPage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -105,65 +105,67 @@ export default function UpcomingRydzPage() {
   }
 
   const renderRydCard = (ryd: DisplayRydData, isPendingRequest: boolean = false) => {
-    // Correctly handle the ISO string from the server action.
     const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp as any) : null;
     const driverName = ryd.driverProfile?.fullName || "Pending";
+    const driverAvatar = ryd.driverProfile?.avatarUrl || 'https://placehold.co/100x100.png?text=' + driverName.split(" ").map(n=>n[0]).join("");
+    const driverDataAiHint = ryd.driverProfile?.dataAiHint || "driver photo";
+
     const trackable = !!ryd.assignedActiveRydId;
     const isDriver = !!ryd.isDriver;
     const canCancelRequest = isPendingRequest && ryd.requestedBy === authUser?.uid;
     const isCancellingThisRyd = isCancellingRyd[ryd.id];
+    
+    const passengerCount = ryd.passengerProfiles?.length || 0;
+    const vehiclePassengerCapacity = parseInt(ryd.vehicleDetails?.passengerCapacity || "0", 10);
+    const seatsOpen = vehiclePassengerCapacity - passengerCount;
 
     return (
       <Card key={ryd.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
-        <CardHeader className="relative h-40">
-          <Image
-            src={"https://placehold.co/400x200.png?text=Ryd"}
-            alt={ryd.eventName || ryd.destination}
-            fill
-            className="rounded-t-lg object-cover"
-            data-ai-hint={"map car journey"}
-          />
-          <div className="absolute top-2 right-2 bg-primary/80 text-primary-foreground text-xs px-2 py-1 rounded-full backdrop-blur-sm capitalize">
-              {String(ryd.status).replace(/_/g, ' ')}
-          </div>
+        <CardHeader className="p-3">
+            <div className="flex items-center justify-start gap-3 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Avatar className="h-8 w-8">
+                        <AvatarImage src={driverAvatar} alt={driverName} data-ai-hint={driverDataAiHint}/>
+                        <AvatarFallback>{driverName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm hover:underline truncate block">{ryd.eventName || ryd.destination}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                            Driver: {isDriver ? "You" : driverName}
+                        </p>
+                    </div>
+                </div>
+                <Badge variant="outline" className="w-fit capitalize flex-shrink-0 text-xs ml-auto">{String(ryd.status).replace(/_/g, ' ')}</Badge>
+            </div>
         </CardHeader>
-        <CardContent className="flex-grow pt-4">
-          <CardTitle className="font-headline text-lg mb-1">{ryd.eventName || ryd.destination}</CardTitle>
-          <div className="text-sm text-muted-foreground space-y-1 mb-2">
-            <div className="flex items-center">
-              <CalendarDays className="mr-1.5 h-4 w-4" /> {rydDate ? format(rydDate, "PPP 'at' p") : "Date TBD"}
+        <CardContent className="flex-grow pt-2 pb-3 px-3 space-y-2">
+            <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
+                <div className="flex items-center">
+                    <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" />
+                    <span>{rydDate ? format(rydDate, "PPP 'at' p") : 'Date TBD'}</span>
+                </div>
+                <div className="flex items-center">
+                    <Users className="mr-1.5 h-4 w-4 flex-shrink-0" />
+                    <span>{isPendingRequest ? `${passengerCount} passenger(s) requested` : (vehiclePassengerCapacity > 0 ? `${seatsOpen} open of ${vehiclePassengerCapacity}` : `${passengerCount} passenger(s)`)}</span>
+                </div>
             </div>
-            <div className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" /> To: {ryd.destination}</div>
-            <div className="flex items-center">
-              <User className="mr-1.5 h-4 w-4" />
-              Driver: {isDriver ? (
-                <span className="ml-1 font-medium text-primary">You</span>
-              ) : ryd.driverProfile ? (
-                <Link href={`/profile/view/${ryd.driverProfile.uid}`} className="ml-1 text-primary hover:underline">{driverName}</Link>
-              ) : (
-                <span className="ml-1">{driverName}</span>
-              )}
-            </div>
-          </div>
-          {ryd.passengerProfiles && ryd.passengerProfiles.length > 0 && (
-            <div className="mt-3 pt-3 border-t">
-              <h4 className="text-xs font-semibold text-muted-foreground flex items-center mb-2">
-                <Users className="mr-2 h-4 w-4" />
-                Passengers ({ryd.passengerProfiles.length})
-              </h4>
-              <div className="flex flex-wrap gap-1">
-                {ryd.passengerProfiles.map(p => (
-                  <Badge key={p.uid} variant="secondary" className="font-normal">
-                    {p.fullName}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
+
+            {ryd.passengerProfiles && ryd.passengerProfiles.length > 0 && (
+                <div className="pt-2 border-t">
+                    <div className="flex flex-wrap gap-1 mt-1">
+                        {ryd.passengerProfiles.map(p => (
+                            <Badge key={p.uid} variant="secondary" className="font-normal text-xs gap-1">
+                                <User className="h-3 w-3"/>
+                                {p.uid === authUser?.uid ? "You" : p.fullName}
+                            </Badge>
+                        ))}
+                    </div>
+                </div>
+            )}
         </CardContent>
-        <CardFooter className="border-t pt-4 flex flex-col gap-2">
+        <CardFooter className="border-t p-3 flex flex-col gap-2">
           {trackable && (
-            <Button variant="default" className="w-full" asChild>
+            <Button variant="default" size="sm" className="w-full" asChild>
                 <Link href={`/rydz/tracking/${ryd.assignedActiveRydId}`}>
                   <Eye className="mr-2 h-4 w-4" />
                   {isDriver ? 'Manage My Ryd' : 'View Details / Track'}
@@ -173,6 +175,7 @@ export default function UpcomingRydzPage() {
           {canCancelRequest && (
             <Button
               variant="destructive"
+              size="sm"
               className="w-full"
               onClick={() => handleCancelRydRequest(ryd.id)}
               disabled={isCancellingThisRyd}
@@ -182,8 +185,8 @@ export default function UpcomingRydzPage() {
             </Button>
           )}
            {!trackable && !canCancelRequest && (
-            <Button variant="default" className="w-full" disabled>
-                <Eye className="mr-2 h-4 w-4" /> Awaiting Driver / Details
+            <Button variant="outline" size="sm" className="w-full" disabled>
+                <Clock className="mr-2 h-4 w-4" /> Awaiting Driver / Details
             </Button>
            )}
         </CardFooter>
@@ -218,7 +221,7 @@ export default function UpcomingRydzPage() {
             <section>
                 <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Rydz I'm Driving</h2>
                 {drivingRydz.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {drivingRydz.map(ryd => renderRydCard(ryd, false))}
                 </div>
                 ) : (
@@ -237,7 +240,7 @@ export default function UpcomingRydzPage() {
             <section>
                 <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Upcoming Rydz (as Passenger)</h2>
                 {passengerRydz.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {passengerRydz.map(ryd => renderRydCard(ryd, false))}
                 </div>
                 ) : (
@@ -259,7 +262,7 @@ export default function UpcomingRydzPage() {
             <section>
                 <h2 className="font-headline text-2xl font-semibold text-primary mb-4">My Pending Requests</h2>
                 {pendingRequests.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {pendingRequests.map(ryd => renderRydCard(ryd, true))}
                 </div>
                 ) : (
