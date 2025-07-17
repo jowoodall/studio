@@ -119,7 +119,7 @@ export default function ParentApprovalsPage() {
             } else if (queryError.code === 'permission-denied') {
                 detailedError = "A permissions error occurred. This could be a security rule issue.";
             }
-            throw new Error(detailedError);
+            setError(detailedError);
         }
       }
       setPendingApprovals(fetchedApprovals);
