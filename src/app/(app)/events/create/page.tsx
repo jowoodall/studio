@@ -27,6 +27,7 @@ import { collection, addDoc, serverTimestamp, Timestamp, getDocs, query, where }
 import { useRouter } from "next/navigation";
 import type { EventData, GroupData, SavedLocation, EventStatus } from "@/types";
 import { createEventAction } from "@/actions/eventActions";
+import { getGroupsAndInvitationsAction } from "@/actions/groupActions"; // Import server action
 
 const eventFormSchema = z.object({
   eventName: z.string().min(3, "Event name must be at least 3 characters."),
@@ -97,7 +98,7 @@ export default function CreateEventPage() {
 
   useEffect(() => {
     const fetchUserGroups = async () => {
-        if (!userProfile) {
+        if (!authUser) {
             setAvailableGroups([]);
             setIsLoadingGroups(false);
             return;
@@ -105,35 +106,22 @@ export default function CreateEventPage() {
 
         setIsLoadingGroups(true);
         try {
-            const userJoinedGroupIds = userProfile.joinedGroupIds || [];
-            if (userJoinedGroupIds.length === 0) {
-                setAvailableGroups([]);
-                return;
+            const result = await getGroupsAndInvitationsAction(authUser.uid);
+            if (result.success && result.data) {
+                // We only need the groups the user has already joined
+                const joinedGroups = result.data.joinedGroups.map(g => ({
+                    id: g.id,
+                    name: g.name
+                }));
+                setAvailableGroups(joinedGroups);
+            } else {
+                 throw new Error(result.message || "Could not fetch your groups.");
             }
-
-            const groupsCollectionRef = collection(db, "groups");
-            const groupChunks: string[][] = [];
-            // Firestore 'in' query has a limit of 30 elements
-            for (let i = 0; i < userJoinedGroupIds.length; i += 30) {
-                groupChunks.push(userJoinedGroupIds.slice(i, i + 30));
-            }
-
-            const fetchedGroups: GroupSelectItem[] = [];
-            for (const chunk of groupChunks) {
-                if (chunk.length === 0) continue;
-                const groupsQuery = query(groupsCollectionRef, where("__name__", "in", chunk));
-                const querySnapshot = await getDocs(groupsQuery);
-                querySnapshot.forEach((doc) => {
-                    const groupData = doc.data() as GroupData;
-                    fetchedGroups.push({ id: doc.id, name: groupData.name });
-                });
-            }
-            setAvailableGroups(fetchedGroups);
-        } catch (error) {
-            console.error("Error fetching user's groups:", error);
+        } catch (error: any) {
+            console.error("Error fetching user's groups via action:", error);
             toast({
                 title: "Error",
-                description: "Could not fetch your groups. Please try again.",
+                description: `Could not load your groups: ${error.message}`,
                 variant: "destructive",
             });
         } finally {
@@ -144,7 +132,7 @@ export default function CreateEventPage() {
     if (!authLoading && !isLoadingProfile) {
         fetchUserGroups();
     }
-  }, [toast, userProfile, authLoading, isLoadingProfile]);
+  }, [toast, authUser, authLoading, isLoadingProfile]);
 
 
   async function onSubmit(data: EventFormValues) {
