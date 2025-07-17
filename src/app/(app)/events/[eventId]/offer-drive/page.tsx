@@ -30,6 +30,8 @@ interface ResolvedPageParams {
   eventId: string;
 }
 
+const formatAddress = (address: string) => address || "No address provided";
+
 export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const params = use(paramsPromise);
   const { eventId } = params || {};
@@ -472,6 +474,21 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{startLocationLabel}</FormLabel>
+                        {direction === 'to_event' && !isStartLocationDisabled && sortedSavedLocations.length > 0 && (
+                            <Select
+                            onValueChange={(value) => {
+                                const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
+                                if (selectedLoc) form.setValue("driverStartLocation", formatAddress(selectedLoc.address));
+                            }}
+                            >
+                            <SelectTrigger className="mt-1 mb-2"> <SelectValue placeholder="Or use a saved location..." /> </SelectTrigger>
+                            <SelectContent>
+                                {sortedSavedLocations.map((loc) => (
+                                <SelectItem key={loc.id} value={loc.id}> {`${loc.name} (${formatAddress(loc.address)})`} </SelectItem>
+                                ))}
+                            </SelectContent>
+                            </Select>
+                        )}
                         <FormControl>
                           <Input placeholder="e.g., My home (123 Main St)" {...field} disabled={isStartLocationDisabled} className={isStartLocationDisabled ? "bg-muted/50" : ""} />
                         </FormControl>
@@ -485,6 +502,21 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{endLocationLabel}</FormLabel>
+                        {direction === 'from_event' && !isDestinationDisabled && sortedSavedLocations.length > 0 && (
+                            <Select
+                            onValueChange={(value) => {
+                                const selectedLoc = sortedSavedLocations.find(loc => loc.id === value);
+                                if (selectedLoc) form.setValue("driverEndLocation", formatAddress(selectedLoc.address));
+                            }}
+                            >
+                            <SelectTrigger className="mt-1 mb-2"> <SelectValue placeholder="Or use a saved location..." /> </SelectTrigger>
+                            <SelectContent>
+                                {sortedSavedLocations.map((loc) => (
+                                <SelectItem key={loc.id} value={loc.id}> {`${loc.name} (${formatAddress(loc.address)})`} </SelectItem>
+                                ))}
+                            </SelectContent>
+                            </Select>
+                        )}
                         <FormControl>
                           <Input placeholder="e.g., 123 Main St, Anytown" {...field} disabled={isDestinationDisabled} className={isDestinationDisabled ? "bg-muted/50" : ""} />
                         </FormControl>
