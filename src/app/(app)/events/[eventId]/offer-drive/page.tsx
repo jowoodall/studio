@@ -20,7 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { type EventData, type RydData, type UserProfileData, PassengerManifestStatus, RydDirection } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore";
-import { format, parse, isValid } from 'date-fns';
+import { format, parse, isValid, addHours } from 'date-fns';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { offerDriveFormSchema, type OfferDriveFormValues } from '@/schemas/activeRydSchemas';
@@ -32,6 +32,22 @@ interface ResolvedPageParams {
 }
 
 const formatAddress = (address: string) => address || "No address provided";
+
+const getValidDate = (timestamp: any): Date | null => {
+    if (!timestamp) return null;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') { // Firebase Timestamp object
+        return timestamp.toDate();
+    }
+    if (typeof timestamp.seconds === 'number') { // Serialized Firestore Timestamp
+        return new Date(timestamp.seconds * 1000);
+    }
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+        const date = new Date(timestamp);
+        return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  };
+
 
 export default function OfferDrivePage({ params: paramsPromise }: { params: Promise<ResolvedPageParams> }) {
   const params = use(paramsPromise);
@@ -101,21 +117,6 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
     }
   }, [userProfile, form, sortedSavedLocations]);
 
-  const getValidDate = (timestamp: any): Date | null => {
-    if (!timestamp) return null;
-    if (timestamp.toDate && typeof timestamp.toDate === 'function') { // Firebase Timestamp object
-        return timestamp.toDate();
-    }
-    if (typeof timestamp.seconds === 'number') { // Serialized Firestore Timestamp
-        return new Date(timestamp.seconds * 1000);
-    }
-    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
-        const date = new Date(timestamp);
-        return isNaN(date.getTime()) ? null : date;
-    }
-    return null;
-  };
-
   useEffect(() => {
     const fetchEventDetails = async () => {
       if (!eventId) {
@@ -136,8 +137,7 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
             const eventDateObj = getValidDate(fetchedEvent.eventStartTimestamp);
             
             if (eventDateObj && isValid(eventDateObj)) {
-                const eventStartTimeStr = format(eventDateObj, "HH:mm");
-                form.setValue("plannedArrivalTime", eventStartTimeStr);
+                form.setValue("plannedArrivalTime", format(eventDateObj, "HH:mm"));
                 const departureDateObj = new Date(eventDateObj.getTime());
                 departureDateObj.setHours(departureDateObj.getHours() - 1);
                 form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
@@ -219,13 +219,32 @@ export default function OfferDrivePage({ params: paramsPromise }: { params: Prom
 
   const direction = form.watch("direction");
   useEffect(() => {
-    if(eventDetails?.location) {
+    if(eventDetails) {
       if(direction === RydDirection.TO_EVENT) {
-        form.setValue("driverEndLocation", eventDetails.location);
+        form.setValue("driverEndLocation", eventDetails.location || "");
         form.setValue("driverStartLocation", "");
-      } else {
-        form.setValue("driverStartLocation", eventDetails.location);
+        
+        // When switching TO event, set times relative to event start
+        const eventStartDate = getValidDate(eventDetails.eventStartTimestamp);
+        if (eventStartDate && isValid(eventStartDate)) {
+            form.setValue("plannedArrivalTime", format(eventStartDate, "HH:mm"));
+            const departureDateObj = new Date(eventStartDate.getTime());
+            departureDateObj.setHours(departureDateObj.getHours() - 1);
+            form.setValue("proposedDepartureTime", format(departureDateObj, "HH:mm"));
+        }
+
+      } else if (direction === RydDirection.FROM_EVENT) {
+        form.setValue("driverStartLocation", eventDetails.location || "");
         form.setValue("driverEndLocation", "");
+        
+        // When switching FROM event, set times relative to event end
+        const eventEndDate = getValidDate(eventDetails.eventEndTimestamp);
+        if (eventEndDate && isValid(eventEndDate)) {
+            form.setValue("proposedDepartureTime", format(eventEndDate, "HH:mm"));
+            const arrivalDateObj = new Date(eventEndDate.getTime());
+            arrivalDateObj.setHours(arrivalDateObj.getHours() + 1);
+            form.setValue("plannedArrivalTime", format(arrivalDateObj, "HH:mm"));
+        }
       }
     }
   }, [direction, eventDetails, form]);
