@@ -178,8 +178,8 @@ export default function RydRequestPage() {
         form.setValue("eventName", fetchedEvent?.name || fetchedActiveRyd.eventName || "Event");
         
         let rydEventDate: Date;
-        if (fetchedEvent?.eventTimestamp) {
-            rydEventDate = new Date(fetchedEvent.eventTimestamp as any);
+        if (fetchedEvent?.eventStartTimestamp) {
+            rydEventDate = new Date(fetchedEvent.eventStartTimestamp as any);
         } else if (fetchedActiveRyd.plannedArrivalTime) {
             rydEventDate = new Date(fetchedActiveRyd.plannedArrivalTime as any); 
         } else {
@@ -351,8 +351,8 @@ export default function RydRequestPage() {
             return;
         }
         let eventDateForAction: Date;
-        if (eventForActiveRyd?.eventTimestamp) {
-            eventDateForAction = new Date(eventForActiveRyd.eventTimestamp as any);
+        if (eventForActiveRyd?.eventStartTimestamp) {
+            eventDateForAction = new Date(eventForActiveRyd.eventStartTimestamp as any);
         } else if (activeRydBeingUpdated.plannedArrivalTime) {
             eventDateForAction = new Date(activeRydBeingUpdated.plannedArrivalTime as any);
         } else {
