@@ -193,7 +193,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
         title={'Rydz for: ' + eventDetails.name}
         description={`Coordinate carpools for this event or request a ryd below.`}
         actions={
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col sm:flex-row gap-y-2 sm:gap-x-2">
             {isEventManager && (
               <Button variant="secondary" asChild>
                 <Link href={`/events/${eventId}/edit`}>
@@ -282,11 +282,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
             const proposedDeparture = activeRyd.proposedDepartureTime ? new Date(activeRyd.proposedDepartureTime as any) : null;
             const plannedArrival = activeRyd.plannedArrivalTime ? new Date(activeRyd.plannedArrivalTime as any) : null;
             const actualDeparture = activeRyd.actualDepartureTime ? new Date(activeRyd.actualDepartureTime as any) : null;
-            const displayDepartureTime = actualDeparture || proposedDeparture;
-            const timeRange = displayDepartureTime && plannedArrival 
-                              ? `${format(displayDepartureTime, "p")} - ${format(plannedArrival, "p")}` 
-                              : 'Time TBD';
-
+            
             const currentActivePassengers = activeRyd.passengerManifest.filter(
               p => p.status !== PassengerManifestStatus.CANCELLED_BY_PASSENGER &&
                    p.status !== PassengerManifestStatus.REJECTED_BY_DRIVER &&
@@ -350,13 +346,20 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                     {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                     Ryd {directionIsToEvent ? "to" : "from"} event
                 </div>
-                <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t pt-2">
-                    <div className="flex items-center"> <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{timeRange}</span> </div>
-                    <div className="flex items-center"> <Users className="mr-1.5 h-4 w-4 flex-shrink-0" /> <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open</span> </div>
+                
+                <div className="flex flex-col gap-1 border-t pt-2 text-xs text-muted-foreground">
+                    <div className="flex items-center">
+                        <Clock className="mr-1.5 h-4 w-4 flex-shrink-0" />
+                        <span>{proposedDeparture ? format(proposedDeparture, 'p') : 'Time TBD'} to {plannedArrival ? format(plannedArrival, 'p') : 'TBD'}</span>
+                    </div>
+                    <div className="flex items-center">
+                        <Users className="mr-1.5 h-4 w-4 flex-shrink-0" />
+                        <span>{vehiclePassengerCapacity - currentActivePassengers} seat(s) open of {vehiclePassengerCapacity}</span>
+                    </div>
                 </div>
 
                 {displayedPassengers.length > 0 && (
-                    <div className="pt-1">
+                    <div className="pt-2 border-t">
                         <h4 className="text-xs font-semibold text-muted-foreground">Passengers ({currentActivePassengers}/{vehiclePassengerCapacity}):</h4>
                         <div className="flex flex-wrap gap-1 mt-1">
                             {displayedPassengers.map(pItem => {
@@ -552,7 +555,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                      {directionIsToEvent ? <ArrowRight className="mr-2 h-4 w-4 text-green-600"/> : <ArrowLeft className="mr-2 h-4 w-4 text-blue-600"/>}
                      Ryd {directionIsToEvent ? "to" : "from"} event
                    </div>
-                 <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t pt-2">
+                 <div className="flex flex-col gap-1 border-t pt-2 text-xs text-muted-foreground">
                     <div className="flex items-center">
                       <CalendarDays className="mr-1.5 h-4 w-4 flex-shrink-0" />
                       <span>{rydDateTime ? format(rydDateTime, "p") : 'TBD'}</span>
@@ -566,7 +569,7 @@ export default function EventRydzPage({ params: paramsPromise }: { params: Promi
                  </div>
 
                 {request.passengerUserProfiles && request.passengerUserProfiles.length > 0 && (
-                    <div className="pt-1">
+                    <div className="pt-2 border-t">
                         <h4 className="text-xs font-semibold text-muted-foreground">Passengers ({request.passengerUserProfiles.length}):</h4>
                         <div className="flex flex-wrap gap-1 mt-1">
                             {request.passengerUserProfiles.map(p => (
