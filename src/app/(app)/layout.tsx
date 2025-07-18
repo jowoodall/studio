@@ -52,6 +52,25 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// This new AppShell component contains all the client-side logic and hooks.
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar />
+      <SidebarInset>
+        <div className="flex flex-col min-h-screen">
+          <AppHeader />
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
+            <ProtectedContent>
+              {children}
+            </ProtectedContent>
+          </main>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
 
 export default function AppLayout({
   children,
@@ -60,28 +79,15 @@ export default function AppLayout({
 }) {
   return (
     <AuthProvider>
-      <SidebarProvider defaultOpen={true}>
-        <AppSidebar />
-        <SidebarInset>
-          <div className="flex flex-col min-h-screen">
-            <AppHeader />
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
-              <Suspense fallback={
-                <div className="flex h-full w-full items-center justify-center p-8 min-h-[calc(100vh-200px)]">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Loading Page...</p>
-                  </div>
-                </div>
-              }>
-                <ProtectedContent>
-                  {children}
-                </ProtectedContent>
-              </Suspense>
-            </main>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <Suspense fallback={
+        <div className="flex h-screen w-full items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }>
+        <AppShell>
+          {children}
+        </AppShell>
+      </Suspense>
     </AuthProvider>
   );
 }
