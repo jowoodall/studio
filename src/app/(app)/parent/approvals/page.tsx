@@ -3,8 +3,6 @@ import React from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { ParentApprovalsClient } from '@/components/parent/ParentApprovalsClient';
 import { getParentApprovalsPageData } from '@/actions/parentActions';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { cookies } from 'next/headers';
 import admin from '@/lib/firebaseAdmin';
 import { AlertTriangle, ShieldCheck } from "lucide-react";
@@ -16,7 +14,7 @@ import { UserRole } from '@/types';
 
 async function getUserId() {
   const cookieStore = cookies();
-  const token = cookieStore.get('session'); // Use the 'session' cookie
+  const token = cookieStore.get('session'); 
   if (!token?.value) return null;
   try {
     const decodedToken = await admin.auth().verifyIdToken(token.value);
@@ -40,11 +38,19 @@ export default async function ParentApprovalsPage() {
   
   if (!userId) {
     return (
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
-            <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Authentication Required</h2>
-            <p className="text-muted-foreground px-4">You must be logged in to view this page.</p>
-            <Button asChild className="mt-4"><Link href="/login">Log In</Link></Button>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] px-4 py-8">
+            <Card className="text-center w-full max-w-md">
+                <CardHeader>
+                    <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+                    <CardTitle className="mt-4">Authentication Required</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground leading-relaxed">You must be logged in to view this page.</p>
+                    <Button asChild className="mt-6 min-h-[44px]">
+                        <Link href="/login">Log In</Link>
+                    </Button>
+                </CardContent>
+            </Card>
         </div>
     );
   }
@@ -57,13 +63,13 @@ export default async function ParentApprovalsPage() {
                 title="Access Denied"
                 description="This area is restricted to parents."
             />
-            <Card className="text-center py-12 shadow-md">
+            <Card className="text-center py-8 shadow-md mx-auto max-w-md">
                 <CardHeader>
-                    <ShieldCheck className="mx-auto h-12 w-12 text-destructive mb-4" />
-                    <CardTitle className="font-headline text-2xl">Parents Only</CardTitle>
+                    <ShieldCheck className="mx-auto h-12 w-12 text-destructive" />
+                    <CardTitle className="mt-4 font-headline text-2xl">Parents Only</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <CardDescription>
+                    <CardDescription className="leading-relaxed">
                         The parental controls and driver approvals page is only available for users registered as a Parent or Guardian.
                     </CardDescription>
                 </CardContent>
@@ -81,10 +87,16 @@ export default async function ParentApprovalsPage() {
             title="Parental Controls"
             description="Review pending requests, manage your driver lists, and add students."
         />
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)] text-center">
-            <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Error Loading Page Data</h2>
-            <p className="text-muted-foreground px-4 whitespace-pre-line">{result.message || "An unknown error occurred."}</p>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)] px-4 py-8">
+            <Card className="text-center w-full max-w-md">
+                 <CardHeader>
+                    <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+                    <CardTitle className="mt-4">Error Loading Page Data</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{result.message || "An unknown error occurred."}</p>
+                </CardContent>
+            </Card>
         </div>
       </>
     );
@@ -100,5 +112,3 @@ export default async function ParentApprovalsPage() {
     </>
   );
 }
-
-    

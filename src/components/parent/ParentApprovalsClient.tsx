@@ -216,7 +216,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
            <div className="text-center py-10">
               <EmptyStateIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="font-headline text-xl">{emptyTitle}</h3>
-              <p className="text-sm text-muted-foreground mt-2">{emptyDescription}</p>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-sm mx-auto">{emptyDescription}</p>
           </div>
         )
     }
@@ -304,13 +304,13 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                 <CardFooter className="flex flex-col gap-4">
                     <div className="text-xs text-muted-foreground w-full">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
                     <div className="flex flex-col sm:flex-row gap-2 self-stretch sm:self-end">
-                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction}>
+                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} size="sm">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Reject
                         </Button>
-                        <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction}>
+                        <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction} size="sm">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Approve Once
                         </Button>
-                        <Button onClick={() => handleApproval(request, 'approve_permanently')} className="bg-green-600 hover:bg-green-700" disabled={isLoadingAction}>
+                        <Button onClick={() => handleApproval(request, 'approve_permanently')} className="bg-green-600 hover:bg-green-700" disabled={isLoadingAction} size="sm">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />} Approve & Add
                         </Button>
                     </div>
@@ -326,7 +326,9 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
             <CardTitle className="font-headline text-2xl">No Pending Approvals</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription>There are no new driver approval requests for your students at this time.</CardDescription>
+            <CardDescription className="leading-relaxed max-w-sm mx-auto">
+              There are no new driver approval requests for your students at this time.
+            </CardDescription>
           </CardContent>
         </Card>
       )}
