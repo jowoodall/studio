@@ -33,6 +33,7 @@ export default async function ParentApprovalsPage() {
     }
   } catch (error) {
     console.error("Error verifying session token in server component:", error);
+    // This can happen if the cookie is invalid or expired. We'll treat it as not logged in.
     userId = null;
     userRole = null;
   }
