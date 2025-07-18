@@ -74,7 +74,7 @@ export async function getParentApprovalsPageData(userId: string): Promise<{
     try {
         const parentDocRef = db.collection('users').doc(userId);
         const parentDocSnap = await parentDocRef.get();
-        if (!parentDocSnap.exists() || parentDocSnap.data()?.role !== UserRole.PARENT) {
+        if (!parentDocSnap.exists || parentDocSnap.data()?.role !== UserRole.PARENT) {
             return { success: false, message: 'This page is for parents only.' };
         }
         const userProfile = parentDocSnap.data() as UserProfileData;
@@ -83,7 +83,7 @@ export async function getParentApprovalsPageData(userId: string): Promise<{
         let fetchedApprovals: ApprovalRequest[] = [];
         if (studentIds.length > 0) {
             const activeRydzRef = db.collection('activeRydz');
-            const q = query(activeRydzRef, where('uidsPendingParentalApproval', 'array-contains-any', studentIds));
+            const q = activeRydzRef.where('uidsPendingParentalApproval', 'array-contains-any', studentIds);
             const querySnapshot = await q.get();
             const approvalPromises = querySnapshot.docs.flatMap(docSnap => {
                 const rydData = { id: docSnap.id, ...docSnap.data() } as ActiveRyd;
@@ -91,16 +91,16 @@ export async function getParentApprovalsPageData(userId: string): Promise<{
                 return relevantPassengers.map(async (passenger) => {
                     try {
                         const [driverDoc, studentDoc] = await Promise.all([
-                            getDoc(doc(db, "users", rydData.driverId)),
-                            getDoc(doc(db, "users", passenger.userId))
+                            db.collection("users").doc(rydData.driverId).get(),
+                            db.collection("users").doc(passenger.userId).get()
                         ]);
-                        if (!driverDoc.exists() || !studentDoc.exists()) return null;
+                        if (!driverDoc.exists || !studentDoc.exists) return null;
                         const driverData = driverDoc.data() as UserProfileData;
                         const studentData = studentDoc.data() as UserProfileData;
                         return {
                             activeRydId: rydData.id,
-                            student: { uid: studentData.uid, fullName: studentData.fullName },
-                            driver: { uid: driverData.uid, fullName: driverData.fullName, avatarUrl: driverData.avatarUrl, dataAiHint: driverData.dataAiHint },
+                            student: { uid: studentDoc.id, fullName: studentData.fullName },
+                            driver: { uid: driverDoc.id, fullName: driverData.fullName, avatarUrl: driverData.avatarUrl, dataAiHint: driverData.dataAiHint },
                             rydDetails: { eventName: rydData.eventName || 'Unnamed Ryd', destination: rydData.finalDestinationAddress || 'N/A' },
                         };
                     } catch (e) {
@@ -114,21 +114,15 @@ export async function getParentApprovalsPageData(userId: string): Promise<{
 
         const fetchProfiles = async (ids: string[]): Promise<UserDisplayInfo[]> => {
             if (ids.length === 0) return [];
-            const profilePromises = ids.map(async (id) => {
-                try {
-                    const docRef = doc(db, "users", id);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data() as UserProfileData;
-                        return { uid: id, fullName: data.fullName, avatarUrl: data.avatarUrl, dataAiHint: data.dataAiHint, email: data.email };
-                    }
-                    return null;
-                } catch (e) {
-                    console.error(`Failed to fetch profile for ID ${id}`, e);
-                    return null;
+            const refs = ids.map(id => db.collection('users').doc(id));
+            const docs = await db.getAll(...refs);
+            return docs.map(doc => {
+                if (doc.exists) {
+                    const data = doc.data() as UserProfileData;
+                    return { uid: doc.id, fullName: data.fullName, avatarUrl: data.avatarUrl, dataAiHint: data.dataAiHint, email: data.email };
                 }
-            });
-            return (await Promise.all(profilePromises)).filter(Boolean) as UserDisplayInfo[];
+                return null;
+            }).filter(Boolean) as UserDisplayInfo[];
         };
 
         const approvedDriverIds = Object.keys(userProfile.approvedDrivers || {});
@@ -178,7 +172,7 @@ export async function manageDriverApprovalAction(
     const transactionResult = await db.runTransaction(async (transaction) => {
       const [parentDocSnap, activeRydDocSnap] = await transaction.getAll(parentDocRef, activeRydDocRef);
       
-      if (!parentDocSnap.exists) { // remove exists()
+      if (!parentDocSnap.exists) { 
         throw new Error("Parent profile not found.");
       }
       const parentProfile = parentDocSnap.data() as UserProfileData;
@@ -188,7 +182,7 @@ export async function manageDriverApprovalAction(
         throw new Error("Unauthorized: You are not registered as a parent for this student.");
       }
 
-      if (!activeRydDocSnap.exists) { // remove exists()
+      if (!activeRydDocSnap.exists) { 
         throw new Error("The associated ryd could not be found.");
       }
       const activeRydData = activeRydDocSnap.data() as ActiveRyd;
@@ -320,8 +314,8 @@ export async function addApprovedDriverByEmailAction(
 ): Promise<{ success: boolean; message: string; driverId?: string; driverName?: string; }> {
     const { parentUserId, driverEmail, studentIds } = input;
 
-    if (!parentUserId || !driverEmail || !studentIds || studentIds.length === 0) {
-        return { success: false, message: "Parent ID, driver email, and at least one student selection are required." };
+    if (!parentUserId || !driverEmail) { // Student IDs can be empty if just finding the driver
+        return { success: false, message: "Parent ID and driver email are required." };
     }
     
     try {
@@ -340,21 +334,33 @@ export async function addApprovedDriverByEmailAction(
         if (driverId === parentUserId) {
             return { success: false, message: "You cannot add yourself as an approved driver." };
         }
-
-        const parentDocRef = db.collection('users').doc(parentUserId);
         
-        // This will set or overwrite the list of approved students for this driver.
-        await parentDocRef.update({
-            [`approvedDrivers.${driverId}`]: studentIds,
-            declinedDriverIds: FieldValue.arrayRemove(driverId)
-        });
+        // If studentIds are provided, it's an update. If not, it's just a find operation.
+        if(studentIds.length > 0) {
+            const parentDocRef = db.collection('users').doc(parentUserId);
+            
+            // This will set or overwrite the list of approved students for this driver.
+            await parentDocRef.update({
+                [`approvedDrivers.${driverId}`]: studentIds,
+                declinedDriverIds: FieldValue.arrayRemove(driverId)
+            });
+            
+             return { 
+                success: true, 
+                message: `${driverData.fullName || 'Driver'} has been approved for the selected student(s).`,
+                driverId: driverId,
+                driverName: driverData.fullName,
+            };
+        }
         
-        return { 
-            success: true, 
-            message: `${driverData.fullName || 'Driver'} has been approved for the selected student(s).`,
-            driverId: driverId,
-            driverName: driverData.fullName,
-        };
+        // This is the case where we just found the driver and are returning their info
+        // before the user selects which students to approve them for.
+        return {
+            success: true,
+            message: "Driver found.",
+            driverId,
+            driverName: driverData.fullName
+        }
 
     } catch (error: any) {
         return handleActionError(error, 'addApprovedDriverByEmailAction');
