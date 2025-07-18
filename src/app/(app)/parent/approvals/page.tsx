@@ -12,35 +12,36 @@ import Link from 'next/link';
 import { UserRole } from '@/types';
 
 
-async function getUserId() {
-  const cookieStore = cookies();
-  const token = cookieStore.get('session');
-  if (!token?.value) return null;
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(token.value);
-    return decodedToken.uid;
-  } catch (error) {
-    console.error("Error verifying token in server component:", error);
-    return null;
-  }
-}
-
-async function getUserRole(userId: string) {
-    if (!userId) return null;
-    const userDoc = await admin.firestore().collection('users').doc(userId).get();
-    if (!userDoc.exists) return null;
-    return userDoc.data()?.role as UserRole | null;
-}
-
-
 export default async function ParentApprovalsPage() {
-  const userId = await getUserId();
-
+  let userId = null;
+  let userRole: UserRole | null = null;
+  
+  try {
+    const cookieStore = cookies();
+    const token = cookieStore.get('session');
+    
+    if (token?.value) {
+      const decodedToken = await admin.auth().verifyIdToken(token.value);
+      userId = decodedToken.uid;
+      
+      if (userId) {
+        const userDoc = await admin.firestore().collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          userRole = userDoc.data()?.role as UserRole | null;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error verifying session token in server component:", error);
+    userId = null;
+    userRole = null;
+  }
+  
   if (!userId) {
     return (
         <div className="min-h-screen w-full overflow-x-hidden">
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] px-4 py-8">
-                <Card className="text-center w-full max-w-md">
+            <div className="px-4 py-8">
+                <Card className="text-center w-full max-w-md mx-auto">
                     <CardHeader>
                         <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
                         <CardTitle className="mt-4 text-lg sm:text-xl">Authentication Required</CardTitle>
@@ -59,7 +60,6 @@ export default async function ParentApprovalsPage() {
     );
   }
   
-  const userRole = await getUserRole(userId);
   if (userRole !== UserRole.PARENT) {
       return (
         <div className="min-h-screen w-full overflow-x-hidden">
