@@ -301,17 +301,17 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                     <p><span className="font-semibold">At:</span> {request.rydDetails.destination}</p>
                   </div>
                 </CardContent>
-                <CardFooter className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
-                    <div className="flex-1 text-xs text-muted-foreground">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
-                    <div className="flex gap-2 sm:gap-4 flex-wrap">
+                <CardFooter className="flex flex-col gap-4">
+                    <div className="text-xs text-muted-foreground w-full">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
+                    <div className="flex flex-col sm:flex-row gap-2 self-stretch sm:self-end">
                         <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction}>
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Reject
                         </Button>
                         <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction}>
-                            {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Approve for this Ryd
+                            {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Approve Once
                         </Button>
                         <Button onClick={() => handleApproval(request, 'approve_permanently')} className="bg-green-600 hover:bg-green-700" disabled={isLoadingAction}>
-                            {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />} Approve & Add to List
+                            {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />} Approve & Add
                         </Button>
                     </div>
                 </CardFooter>
