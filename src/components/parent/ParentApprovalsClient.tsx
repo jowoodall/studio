@@ -282,18 +282,22 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
             const isLoadingAction = isProcessing[key];
             return (
               <Card key={key} className="shadow-lg border-2 border-primary/50">
-                <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                  <Avatar className="h-16 w-16 flex-shrink-0">
-                    <AvatarImage src={request.driver.avatarUrl || `https://placehold.co/100x100.png?text=${request.driver.fullName.split(" ").map(n=>n[0]).join("")}`} alt={request.driver.fullName} data-ai-hint={request.driver.dataAiHint || "driver photo"} />
-                    <AvatarFallback>{request.driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="font-headline text-xl break-words truncate">{request.driver.fullName}</CardTitle>
-                    <CardDescription>Request to drive <span className="font-semibold text-foreground">{request.student.fullName}</span></CardDescription>
+                <CardHeader className="relative block sm:flex sm:items-start sm:gap-4">
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-16 w-16 flex-shrink-0">
+                      <AvatarImage src={request.driver.avatarUrl || `https://placehold.co/100x100.png?text=${request.driver.fullName.split(" ").map(n=>n[0]).join("")}`} alt={request.driver.fullName} data-ai-hint={request.driver.dataAiHint || "driver photo"} />
+                      <AvatarFallback>{request.driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="font-headline text-xl break-words">{request.driver.fullName}</CardTitle>
+                      <CardDescription>Request to drive <span className="font-semibold text-foreground">{request.student.fullName}</span></CardDescription>
+                    </div>
                   </div>
-                  <Button variant="outline" size="sm" asChild className="flex-shrink-0">
-                    <Link href={`/profile/view/${request.driver.uid}`}><UserCircle className="mr-2 h-4 w-4" /> View Profile</Link>
-                  </Button>
+                  <div className="mt-4 sm:mt-0 sm:absolute sm:top-6 sm:right-6">
+                    <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
+                      <Link href={`/profile/view/${request.driver.uid}`}><UserCircle className="mr-2 h-4 w-4" /> View Profile</Link>
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="p-3 bg-muted/50 rounded-md border text-sm space-y-1 break-words">
