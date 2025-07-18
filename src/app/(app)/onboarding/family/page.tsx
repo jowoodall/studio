@@ -15,8 +15,9 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Loader2, ArrowRight, CheckCircle2, Search, Users } from "lucide-react";
-import { createFamilyAction, findAndJoinFamilyByMemberEmailAction } from '@/actions/familyActions';
+import { createFamilyAction, findFamiliesByMemberEmailAction, joinFamilyByIdAction } from '@/actions/familyActions';
 import { Separator } from '@/components/ui/separator';
+import type { FamilyData } from '@/types';
 
 const createFamilyFormSchema = z.object({
   familyName: z.string().min(3, "Family name must be at least 3 characters.").max(50, "Family name cannot exceed 50 characters."),
@@ -34,6 +35,10 @@ export default function OnboardingFamilyPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFindingFamilies, setIsFindingFamilies] = useState(false);
+  const [isJoiningFamily, setIsJoiningFamily] = useState<Record<string, boolean>>({});
+  const [foundFamilies, setFoundFamilies] = useState<FamilyData[]>([]);
+  const [searchedEmail, setSearchedEmail] = useState<string>("");
 
   const createForm = useForm<CreateFamilyFormValues>({
     resolver: zodResolver(createFamilyFormSchema),
@@ -70,34 +75,61 @@ export default function OnboardingFamilyPage() {
     }
   }
 
-  async function onFamilyJoin(data: JoinFamilyFormValues) {
+  async function onFindFamilies(data: JoinFamilyFormValues) {
     if (!user) {
         toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
         return;
     }
-    setIsSubmitting(true);
+    setIsFindingFamilies(true);
+    setFoundFamilies([]);
+    setSearchedEmail(data.email);
     try {
-        const result = await findAndJoinFamilyByMemberEmailAction({
-            joiningUserId: user.uid,
-            memberEmail: data.email,
-        });
+        const result = await findFamiliesByMemberEmailAction({ memberEmail: data.email });
 
-        if (result.success) {
-            toast({ title: "Joined Family!", description: result.message });
-            await finishOnboarding();
+        if (result.success && result.families) {
+            if(result.families.length > 0) {
+                toast({ title: "Families Found", description: `Found ${result.families.length} family/families for ${data.email}.` });
+                setFoundFamilies(result.families);
+            } else {
+                toast({ title: "No Families Found", description: `The user ${data.email} is not part of any families.`, variant: "destructive" });
+            }
         } else {
-            toast({ title: "Could Not Join Family", description: result.message, variant: "destructive" });
-            setIsSubmitting(false);
+            toast({ title: "Could Not Find Families", description: result.message, variant: "destructive" });
         }
     } catch (error: any) {
         toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+        setIsFindingFamilies(false);
+    }
+  }
+
+  async function onJoinFamily(familyId: string) {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    setIsJoiningFamily(prev => ({ ...prev, [familyId]: true }));
+    setIsSubmitting(true);
+    try {
+      const result = await joinFamilyByIdAction({ familyId, joiningUserId: user.uid });
+      if (result.success) {
+        toast({ title: "Joined Family!", description: result.message });
+        await finishOnboarding();
+      } else {
+        toast({ title: "Failed to Join", description: result.message, variant: "destructive" });
+        setIsJoiningFamily(prev => ({ ...prev, [familyId]: false }));
         setIsSubmitting(false);
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: `An unexpected error occurred: ${error.message}`, variant: "destructive" });
+      setIsJoiningFamily(prev => ({ ...prev, [familyId]: false }));
+      setIsSubmitting(false);
     }
   }
   
   const finishOnboarding = async () => {
     if (!user) return;
-    setIsSubmitting(true); // Keep submitting state
+    setIsSubmitting(true); 
     try {
         const userDocRef = doc(db, "users", user.uid);
         await updateDoc(userDocRef, { onboardingComplete: true });
@@ -154,11 +186,11 @@ export default function OnboardingFamilyPage() {
         <Card className="shadow-xl">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Search className="h-6 w-6 text-primary"/> Join an Existing Family</CardTitle>
-                <CardDescription>If a family member already has an account, you can join their family by entering their email address.</CardDescription>
+                <CardDescription>If a family member already has an account, you can find their families by entering their email address.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...joinForm}>
-                    <form onSubmit={joinForm.handleSubmit(onFamilyJoin)} className="space-y-6">
+                    <form onSubmit={joinForm.handleSubmit(onFindFamilies)} className="space-y-4">
                         <FormField
                             control={joinForm.control}
                             name="email"
@@ -172,11 +204,30 @@ export default function OnboardingFamilyPage() {
                                 </FormItem>
                             )}
                         />
-                        <Button type="submit" className="w-full" disabled={isSubmitting}>
-                            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Find & Join Family"}
+                        <Button type="submit" className="w-full" disabled={isFindingFamilies || isSubmitting}>
+                            {isFindingFamilies ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                            Find Families
                         </Button>
                     </form>
                 </Form>
+                {foundFamilies.length > 0 && (
+                  <div className="mt-6 space-y-3 pt-4 border-t">
+                    <h3 className="text-sm font-semibold">Families found for {searchedEmail}:</h3>
+                    {foundFamilies.map(family => (
+                        <Card key={family.id} className="bg-muted/50">
+                            <CardContent className="p-3 flex justify-between items-center">
+                                <div>
+                                    <p className="font-medium">{family.name}</p>
+                                    <p className="text-xs text-muted-foreground">{family.memberIds.length} member(s)</p>
+                                </div>
+                                <Button size="sm" onClick={() => onJoinFamily(family.id)} disabled={isSubmitting}>
+                                    {isJoiningFamily[family.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Join"}
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ))}
+                  </div>  
+                )}
             </CardContent>
         </Card>
         

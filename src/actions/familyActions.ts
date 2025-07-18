@@ -300,43 +300,68 @@ export async function getFamilyManagementDataAction(
     }
 }
 
-interface FindAndJoinFamilyInput {
-    joiningUserId: string;
+interface FindFamiliesByMemberEmailInput {
     memberEmail: string;
 }
 
-export async function findAndJoinFamilyByMemberEmailAction(input: FindAndJoinFamilyInput): Promise<{ success: boolean; message: string; }> {
-    const { joiningUserId, memberEmail } = input;
-    if (!joiningUserId || !memberEmail) {
-        return { success: false, message: "User ID and member email are required." };
+export async function findFamiliesByMemberEmailAction(input: FindFamiliesByMemberEmailInput): Promise<{ success: boolean; families?: FamilyData[]; message: string; }> {
+    const { memberEmail } = input;
+    if (!memberEmail) {
+        return { success: false, message: "Member email is required." };
     }
 
-    const batch = db.batch();
-    const usersRef = db.collection('users');
-
     try {
-        // Find the existing member by email
+        const usersRef = db.collection('users');
         const memberQuery = usersRef.where("email", "==", memberEmail.trim().toLowerCase());
         const memberQuerySnapshot = await memberQuery.get();
+        
         if (memberQuerySnapshot.empty) {
             return { success: false, message: `No user found with the email: ${memberEmail}` };
         }
+        
         const memberDoc = memberQuerySnapshot.docs[0];
         const memberProfile = memberDoc.data() as UserProfileData;
 
-        // Check if the existing member is part of any families
         const familyIds = memberProfile.familyIds || [];
         if (familyIds.length === 0) {
-            return { success: false, message: `${memberProfile.fullName} is not part of any family.` };
+            return { success: true, families: [], message: `${memberProfile.fullName} is not part of any family.` };
         }
-
-        // For simplicity, join the first family found.
-        const familyIdToJoin = familyIds[0];
-        const familyDocRef = db.collection('families').doc(familyIdToJoin);
-        const familyDocSnap = await familyDocRef.get();
         
+        // Fetch all families the user is a member of
+        const familyRefs = familyIds.map(id => db.collection('families').doc(id));
+        const familyDocs = await db.getAll(...familyRefs);
+
+        const families = familyDocs
+            .filter(doc => doc.exists)
+            .map(doc => toSerializableObject({ id: doc.id, ...doc.data() }) as FamilyData);
+
+        return { success: true, families, message: `Found ${families.length} families.` };
+
+    } catch (error: any) {
+        return handleActionError(error, 'findFamiliesByMemberEmailAction');
+    }
+}
+
+
+interface JoinFamilyByIdInput {
+    joiningUserId: string;
+    familyId: string;
+}
+
+export async function joinFamilyByIdAction(input: JoinFamilyByIdInput): Promise<{ success: boolean; message: string; }> {
+    const { joiningUserId, familyId } = input;
+    if (!joiningUserId || !familyId) {
+        return { success: false, message: "User ID and Family ID are required." };
+    }
+
+    const batch = db.batch();
+    const familyDocRef = db.collection('families').doc(familyId);
+    const joiningUserRef = db.collection('users').doc(joiningUserId);
+
+    try {
+        const familyDocSnap = await familyDocRef.get();
         if (!familyDocSnap.exists) {
-            return { success: false, message: `The family associated with that user could not be found.` };
+            return { success: false, message: `The selected family could not be found.` };
         }
         const familyData = familyDocSnap.data() as FamilyData;
 
@@ -346,9 +371,8 @@ export async function findAndJoinFamilyByMemberEmailAction(input: FindAndJoinFam
         });
 
         // Add the family ID to the new user's profile
-        const joiningUserRef = usersRef.doc(joiningUserId);
         batch.update(joiningUserRef, {
-            familyIds: FieldValue.arrayUnion(familyIdToJoin)
+            familyIds: FieldValue.arrayUnion(familyId)
         });
 
         await batch.commit();
@@ -356,6 +380,6 @@ export async function findAndJoinFamilyByMemberEmailAction(input: FindAndJoinFam
         return { success: true, message: `Successfully joined the family: "${familyData.name}".` };
 
     } catch (error: any) {
-        return handleActionError(error, 'findAndJoinFamilyByMemberEmailAction');
+        return handleActionError(error, 'joinFamilyByIdAction');
     }
 }
