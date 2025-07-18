@@ -92,7 +92,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Set or clear the session cookie for server components
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
-        document.cookie = `session=${token};path=/;max-age=3600`; // expires in 1 hour
+        // Add SameSite=Strict and Secure attributes for better security and reliability
+        document.cookie = `session=${token};path=/;max-age=3600;SameSite=Strict;Secure`;
       } else {
         document.cookie = 'session=;path=/;max-age=0'; // clear cookie
       }
