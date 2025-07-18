@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { ParentApprovalsClient } from '@/components/parent/ParentApprovalsClient';
@@ -13,7 +14,7 @@ import { UserRole } from '@/types';
 
 async function getUserId() {
   const cookieStore = cookies();
-  const token = cookieStore.get('session'); 
+  const token = cookieStore.get('session');
   if (!token?.value) return null;
   try {
     const decodedToken = await admin.auth().verifyIdToken(token.value);
@@ -34,7 +35,7 @@ async function getUserRole(userId: string) {
 
 export default async function ParentApprovalsPage() {
   const userId = await getUserId();
-  
+
   if (!userId) {
     return (
         <div className="min-h-screen w-full overflow-x-hidden">
@@ -85,15 +86,17 @@ export default async function ParentApprovalsPage() {
 
   const result = await getParentApprovalsPageData(userId);
 
-  if (!result.success || !result.data) {
-    return (
-      <div className="min-h-screen w-full overflow-x-hidden">
-        <div className="px-4 py-8">
-            <PageHeader
-                title="Parental Controls"
-                description="Review pending requests, manage your driver lists, and add students."
-            />
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)]">
+  return (
+    <div className="min-h-screen w-full overflow-x-hidden">
+      <div className="px-4 py-8">
+        <PageHeader
+          title="Parental Controls"
+          description="Review pending requests, manage your driver lists, and add students."
+        />
+        {result.success && result.data ? (
+           <ParentApprovalsClient initialData={result.data} />
+        ) : (
+             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)]">
                 <Card className="text-center w-full max-w-md">
                      <CardHeader>
                         <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
@@ -106,18 +109,8 @@ export default async function ParentApprovalsPage() {
                     </CardContent>
                 </Card>
             </div>
-        </div>
+        )}
       </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen w-full overflow-x-hidden">
-        <PageHeader
-          title="Parental Controls"
-          description="Review pending requests, manage your driver lists, and add students."
-        />
-        <ParentApprovalsClient initialData={result.data} />
     </div>
   );
 }
