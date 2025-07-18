@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -66,9 +66,18 @@ export default function AppLayout({
           <div className="flex flex-col min-h-screen">
             <AppHeader />
             <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background">
-              <ProtectedContent>
-                {children}
-              </ProtectedContent>
+              <Suspense fallback={
+                <div className="flex h-full w-full items-center justify-center p-8 min-h-[calc(100vh-200px)]">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-muted-foreground">Loading Page...</p>
+                  </div>
+                </div>
+              }>
+                <ProtectedContent>
+                  {children}
+                </ProtectedContent>
+              </Suspense>
             </main>
           </div>
         </SidebarInset>
