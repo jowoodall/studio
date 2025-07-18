@@ -88,11 +88,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(firebaseUser); // Set the user immediately
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
-        document.cookie = `session=${token};path=/;max-age=3600;SameSite=Strict;Secure`;
+        // Use SameSite=None; Secure for cross-site/iframe contexts like Firebase Studio previews.
+        document.cookie = `session=${token};path=/;max-age=3600;SameSite=None;Secure`;
         await fetchUserProfile(firebaseUser); // Wait for profile to load
       } else {
-        document.cookie = 'session=;path=/;max-age=0';
+        document.cookie = 'session=;path=/;max-age=0;SameSite=None;Secure';
         setUserProfile(null);
+        setSubscriptionTier(SubscriptionTier.FREE);
         setIsLoadingProfile(false);
       }
       setLoading(false); // Only set loading to false after everything is done
