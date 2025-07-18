@@ -5,18 +5,16 @@ import admin from 'firebase-admin';
 if (!admin.apps.length) {
   try {
     // In a Google Cloud environment (like App Hosting), the SDK can automatically
-    // discover credentials, but we are explicitly setting the Project ID to
-    // resolve an "audience" claim mismatch between the client and server.
+    // discover credentials. Explicitly setting the Project ID ensures alignment
+    // between the client and server Firebase contexts, preventing auth errors.
     admin.initializeApp({
-      // This MUST match the client-side `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-      // The error message indicates the client is using 'rydzconnect'.
-      projectId: 'rydzconnect',
- });
-    console.log('[Firebase Admin] Initialized successfully using specified project ID:', 'rydzconnect');
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'rydzconnect',
+    });
+    console.log('[Firebase Admin] Initialized successfully.');
   } catch (error) {
     console.error('[Firebase Admin] CRITICAL: Failed to initialize Firebase Admin SDK:', error);
     // In a local development environment, this can happen if you haven't configured
-    // Application Default Credentials. You may need to run 'gcloud auth application-default login'
+    // Application Default Credentials. Run 'gcloud auth application-default login'
     // in your terminal to authenticate your local environment.
   }
 }
