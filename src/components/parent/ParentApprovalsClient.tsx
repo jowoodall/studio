@@ -232,13 +232,13 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                   <div key={driver.uid} className="p-3 border rounded-lg shadow-sm">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 min-w-0">
-                          <Avatar className="h-12 w-12">
+                          <Avatar className="h-12 w-12 flex-shrink-0">
                               <AvatarImage src={driver.avatarUrl} alt={driver.fullName} data-ai-hint={driver.dataAiHint} />
                               <AvatarFallback>{driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline truncate block">{driver.fullName}</Link>
-                              <p className="text-xs text-muted-foreground truncate">{driver.email}</p>
+                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline truncate block break-words">{driver.fullName}</Link>
+                              <p className="text-xs text-muted-foreground truncate break-words">{driver.email}</p>
                           </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -283,12 +283,12 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
             return (
               <Card key={key} className="shadow-lg border-2 border-primary/50">
                 <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                  <Avatar className="h-16 w-16">
+                  <Avatar className="h-16 w-16 flex-shrink-0">
                     <AvatarImage src={request.driver.avatarUrl || `https://placehold.co/100x100.png?text=${request.driver.fullName.split(" ").map(n=>n[0]).join("")}`} alt={request.driver.fullName} data-ai-hint={request.driver.dataAiHint || "driver photo"} />
-                    <AvatarFallback>{request.driver.fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                    <AvatarFallback>{request.driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="font-headline text-xl truncate">{request.driver.fullName}</CardTitle>
+                    <CardTitle className="font-headline text-xl truncate break-words">{request.driver.fullName}</CardTitle>
                     <CardDescription>Request to drive <span className="font-semibold text-foreground">{request.student.fullName}</span></CardDescription>
                   </div>
                   <Button variant="outline" size="sm" asChild className="flex-shrink-0">
@@ -296,7 +296,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="p-3 bg-muted/50 rounded-md border text-sm space-y-1">
+                  <div className="p-3 bg-muted/50 rounded-md border text-sm space-y-1 break-words">
                     <p><span className="font-semibold">Ryd To:</span> {request.rydDetails.eventName}</p>
                     <p><span className="font-semibold">At:</span> {request.rydDetails.destination}</p>
                   </div>
@@ -304,13 +304,13 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                 <CardFooter className="flex flex-col items-start gap-4">
                     <div className="text-xs text-muted-foreground w-full">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
                     <div className="flex flex-col sm:flex-row gap-2 self-stretch sm:self-end">
-                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} size="sm">
+                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} className="min-h-[44px]">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Reject
                         </Button>
-                        <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction} size="sm">
+                        <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction} className="min-h-[44px]">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Approve Once
                         </Button>
-                        <Button onClick={() => handleApproval(request, 'approve_permanently')} className="bg-green-600 hover:bg-green-700" disabled={isLoadingAction} size="sm">
+                        <Button onClick={() => handleApproval(request, 'approve_permanently')} className="bg-green-600 hover:bg-green-700 min-h-[44px]" disabled={isLoadingAction}>
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />} Approve & Add
                         </Button>
                     </div>
@@ -361,13 +361,13 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                         <ul className="space-y-2">
                             {pageData.managedStudents.map((student) => (
                                 <li key={student.uid} className="text-sm flex items-center gap-2 p-2 bg-muted/50 rounded-md">
-                                  <Avatar className="h-8 w-8">
+                                  <Avatar className="h-8 w-8 flex-shrink-0">
                                       <AvatarImage src={student.avatarUrl} alt={student.fullName} data-ai-hint={student.dataAiHint} />
                                       <AvatarFallback>{student.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0">
-                                    <span className="font-medium truncate block">{student.fullName}</span>
-                                    <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                                    <span className="font-medium truncate block break-words">{student.fullName}</span>
+                                    <p className="text-xs text-muted-foreground truncate break-words">{student.email}</p>
                                   </div>
                                 </li> 
                             ))}
