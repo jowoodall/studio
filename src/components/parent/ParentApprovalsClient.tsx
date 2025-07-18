@@ -237,8 +237,8 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                               <AvatarFallback>{driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline truncate block break-words">{driver.fullName}</Link>
-                              <p className="text-xs text-muted-foreground truncate break-words">{driver.email}</p>
+                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline break-words truncate block">{driver.fullName}</Link>
+                              <p className="text-xs text-muted-foreground break-words truncate">{driver.email}</p>
                           </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -288,7 +288,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                     <AvatarFallback>{request.driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="font-headline text-xl truncate break-words">{request.driver.fullName}</CardTitle>
+                    <CardTitle className="font-headline text-xl break-words truncate">{request.driver.fullName}</CardTitle>
                     <CardDescription>Request to drive <span className="font-semibold text-foreground">{request.student.fullName}</span></CardDescription>
                   </div>
                   <Button variant="outline" size="sm" asChild className="flex-shrink-0">
@@ -303,8 +303,8 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                 </CardContent>
                 <CardFooter className="flex flex-col items-start gap-4">
                     <div className="text-xs text-muted-foreground w-full">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
-                    <div className="flex flex-col sm:flex-row gap-2 self-stretch sm:self-end">
-                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} className="min-h-[44px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 w-full">
+                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} className="min-h-[44px] sm:col-span-2 md:col-span-1">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Reject
                         </Button>
                         <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction} className="min-h-[44px]">
