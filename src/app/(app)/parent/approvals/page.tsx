@@ -113,15 +113,11 @@ export default async function ParentApprovalsPage() {
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden">
-      <div className="px-4 py-8">
         <PageHeader
           title="Parental Controls"
           description="Review pending requests, manage your driver lists, and add students."
         />
-        <div className="w-full">
-          <ParentApprovalsClient initialData={result.data} />
-        </div>
-      </div>
+        <ParentApprovalsClient initialData={result.data} />
     </div>
   );
 }
