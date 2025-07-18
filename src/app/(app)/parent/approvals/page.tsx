@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PageHeader } from "@/components/shared/page-header";
 import { ParentApprovalsClient } from '@/components/parent/ParentApprovalsClient';
@@ -38,19 +37,23 @@ export default async function ParentApprovalsPage() {
   
   if (!userId) {
     return (
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] px-4 py-8">
-            <Card className="text-center w-full max-w-md">
-                <CardHeader>
-                    <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-                    <CardTitle className="mt-4">Authentication Required</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-muted-foreground leading-relaxed">You must be logged in to view this page.</p>
-                    <Button asChild className="mt-6 min-h-[44px]">
-                        <Link href="/login">Log In</Link>
-                    </Button>
-                </CardContent>
-            </Card>
+        <div className="min-h-screen w-full overflow-x-hidden">
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] px-4 py-8">
+                <Card className="text-center w-full max-w-md">
+                    <CardHeader>
+                        <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+                        <CardTitle className="mt-4 text-lg sm:text-xl">Authentication Required</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-muted-foreground leading-relaxed text-sm sm:text-base">
+                            You must be logged in to view this page.
+                        </p>
+                        <Button asChild className="mt-6 min-h-[44px] w-full sm:w-auto">
+                            <Link href="/login">Log In</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
   }
@@ -58,23 +61,25 @@ export default async function ParentApprovalsPage() {
   const userRole = await getUserRole(userId);
   if (userRole !== UserRole.PARENT) {
       return (
-        <>
-            <PageHeader
-                title="Access Denied"
-                description="This area is restricted to parents."
-            />
-            <Card className="text-center py-8 shadow-md mx-auto max-w-md">
-                <CardHeader>
-                    <ShieldCheck className="mx-auto h-12 w-12 text-destructive" />
-                    <CardTitle className="mt-4 font-headline text-2xl">Parents Only</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <CardDescription className="leading-relaxed">
-                        The parental controls and driver approvals page is only available for users registered as a Parent or Guardian.
-                    </CardDescription>
-                </CardContent>
-            </Card>
-        </>
+        <div className="min-h-screen w-full overflow-x-hidden">
+            <div className="px-4 py-8">
+                <PageHeader
+                    title="Access Denied"
+                    description="This area is restricted to parents."
+                />
+                <Card className="text-center py-8 shadow-md mx-auto max-w-md">
+                    <CardHeader>
+                        <ShieldCheck className="mx-auto h-12 w-12 text-destructive" />
+                        <CardTitle className="mt-4 font-headline text-xl sm:text-2xl">Parents Only</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <CardDescription className="leading-relaxed text-sm sm:text-base">
+                            The parental controls and driver approvals page is only available for users registered as a Parent or Guardian.
+                        </CardDescription>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
       )
   }
 
@@ -82,33 +87,41 @@ export default async function ParentApprovalsPage() {
 
   if (!result.success || !result.data) {
     return (
-      <>
-        <PageHeader
-            title="Parental Controls"
-            description="Review pending requests, manage your driver lists, and add students."
-        />
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)] px-4 py-8">
-            <Card className="text-center w-full max-w-md">
-                 <CardHeader>
-                    <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-                    <CardTitle className="mt-4">Error Loading Page Data</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{result.message || "An unknown error occurred."}</p>
-                </CardContent>
-            </Card>
+      <div className="min-h-screen w-full overflow-x-hidden">
+        <div className="px-4 py-8">
+            <PageHeader
+                title="Parental Controls"
+                description="Review pending requests, manage your driver lists, and add students."
+            />
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-300px)]">
+                <Card className="text-center w-full max-w-md">
+                     <CardHeader>
+                        <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+                        <CardTitle className="mt-4 text-lg sm:text-xl">Error Loading Page Data</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-muted-foreground whitespace-pre-line leading-relaxed text-sm sm:text-base break-words">
+                            {result.message || "An unknown error occurred."}
+                        </p>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <PageHeader
-        title="Parental Controls"
-        description="Review pending requests, manage your driver lists, and add students."
-      />
-      <ParentApprovalsClient initialData={result.data} />
-    </>
+    <div className="min-h-screen w-full overflow-x-hidden">
+      <div className="px-4 py-8">
+        <PageHeader
+          title="Parental Controls"
+          description="Review pending requests, manage your driver lists, and add students."
+        />
+        <div className="w-full overflow-x-hidden">
+          <ParentApprovalsClient initialData={result.data} />
+        </div>
+      </div>
+    </div>
   );
 }
