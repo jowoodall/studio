@@ -118,7 +118,7 @@ export default async function ParentApprovalsPage() {
           title="Parental Controls"
           description="Review pending requests, manage your driver lists, and add students."
         />
-        <div className="w-full overflow-x-hidden">
+        <div className="w-full">
           <ParentApprovalsClient initialData={result.data} />
         </div>
       </div>

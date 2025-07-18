@@ -230,18 +230,18 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
 
               return (
                   <div key={driver.uid} className="p-3 border rounded-lg shadow-sm">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-4 min-w-0">
                           <Avatar className="h-12 w-12 flex-shrink-0">
                               <AvatarImage src={driver.avatarUrl} alt={driver.fullName} data-ai-hint={driver.dataAiHint} />
                               <AvatarFallback>{driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline break-words truncate block">{driver.fullName}</Link>
-                              <p className="text-xs text-muted-foreground break-words truncate">{driver.email}</p>
+                              <Link href={`/profile/view/${driver.uid}`} className="font-medium hover:underline break-words">{driver.fullName}</Link>
+                              <p className="text-xs text-muted-foreground break-words">{driver.email}</p>
                           </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-center">
                           {listType === 'approved' && (
                             <Button variant="ghost" size="sm" onClick={() => handleFindDriverByEmail(driver.email)}>
                                 <UserCog className="mr-2 h-4 w-4" /> Edit
@@ -282,8 +282,8 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
             const isLoadingAction = isProcessing[key];
             return (
               <Card key={key} className="shadow-lg border-2 border-primary/50">
-                <CardHeader className="relative block sm:flex sm:items-start sm:gap-4">
-                  <div className="flex items-center gap-4">
+                <CardHeader className="relative block sm:flex sm:flex-col">
+                  <div className="flex w-full flex-col sm:flex-row items-start sm:items-center gap-4">
                     <Avatar className="h-16 w-16 flex-shrink-0">
                       <AvatarImage src={request.driver.avatarUrl || `https://placehold.co/100x100.png?text=${request.driver.fullName.split(" ").map(n=>n[0]).join("")}`} alt={request.driver.fullName} data-ai-hint={request.driver.dataAiHint || "driver photo"} />
                       <AvatarFallback>{request.driver.fullName.split(" ").map(n=>n[0]).join("")}</AvatarFallback>
@@ -292,9 +292,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                       <CardTitle className="font-headline text-xl break-words">{request.driver.fullName}</CardTitle>
                       <CardDescription>Request to drive <span className="font-semibold text-foreground">{request.student.fullName}</span></CardDescription>
                     </div>
-                  </div>
-                  <div className="mt-4 sm:mt-0 sm:absolute sm:top-6 sm:right-6">
-                    <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
+                    <Button variant="outline" size="sm" asChild className="w-full sm:w-auto mt-2 sm:mt-0">
                       <Link href={`/profile/view/${request.driver.uid}`}><UserCircle className="mr-2 h-4 w-4" /> View Profile</Link>
                     </Button>
                   </div>
@@ -307,8 +305,8 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                 </CardContent>
                 <CardFooter className="flex flex-col items-start gap-4">
                     <div className="text-xs text-muted-foreground w-full">Approve this driver just for this ryd, or add them to your permanent list of approved drivers.</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 w-full">
-                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} className="min-h-[44px] sm:col-span-2 md:col-span-1">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 w-full">
+                        <Button variant="destructive" onClick={() => handleApproval(request, 'reject')} disabled={isLoadingAction} className="min-h-[44px]">
                             {isLoadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Reject
                         </Button>
                         <Button variant="outline" onClick={() => handleApproval(request, 'approve_once')} disabled={isLoadingAction} className="min-h-[44px]">
