@@ -85,20 +85,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      setUser(firebaseUser);
-      await fetchUserProfile(firebaseUser);
-
-      // Set or clear the session cookie for server components
+      setUser(firebaseUser); // Set the user immediately
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
-        // Add SameSite=Strict and Secure attributes for better security and reliability
         document.cookie = `session=${token};path=/;max-age=3600;SameSite=Strict;Secure`;
+        await fetchUserProfile(firebaseUser); // Wait for profile to load
       } else {
-        document.cookie = 'session=;path=/;max-age=0'; // clear cookie
+        document.cookie = 'session=;path=/;max-age=0';
+        setUserProfile(null);
+        setIsLoadingProfile(false);
       }
-      
-      setLoading(false);
+      setLoading(false); // Only set loading to false after everything is done
     });
     return () => unsubscribe();
   }, [fetchUserProfile]);
