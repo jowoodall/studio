@@ -133,7 +133,10 @@ export default function OnboardingFamilyPage() {
     try {
         const userDocRef = doc(db, "users", user.uid);
         await updateDoc(userDocRef, { onboardingComplete: true });
+        
+        // Explicitly wait for the user profile to refresh before navigating
         await refreshUserProfile(); 
+        
         toast({
             title: "Setup Complete!",
             description: "You're all set to start using MyRydz.",
