@@ -1,6 +1,4 @@
 
-'use client';
-
 import React from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { AuthProvider } from '@/context/AuthContext';
