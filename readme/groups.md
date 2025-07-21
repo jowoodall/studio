@@ -4,7 +4,7 @@ This document explains how to create, manage, and interact with carpool groups i
 
 ## What are Groups?
 
-Groups are private collections of users (e.g., parents of a soccer team, members of a study club) that make it easy to coordinate rydz for specific events. When an event is associated with a group, all members of that group can see the event and coordinate rydz for it.
+Groups are private collections of users (e.g., a soccer team, members of a study club, or just a group of friends) that make it easy to coordinate rydz for specific events. When an event is associated with a group, all members of that group can see the event and coordinate rydz for it.
 
 ## Creating a New Group
 
