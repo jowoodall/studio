@@ -4,7 +4,7 @@ This document explains how to create, manage, and interact with events in the My
 
 ## What are Events?
 
-Events are the destinations for which users coordinate rydz. An event can be anything from a soccer game to a school play or a study session. Creating an event allows users to see a centralized point for carpooling.
+Events are the destinations for which users coordinate rydz. An event can be anything from a soccer game or practice to a school play or a study session. Creating an event allows users to see a centralized point for carpooling.
 
 ## Creating a New Event
 
