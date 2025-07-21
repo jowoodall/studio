@@ -5,6 +5,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { siteConfig } from '@/config/site';
 import { GoogleAnalytics } from '@/components/analytics/google-analytics';
 
+// Add these exports to prevent prerendering
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: {
     default: siteConfig.name,
