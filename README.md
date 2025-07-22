@@ -1,10 +1,27 @@
-# Firebase Studio
+# MyRydz
 
-This is a NextJS starter in Firebase Studio.
+**Smarter, Safer School Carpooling.**
 
-To get started, take a look at src/app/page.tsx.
+RydzConnect simplifies coordinating rydz for your kids' events. Connect with trusted groups, manage schedules, and ensure everyone gets where they need to go, safely.
 
-## reCAPTCHA Setup (for Sign Up Page Security)
+## Key Features
+
+- **Effortless Rydz**: Request or offer rydz for school, sports, and community events with just a few clicks.
+- **Trusted Groups**: Create and join private carpool groups with parents and students you know and trust.
+- **Real-Time Tracking**: Gain peace of mind with live map tracking for all active rydz.
+- **Parental Controls**: A robust driver approval system ensures parents have the final say on who drives their children.
+
+## Getting Started
+
+To get started with MyRydz, simply [sign up for an account](https://studio--rydzconnect.us-central1.hosted.app/signup) and begin exploring!
+
+---
+
+## Developer Setup
+
+This section contains information for developers running the project locally.
+
+### reCAPTCHA Setup (for Sign Up Page Security)
 
 This project uses Google reCAPTCHA v3 to protect the sign-up page from bots. To enable this, you need to generate a "Site Key" and a "Secret Key" and add them to your environment variables.
 
@@ -38,9 +55,7 @@ This project uses Google reCAPTCHA v3 to protect the sign-up page from bots. To 
 
 After adding the keys, restart your development server for the changes to take effect.
 
-## Troubleshooting
-
-### Google Maps "InvalidKeyMapError", Map Not Loading, or Markers Not Appearing
+### Troubleshooting: Google Maps API
 
 If the interactive map components are not loading, you see an `InvalidKeyMapError`, or markers for addresses fail to appear, it usually means there's an issue with your Google Maps API Key configuration.
 
