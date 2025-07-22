@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { HelpCircle, Bot, User, Send, Loader2 } from 'lucide-react';
+import { HelpCircle, Bot, User, Send, Loader2, MessageSquarePlus } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { askHelpAssistant } from '@/ai/flows/help-assistant';
@@ -26,7 +26,7 @@ export function HelpAssistant() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
   const pathname = usePathname();
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -37,7 +37,7 @@ export function HelpAssistant() {
   
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-        addMessage('assistant', `Hi ${userProfile?.fullName?.split(' ')[0] || ''}! I'm the RydzConnect AI assistant. How can I help you today?`);
+        addMessage('assistant', `Hi ${userProfile?.fullName?.split(' ')[0] || ''}! I'm the RydzConnect AI assistant. You can ask me a question or provide feedback about the app.`);
     }
   }, [isOpen]);
 
@@ -62,6 +62,7 @@ export function HelpAssistant() {
             question: userMessage,
             userRole: userProfile?.role || 'unknown',
             currentPage: pathname,
+            userId: user?.uid
         });
         addMessage('assistant', result.answer);
     } catch (error: any) {
@@ -82,18 +83,19 @@ export function HelpAssistant() {
       <Button
         variant="default"
         size="icon"
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50"
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50 flex items-center justify-center flex-col gap-0.5"
         onClick={() => setIsOpen(true)}
       >
-        <HelpCircle className="h-7 w-7" />
-        <span className="sr-only">Open Help Assistant</span>
+        <MessageSquarePlus className="h-6 w-6" />
+        <span className="text-[10px]">Help</span>
+        <span className="sr-only">Open Help & Feedback</span>
       </Button>
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <SheetContent className="flex flex-col">
           <SheetHeader>
-            <SheetTitle>RydzConnect Help Assistant</SheetTitle>
+            <SheetTitle>Help & Feedback</SheetTitle>
             <SheetDescription>
-              Ask me anything about the app, and I'll do my best to help!
+              Ask a question or share your feedback to help us improve.
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-hidden">
@@ -148,7 +150,7 @@ export function HelpAssistant() {
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask a question..."
+                placeholder="Ask a question or give feedback..."
                 disabled={isLoading}
               />
               <Button type="submit" disabled={isLoading || !input.trim()}>
