@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -137,7 +138,7 @@ export default function RydHistoryPage() {
                 </TableHeader>
                 <TableBody>
                     {rydHistory.map((ryd) => {
-                        const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp) : null;
+                        const rydDate = ryd.rydTimestamp ? new Date(ryd.rydTimestamp as any) : null;
                         const driverName = ryd.driverProfile?.fullName || "N/A";
                         const isDriver = !!ryd.isDriver;
                         
@@ -204,3 +205,4 @@ export default function RydHistoryPage() {
     </>
   );
 }
+

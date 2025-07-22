@@ -62,3 +62,16 @@ Once a passenger requests to join a driver's ryd, a two-step approval process be
 -   **Trigger:** Once a request is approved by a parent (or if no parental approval is needed), a notification is sent to the driver.
 -   **Action:** The driver can then view the passenger's request on the "Ryd Tracking" page. They can choose to **Approve** or **Reject** the passenger.
 -   **Confirmation:** The passenger receives a final notification confirming whether they have been added to the ryd.
+
+---
+
+## Ryd Process Stages
+
+An active ryd goes through several stages from planning to completion.
+
+-   **Awaiting Passengers / Planning:** This is the initial stage where a driver has offered a ryd but is still waiting for passengers to join, or is actively managing join requests.
+-   **Ryd Planned:** The driver has confirmed the ryd plan. At this point, no new passengers can join.
+-   **In Progress - Pickup:** The driver has started the ryd and is now on their way to pick up the passengers.
+-   **In Progress - En Route:** All passengers have been picked up, and the driver is now en route to the final destination.
+-   **Completed:** The driver has dropped off all passengers and marked the ryd as complete. Passengers will be prompted to rate their driver.
+-   **Cancelled:** The ryd has been cancelled by either the driver or the system and will no longer proceed.
