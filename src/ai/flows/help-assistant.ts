@@ -54,13 +54,13 @@ const helpAssistantFlow = ai.defineFlow(
       
       User input: "${input.question}"`,
       output: {
-        schema: z.enum(['question', 'feedback']).nullable(),
+        schema: z.object({ intent: z.enum(['question', 'feedback']) }).nullable(),
       },
       model: 'googleai/gemini-2.0-flash', 
     });
     
     // If the model fails to classify, default to 'question' to be safe.
-    const intent = classification.output ?? 'question';
+    const intent = classification.output?.intent ?? 'question';
 
     // 2. Handle based on intent
     if (intent === 'feedback') {
