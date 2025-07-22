@@ -53,13 +53,16 @@ export function HelpAssistant() {
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
-    addMessage('user', userMessage);
+    const newMessages: Message[] = [...messages, { id: Date.now(), role: 'user', content: userMessage }];
+    setMessages(newMessages);
+
     setInput('');
     setIsLoading(true);
 
     try {
         const result = await askHelpAssistant({
             question: userMessage,
+            conversationHistory: newMessages.map(m => ({ role: m.role, content: m.content })),
             userRole: userProfile?.role || 'unknown',
             currentPage: pathname,
             userId: user?.uid

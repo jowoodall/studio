@@ -18,6 +18,10 @@ import { saveFeedbackAction } from '@/actions/feedbackActions';
 // --- Input and Output Schemas ---
 const HelpAssistantInputSchema = z.object({
   question: z.string().describe("The user's question or feedback about the MyRydz app."),
+  conversationHistory: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).optional().describe('The full conversation history.'),
   userRole: z.string().optional().describe('The role of the user (e.g., parent, student).'),
   currentPage: z.string().optional().describe('The current page the user is on (e.g., /dashboard, /profile).'),
   userId: z.string().optional().describe('The UID of the logged-in user.'),
@@ -68,6 +72,7 @@ const helpAssistantFlow = ai.defineFlow(
       await saveFeedbackAction({
         userId: input.userId,
         feedbackText: input.question,
+        conversationHistory: input.conversationHistory || [],
         context: {
           page: input.currentPage,
           role: input.userRole,

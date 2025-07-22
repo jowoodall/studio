@@ -9,7 +9,8 @@ const db = admin.firestore();
 
 interface SaveFeedbackInput {
   userId?: string;
-  feedbackText: string;
+  feedbackText: string; // Keep this for the main text
+  conversationHistory: { role: 'user' | 'assistant'; content: string }[]; // Add conversation history
   context: {
     page?: string;
     role?: string;
@@ -19,7 +20,7 @@ interface SaveFeedbackInput {
 export async function saveFeedbackAction(
   input: SaveFeedbackInput
 ): Promise<{ success: boolean; message: string; feedbackId?: string }> {
-  const { userId, feedbackText, context } = input;
+  const { userId, feedbackText, conversationHistory, context } = input;
 
   if (!feedbackText.trim()) {
     return { success: false, message: 'Feedback text cannot be empty.' };
@@ -42,13 +43,14 @@ export async function saveFeedbackAction(
       userId: userId || null,
       userEmail: userEmail,
       feedbackText: feedbackText.trim(),
+      conversationHistory: conversationHistory || [], // Save the array of messages
       context: {
         page: context.page || 'unknown',
         role: context.role || 'unknown',
-        userAgent: 'server-action', // In a real app you might pass this from client
+        userAgent: 'server-action', 
       },
       createdAt: FieldValue.serverTimestamp(),
-      status: 'new', // e.g., new, reviewed, archived
+      status: 'new', 
     };
 
     const docRef = await db.collection('feedback').add(feedbackData);
