@@ -6,9 +6,10 @@ This document explains how to create and manage Family units in the MyRydz appli
 
 Families are different from carpool groups. While groups are for coordinating rydz for specific events, Families are designed for account management. A Family unit allows you to:
 
-*   Link multiple user accounts together (e.g., parents, children,grandparents, guardians).
+*   Link multiple user accounts together (e.g., parents, children, guardians).
 *   Manage a shared subscription plan for all members of the family (coming soon).
 *   Provide a centralized point for billing and premium feature access.
+*   Note: A user can be a member of multiple family units if needed.
 
 ## Creating a New Family
 

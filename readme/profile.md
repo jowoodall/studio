@@ -20,7 +20,7 @@ This section changes depending on your role and is crucial for enabling parental
 
 ### For Parents
 
-*   **Manage My Students:** Parents will see a section where they can enter their student's email address to link their accounts. This allows the parent to manage ryd approvals for that student.
+*   **Manage My Students:** Parents will see a section where they can enter their student's email address to link their accounts. This allows the parent to manage ryd approvals for that student. This functionality has been expanded in the "Parental Controls" page.
 
 ### For Students
 
