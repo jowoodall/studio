@@ -24,7 +24,7 @@ Would you be willing to sign up for a free account, try creating a few events or
 *   How easy (or difficult!) it is to use.
 
 **How to Get Started:**
-1.  **Sign Up Here:** [Link to your MyRydz signup page]
+1.  [**Sign Up Here:**](https://studio--rydzconnect.us-central1.hosted.app/)
 2.  Create an account (you can sign up as a Parent or Student).
 3.  Explore the app: try creating a group, adding an event, or requesting a ryd.
 
