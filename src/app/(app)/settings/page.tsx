@@ -17,7 +17,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserRole } from "@/types";
+import { UserRole, SubscriptionTier } from "@/types";
 import Link from "next/link";
 
 const notificationSettingsSchema = z.object({
@@ -58,7 +58,7 @@ const exampleLinkedApps = [
 
 
 export default function SettingsPage() {
-  const { user, userProfile, loading: authLoading, isLoadingProfile } = useAuth();
+  const { user, userProfile, loading: authLoading, isLoadingProfile, subscriptionTier } = useAuth();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -102,6 +102,7 @@ export default function SettingsPage() {
     }
   }
 
+  const isPremium = subscriptionTier === SubscriptionTier.PREMIUM || subscriptionTier === SubscriptionTier.ORGANIZATION;
 
   return (
     <>
@@ -195,32 +196,34 @@ export default function SettingsPage() {
 
         <UpdatePasswordForm />
         
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LinkIcon className="h-5 w-5" />
-              Linked Apps
-            </CardTitle>
-            <CardDescription>
-              Connect MyRydz with other apps you use to sync schedules and events.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {exampleLinkedApps.map((app) => (
-                <div key={app.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-                  <div>
-                    <p className="font-medium">{app.name}</p>
-                    <p className="text-xs text-muted-foreground">{app.description}</p>
+        {isPremium && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <LinkIcon className="h-5 w-5" />
+                Linked Apps
+              </CardTitle>
+              <CardDescription>
+                Connect MyRydz with other apps you use to sync schedules and events.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {exampleLinkedApps.map((app) => (
+                  <div key={app.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
+                    <div>
+                      <p className="font-medium">{app.name}</p>
+                      <p className="text-xs text-muted-foreground">{app.description}</p>
+                    </div>
+                    <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> 
+                      {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
+                    </Button>
                   </div>
-                  <Button variant={app.connected ? "outline" : "default"} size="sm" disabled> 
-                    {app.connected ? <><ExternalLinkIcon className="mr-2 h-3 w-3" />Manage</> : "Connect"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       </div>
     </>

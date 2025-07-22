@@ -9,7 +9,7 @@ Families are different from carpool groups. While groups are for coordinating ry
 *   Link multiple user accounts together (e.g., parents, children, guardians).
 *   Manage a shared subscription plan for all members of the family (coming soon).
 *   Provide a centralized point for billing and premium feature access.
-*   Note: A user can be a member of multiple family units if needed.
+*   Note: A user can be a member of multiple family units if needed.  In this case, the user will be granted the highest subscription plan of all their families.  For instance, if a user has 1 family on a free and a second on a premium, the user would have premium access.
 
 ## Creating a New Family
 
