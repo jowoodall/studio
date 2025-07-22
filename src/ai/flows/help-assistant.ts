@@ -59,7 +59,8 @@ const helpAssistantFlow = ai.defineFlow(
       model: 'googleai/gemini-2.0-flash', 
     });
     
-    const intent = classification.output;
+    // If the model fails to classify, default to 'question' to be safe.
+    const intent = classification.output ?? 'question';
 
     // 2. Handle based on intent
     if (intent === 'feedback') {
