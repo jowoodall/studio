@@ -16,7 +16,7 @@ import path from 'path';
 import { saveFeedbackAction } from '@/actions/feedbackActions';
 
 // --- Input and Output Schemas ---
-export const HelpAssistantInputSchema = z.object({
+const HelpAssistantInputSchema = z.object({
   question: z.string().describe("The user's question or feedback about the MyRydz app."),
   userRole: z.string().optional().describe('The role of the user (e.g., parent, student).'),
   currentPage: z.string().optional().describe('The current page the user is on (e.g., /dashboard, /profile).'),
@@ -24,7 +24,7 @@ export const HelpAssistantInputSchema = z.object({
 });
 export type HelpAssistantInput = z.infer<typeof HelpAssistantInputSchema>;
 
-export const HelpAssistantOutputSchema = z.object({
+const HelpAssistantOutputSchema = z.object({
   answer: z.string().describe("The helpful answer or acknowledgment to the user's input."),
 });
 export type HelpAssistantOutput = z.infer<typeof HelpAssistantOutputSchema>;
