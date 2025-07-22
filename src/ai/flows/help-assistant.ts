@@ -54,7 +54,7 @@ const helpAssistantFlow = ai.defineFlow(
       
       User input: "${input.question}"`,
       output: {
-        schema: z.enum(['question', 'feedback']),
+        schema: z.enum(['question', 'feedback']).nullable(),
       },
       model: 'googleai/gemini-2.0-flash', 
     });
