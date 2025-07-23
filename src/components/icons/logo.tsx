@@ -23,8 +23,7 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
       {...props}
     >
       <Image
-        key={Date.now()}
-        src="/logo.png" 
+        src={`/logo.png?v=${Date.now()}`} 
         alt="MyRydz Logo"
         fill 
         sizes="120px" // Updated sizes prop based on max CSS width of container
