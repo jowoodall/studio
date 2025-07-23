@@ -102,7 +102,7 @@ export function AppHeader() {
           {!hasMounted ? (
             // Render a static placeholder on the server and initial client render to avoid mismatch
              <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
-                <Logo iconOnly />
+                <Logo />
                 <span className="hidden font-bold sm:inline-block font-headline">{siteConfig.name}</span>
              </Link>
           ) : isMobile ? (
@@ -112,13 +112,13 @@ export function AppHeader() {
                  <Menu className="h-5 w-5" />
               </Button>
               <Link href="/dashboard" className="flex items-center space-x-2">
-                 <Logo iconOnly />
+                 <Logo />
               </Link>
             </>
           ) : (
             // Render desktop view only on the client
              <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
-                <Logo iconOnly />
+                <Logo />
                 <AppTitle />
              </Link>
           )}
