@@ -23,6 +23,7 @@ export function Logo({ className, iconOnly = false, ...props }: LogoProps) {
       {...props}
     >
       <Image
+        key={Date.now()}
         src="/logo.png" 
         alt="MyRydz Logo"
         fill 
