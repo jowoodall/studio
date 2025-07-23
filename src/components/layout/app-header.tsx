@@ -118,7 +118,7 @@ export function AppHeader() {
           ) : (
             // Render desktop view only on the client
              <Link href="/dashboard" className="hidden items-center space-x-2 md:flex">
-                <Logo />
+                {/* <Logo /> */}
                 <AppTitle />
              </Link>
           )}

@@ -16,7 +16,7 @@ export default function AuthLayout({
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-primary/10 via-background to-background p-4">
       <div className="mb-8">
         <Link href="/">
-          <Logo />
+          <Logo size={120} />
         </Link>
       </div>
       <div className="w-full max-w-md bg-card p-8 rounded-xl shadow-2xl">

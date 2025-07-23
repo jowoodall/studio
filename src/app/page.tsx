@@ -26,7 +26,7 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="container mx-auto flex h-20 items-center justify-between px-4 md:px-6">
-        <Logo />
+        {/* <Logo /> */}
         <nav className="flex items-center gap-4">
           <Button variant="ghost" asChild>
             <Link href="/login">Log In</Link>
@@ -40,7 +40,7 @@ export default function LandingPage() {
       </header>
       <main className="flex-1">
         <section className="container mx-auto flex flex-col items-center justify-center space-y-6 px-4 py-20 text-center md:px-6 md:py-32">
-          <Logo />
+          <Logo size={256}/>
           <h1 className="font-headline text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl text-primary">
             Smarter, Safer School Carpooling
           </h1>
