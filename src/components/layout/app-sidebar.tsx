@@ -119,7 +119,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" variant="sidebar" side="left" className="border-r">
       <SidebarHeader className="p-2 flex items-center justify-between">
-        {sidebarState === "expanded" && <Logo />}
+        {sidebarState === "expanded" && <Logo size={100} />}
         <SidebarTrigger className={cn(sidebarState === "collapsed" && "mx-auto")} />
       </SidebarHeader>
       <ScrollArea className="flex-1">

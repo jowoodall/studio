@@ -28,12 +28,13 @@ export default async function DashboardPage() {
         description="Manage your rydz, groups, and events all in one place."
       />
       
-      <div className="mb-8">
-        <MyNextRyd />
-      </div>
-
-      <div className="mb-8">
-        <WhatsNewFeed />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="lg:col-span-2">
+            <MyNextRyd />
+        </div>
+        <div>
+            <WhatsNewFeed />
+        </div>
       </div>
       
       <Separator className="my-8" />
