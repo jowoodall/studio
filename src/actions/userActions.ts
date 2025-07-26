@@ -24,10 +24,15 @@ const handleActionError = (error: any, actionName: string): { success: boolean, 
 interface AssociateStudentInput {
     parentUid: string;
     studentEmail: string;
+    forceCreate?: boolean; // New flag
 }
 
-export async function associateStudentWithParentAction(input: AssociateStudentInput): Promise<{ success: boolean; message: string }> {
-    const { parentUid, studentEmail } = input;
+export async function associateStudentWithParentAction(input: AssociateStudentInput): Promise<{ 
+    success: boolean; 
+    message: string;
+    userExists?: boolean;
+}> {
+    const { parentUid, studentEmail, forceCreate = false } = input;
     if (!parentUid || !studentEmail) {
         return { success: false, message: "Parent and student email are required." };
     }
@@ -48,7 +53,16 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
         let studentFullName: string;
 
         if (studentQuerySnapshot.empty) {
-            // User does not exist, create a placeholder/invited user
+            // User does not exist. Check if we should create them.
+            if (!forceCreate) {
+                return { 
+                    success: true, 
+                    message: `User with email ${normalizedEmail} does not exist. Please confirm you want to invite them.`,
+                    userExists: false
+                };
+            }
+            
+            // User does not exist and we are forcing creation.
             const newStudentRef = usersRef.doc(); // Let Firestore generate a new ID
             studentId = newStudentRef.id;
             studentFullName = "Invited User"; // Placeholder name
@@ -99,7 +113,11 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
             [`approvedDrivers.${parentUid}`]: FieldValue.arrayUnion(studentId)
         });
         
-        return { success: true, message: `${studentFullName} has been successfully linked. You may need to refresh to see the change.` };
+        return { 
+            success: true, 
+            message: `${studentFullName} has been successfully linked.`,
+            userExists: true 
+        };
 
     } catch (error) {
         return handleActionError(error, "associateStudentWithParentAction");

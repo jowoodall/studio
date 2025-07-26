@@ -18,6 +18,16 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ParentApprovalsClientProps {
     initialData: ParentApprovalsPageData;
@@ -39,6 +49,10 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
 
   const [studentEmailInput, setStudentEmailInput] = useState("");
   const [isAddingStudent, setIsAddingStudent] = useState(false);
+  
+  const [showInviteConfirmation, setShowInviteConfirmation] = useState(false);
+  const [emailToInvite, setEmailToInvite] = useState("");
+
 
   const refreshAllData = useCallback(async () => {
     if (!authUser) return;
@@ -168,12 +182,12 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
     setSelectedStudentsForApproval(prev => ({ ...prev, [studentId]: checked }));
   };
   
-  const handleAddStudent = async () => {
+  const handleAddStudent = async (forceCreate: boolean = false) => {
     if (!authUser) {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
-    const studentEmailToAdd = studentEmailInput.trim().toLowerCase();
+    const studentEmailToAdd = emailToInvite || studentEmailInput.trim().toLowerCase();
     if (studentEmailToAdd === "") {
       toast({ title: "Input Required", description: "Please enter the student's email address.", variant: "destructive" });
       return;
@@ -188,14 +202,20 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
       const result = await associateStudentWithParentAction({
         parentUid: authUser.uid,
         studentEmail: studentEmailToAdd,
+        forceCreate,
       });
 
-      if (result.success) {
+      if (!result.success) {
+        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
+      } else if (result.userExists === false) {
+        // User does not exist, show confirmation dialog
+        setEmailToInvite(studentEmailToAdd);
+        setShowInviteConfirmation(true);
+      } else {
+        // User exists and was added successfully
         toast({ title: "Student Associated", description: result.message });
         setStudentEmailInput("");
-        refreshAllData(); 
-      } else {
-        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
+        refreshAllData();
       }
     } catch (error: any) {
       toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
@@ -274,6 +294,26 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
   
     return (
     <>
+      <AlertDialog open={showInviteConfirmation} onOpenChange={setShowInviteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite New User?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The user with email <span className="font-semibold">{emailToInvite}</span> does not have a MyRydz account yet. Would you like to invite them? A placeholder account will be created so you can manage them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setEmailToInvite("")}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+                setShowInviteConfirmation(false);
+                handleAddStudent(true); // Call again with forceCreate flag
+            }}>
+              Yes, Invite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <h2 className="font-headline text-2xl font-semibold text-primary mb-4">Pending Driver Requests</h2>
       {pageData.pendingApprovals.length > 0 ? (
         <div className="space-y-6">
@@ -353,7 +393,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
                     onChange={(e) => setStudentEmailInput(e.target.value)}
                     className="flex-grow"
                     />
-                    <Button onClick={handleAddStudent} variant="outline" className="w-full sm:w-auto" disabled={isAddingStudent}>
+                    <Button onClick={() => handleAddStudent(false)} variant="outline" className="w-full sm:w-auto" disabled={isAddingStudent}>
                         {isAddingStudent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Add Student
                     </Button>
                 </div>
