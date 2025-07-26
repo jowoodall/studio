@@ -80,7 +80,7 @@ export interface UserProfileData {
   role: UserRole;
   status: UserStatus;
   invitedBy?: string; // UID of the user who invited them
-  subscriptionTier: SubscriptionTier;
+  subscriptionTier?: SubscriptionTier;
   avatarUrl?: string;
   dataAiHint?: string;
   bio?: string;

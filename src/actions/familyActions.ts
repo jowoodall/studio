@@ -128,14 +128,13 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                     newMemberId = newPlaceholderRef.id;
                     userFullName = "Invited User";
                     
-                    const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
+                    const newPlaceholderProfile: Omit<UserProfileData, 'uid' | 'subscriptionTier'> = {
                         fullName: userFullName,
                         email: normalizedEmail,
                         role: UserRole.STUDENT, // Default role for invited users
                         status: UserStatus.INVITED,
                         invitedBy: actingUserId,
                         onboardingComplete: false,
-                        subscriptionTier: SubscriptionTier.FREE,
                         createdAt: FieldValue.serverTimestamp() as any,
                         familyIds: [familyId], // Pre-associate the family
                          // Initialize other fields
@@ -292,7 +291,7 @@ export async function getFamilyManagementDataAction(
         const familyDocRef = db.collection('families').doc(familyId);
         const familyDocSnap = await familyDocRef.get();
 
-        if (!familyDocSnap.exists) {
+        if (!familyDocSnap.exists()) {
             return { success: false, message: `Family with ID "${familyId}" not found.` };
         }
 

@@ -53,14 +53,13 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
             studentId = newStudentRef.id;
             studentFullName = "Invited User"; // Placeholder name
 
-            const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
+            const newPlaceholderProfile: Omit<UserProfileData, 'uid' | 'subscriptionTier'> = {
               fullName: studentFullName,
               email: normalizedEmail,
               role: UserRole.STUDENT,
               status: UserStatus.INVITED, // Set status to invited
               invitedBy: parentUid,
               onboardingComplete: false,
-              subscriptionTier: SubscriptionTier.FREE,
               createdAt: FieldValue.serverTimestamp() as any,
               associatedParentIds: [parentUid], // Pre-associate the parent
               // Initialize other fields to be empty/default

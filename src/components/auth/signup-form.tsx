@@ -144,7 +144,7 @@ export function SignupForm() {
         const batch = writeBatch(db);
         
         // 1. Get placeholder data
-        const placeholderData = placeholderDoc.data() as UserProfileData;
+        const placeholderData = placeholderDoc.data() as Omit<UserProfileData, 'uid'>;
         
         // 2. Create the new user document with the real Auth UID, merging in placeholder data
         const realUserRef = doc(db, "users", user.uid);
@@ -167,13 +167,12 @@ export function SignupForm() {
       } else {
         // --- Standard Signup Flow ---
         const userRef = doc(db, "users", user.uid);
-        const userProfileData: UserProfileData = {
+        const userProfileData: Omit<UserProfileData, 'subscriptionTier'> = {
           uid: user.uid,
           fullName: data.fullName,
           email: normalizedEmail,
           role: data.role,
           status: UserStatus.ACTIVE,
-          subscriptionTier: SubscriptionTier.FREE,
           onboardingComplete: false,
           createdAt: serverTimestamp() as any,
           avatarUrl: user.photoURL || "",
