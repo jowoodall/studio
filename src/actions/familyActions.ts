@@ -4,7 +4,7 @@
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { UserProfileData, FamilyData, SubscriptionTier, NotificationType } from '@/types';
-import { UserRole, NotificationType as NotificationTypeEnum } from '@/types';
+import { UserRole, NotificationType as NotificationTypeEnum, UserStatus } from '@/types';
 import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
@@ -112,23 +112,60 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
         switch (action) {
             case 'add':
                 if (!targetMemberEmail) return { success: false, message: "Target member email is required for adding." };
+                const normalizedEmail = targetMemberEmail.trim().toLowerCase();
                 const usersRef = db.collection('users');
-                const q = usersRef.where("email", "==", targetMemberEmail.trim().toLowerCase());
+                const q = usersRef.where("email", "==", normalizedEmail);
                 const querySnapshot = await q.get();
+                
+                let userDocToAdd;
+                let newMemberId;
+                let userFullName;
+                let successMessage;
 
                 if (querySnapshot.empty) {
-                    return { success: false, message: `No user found with the email: ${targetMemberEmail}` };
-                }
-                const userDocToAdd = querySnapshot.docs[0];
-                const newMemberId = userDocToAdd.id;
+                    // User does not exist, create a placeholder
+                    const newPlaceholderRef = usersRef.doc();
+                    newMemberId = newPlaceholderRef.id;
+                    userFullName = "Invited User";
+                    
+                    const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
+                        fullName: userFullName,
+                        email: normalizedEmail,
+                        role: UserRole.STUDENT, // Default role for invited users
+                        status: UserStatus.INVITED,
+                        invitedBy: actingUserId,
+                        onboardingComplete: false,
+                        subscriptionTier: SubscriptionTier.FREE,
+                        createdAt: FieldValue.serverTimestamp() as any,
+                        familyIds: [familyId], // Pre-associate the family
+                         // Initialize other fields
+                        canDrive: false,
+                        joinedGroupIds: [],
+                        approvedDrivers: {},
+                        declinedDriverIds: [],
+                        managedStudentIds: [],
+                        associatedParentIds: [],
+                    };
+                    
+                    batch.set(newPlaceholderRef, newPlaceholderProfile);
+                    userDocToAdd = { ref: newPlaceholderRef, data: () => newPlaceholderProfile };
+                    successMessage = `${normalizedEmail} has been invited to MyRydz and added to the family.`;
 
-                if (familyData.memberIds.includes(newMemberId)) {
-                    return { success: false, message: `${userDocToAdd.data().fullName} is already a member of this family.` };
+                } else {
+                    // User exists, add them normally
+                    userDocToAdd = querySnapshot.docs[0];
+                    newMemberId = userDocToAdd.id;
+                    userFullName = userDocToAdd.data().fullName;
+                    
+                    if (familyData.memberIds.includes(newMemberId)) {
+                        return { success: false, message: `${userFullName} is already a member of this family.` };
+                    }
+                    batch.update(userDocToAdd.ref, { familyIds: FieldValue.arrayUnion(familyId) });
+                    successMessage = `${userFullName} has been added to the family.`;
                 }
 
-                // Add to family's member list and user's family list
+                // Add to family's member list
                 batch.update(familyDocRef, { memberIds: FieldValue.arrayUnion(newMemberId) });
-                batch.update(userDocToAdd.ref, { familyIds: FieldValue.arrayUnion(familyId) });
                 
                 // Notification is created outside the batch commit
                 await createNotification(
@@ -140,7 +177,7 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                 );
 
                 await batch.commit();
-                return { success: true, message: `${userDocToAdd.data().fullName} has been added to the family.` };
+                return { success: true, message: successMessage };
 
             case 'remove':
                 if (!targetMemberId) return { success: false, message: "Target member ID is required for removal." };
