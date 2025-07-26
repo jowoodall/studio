@@ -2,7 +2,7 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase/firestore';
 import type { UserProfileData, FamilyData, SubscriptionTier, NotificationType } from '@/types';
 import { UserRole, NotificationType as NotificationTypeEnum, UserStatus } from '@/types';
 import { createNotification } from './notificationActions';
@@ -79,11 +79,12 @@ interface ManageFamilyMemberInput {
     action: 'add' | 'remove' | 'promote' | 'demote';
     targetMemberId?: string; // required for remove, promote, demote
     targetMemberEmail?: string; // required for add
+    forceCreate?: boolean; // Added for add action
 }
 
 // A centralized action to manage family members
-export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): Promise<{ success: boolean; message: string }> {
-    const { actingUserId, familyId, action, targetMemberId, targetMemberEmail } = input;
+export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): Promise<{ success: boolean; message: string; userExists?: boolean; }> {
+    const { actingUserId, familyId, action, targetMemberId, targetMemberEmail, forceCreate = false } = input;
 
     const familyDocRef = db.collection('families').doc(familyId);
 
@@ -123,6 +124,13 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                 let successMessage;
 
                 if (querySnapshot.empty) {
+                     if (!forceCreate) {
+                        return { 
+                            success: true, 
+                            message: `User with email ${normalizedEmail} does not exist. Please confirm you want to invite them.`,
+                            userExists: false
+                        };
+                    }
                     // User does not exist, create a placeholder
                     const newPlaceholderRef = usersRef.doc();
                     newMemberId = newPlaceholderRef.id;
@@ -176,11 +184,11 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                 );
 
                 await batch.commit();
-                return { success: true, message: successMessage };
+                return { success: true, message: successMessage, userExists: true };
 
             case 'remove':
                 if (!targetMemberId) return { success: false, message: "Target member ID is required for removal." };
-                if (targetMemberId === actingUserId && familyData.adminIds.length <= 1) {
+                if (targetMemberId === actingUserId && familyData.adminIds.length <= 1 && familyData.memberIds.length > 1) {
                     return { success: false, message: "Cannot remove the last admin from the family." };
                 }
                 
@@ -304,24 +312,22 @@ export async function getFamilyManagementDataAction(
         
         let members: DisplayFamilyMember[] = [];
         if (familyData.memberIds && familyData.memberIds.length > 0) {
-            const memberPromises = familyData.memberIds.map(async (memberUid) => {
-              const userDocRef = db.collection('users').doc(memberUid);
-              const userDocSnap = await userDocRef.get();
-              if (userDocSnap.exists) {
+            const memberRefs = familyData.memberIds.map(id => db.collection('users').doc(id));
+            const memberDocs = await db.getAll(...memberRefs);
+            
+            members = memberDocs.map(userDocSnap => {
+                if (!userDocSnap.exists) return null;
                 const userData = userDocSnap.data() as UserProfileData;
                 return {
-                  id: userDocSnap.id,
-                  name: userData.fullName,
-                  avatarUrl: userData.avatarUrl,
-                  dataAiHint: userData.dataAiHint,
-                  roleInFamily: familyData.adminIds.includes(memberUid) ? "admin" : "member",
-                  email: userData.email,
-                  userRole: userData.role,
+                    id: userDocSnap.id,
+                    name: userData.fullName,
+                    avatarUrl: userData.avatarUrl,
+                    dataAiHint: userData.dataAiHint,
+                    roleInFamily: familyData.adminIds.includes(userDocSnap.id) ? "admin" : "member",
+                    email: userData.email,
+                    userRole: userData.role,
                 };
-              }
-              return null;
-            });
-            members = (await Promise.all(memberPromises)).filter(Boolean) as DisplayFamilyMember[];
+            }).filter(Boolean) as DisplayFamilyMember[];
         }
 
         const data: FamilyManagementData = {

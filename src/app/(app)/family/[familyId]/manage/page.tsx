@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -17,6 +16,16 @@ import { UserRole, type FamilyData, type UserProfileData } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { manageFamilyMemberAction, getFamilyManagementDataAction } from "@/actions/familyActions";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type MemberRoleInFamily = "admin" | "member";
 
@@ -55,6 +64,9 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
   const [isProcessingRemoval, setIsProcessingRemoval] = useState<Record<string, boolean>>({});
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showInviteConfirmation, setShowInviteConfirmation] = useState(false);
+  const [emailToInvite, setEmailToInvite] = useState("");
+
 
   const fetchFamilyAndMembersData = useCallback(async () => {
     if (!familyId || !authUser) {
@@ -90,7 +102,8 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
   const handleAction = async (
     action: 'add' | 'remove' | 'promote' | 'demote',
     targetMemberId: string,
-    targetMemberEmail?: string
+    targetMemberEmail?: string,
+    forceCreate: boolean = false
   ) => {
     if (!authUser || !family) return;
 
@@ -106,12 +119,18 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
         action,
         targetMemberId,
         targetMemberEmail,
+        forceCreate
       });
 
       if (result.success) {
-        toast({ title: "Success", description: result.message });
-        await fetchFamilyAndMembersData(); // Refresh data
-        if(action === 'add') setNewMemberEmail("");
+        if(result.userExists === false) {
+            setEmailToInvite(targetMemberEmail || "");
+            setShowInviteConfirmation(true);
+        } else {
+            toast({ title: "Success", description: result.message });
+            if(action === 'add') setNewMemberEmail("");
+            await fetchFamilyAndMembersData(); 
+        }
       } else {
         toast({ title: "Action Failed", description: result.message, variant: "destructive" });
       }
@@ -150,6 +169,26 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
 
   return (
     <>
+      <AlertDialog open={showInviteConfirmation} onOpenChange={setShowInviteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite New User?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The user with email <span className="font-semibold">{emailToInvite}</span> does not have a MyRydz account yet. Would you like to invite them? A placeholder account will be created so you can manage them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setEmailToInvite("")}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+                setShowInviteConfirmation(false);
+                handleAction('add', '', emailToInvite, true);
+            }}>
+              Yes, Invite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <PageHeader
         title={`Manage Family: ${family.name}`}
         description={`Add, remove, or change roles for members of "${family.name}".`}
@@ -172,7 +211,7 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
                       disabled={isAddingMember}
                   />
                   <Button 
-                      onClick={() => handleAction('add', '', newMemberEmail)}
+                      onClick={() => handleAction('add', '', newMemberEmail, false)}
                       disabled={isAddingMember || !newMemberEmail.trim()}
                       className="w-full sm:w-auto"
                   >
@@ -227,7 +266,7 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
                       onClick={() => handleAction('remove', member.id)}
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       aria-label={`Remove ${member.name}`}
-                      disabled={!isCurrentUserAdmin || (member.id === authUser?.uid && family.adminIds.length <= 1) || isProcessingRemoval[`remove-${member.id}`]}
+                      disabled={!isCurrentUserAdmin || (member.id === authUser?.uid && family.adminIds.length <= 1 && family.memberIds.length > 1) || isProcessingRemoval[`remove-${member.id}`]}
                       title={!isCurrentUserAdmin ? "Only admins can remove members" : (member.id === authUser?.uid && family.adminIds.length <= 1) ? "Cannot remove the last admin" : `Remove ${member.name}`}
                     >
                       {isProcessingRemoval[`remove-${member.id}`] 
