@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -200,9 +201,7 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
           {members.length > 0 ? (
             <ul className="space-y-4">
               {members.map((member) => {
-                const RoleIcon = roleIconMap[member.userRole] || User;
-                const roleIsStudent = member.userRole === UserRole.STUDENT;
-
+                const isFamilyAdmin = member.roleInFamily === 'admin';
                 return (
                   <li key={member.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow gap-4 sm:gap-2">
                     <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
@@ -213,9 +212,9 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
                       <div className="flex-1">
                          <div className="flex items-center gap-2">
                            <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
-                           <Badge variant="outline" className={cn("text-xs capitalize", roleIsStudent ? "border-blue-300 text-blue-600" : "border-green-300 text-green-600")}>
-                             <RoleIcon className="mr-1 h-3 w-3" />
-                             {member.userRole}
+                           <Badge variant={isFamilyAdmin ? "default" : "secondary"} className="text-xs capitalize">
+                             {isFamilyAdmin && <ShieldCheck className="mr-1 h-3 w-3" />}
+                             {member.roleInFamily}
                            </Badge>
                          </div>
                          <p className="text-xs text-muted-foreground">{member.email}</p>
