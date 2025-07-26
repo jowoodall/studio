@@ -190,71 +190,54 @@ export default function ManageFamilyMembersPage({ params: paramsPromise }: { par
           <CardDescription>View and manage the members of this family unit.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 flex justify-start">
-            <Button variant="outline" size="sm" asChild>
-                <Link href={`/family`}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to My Families
-                </Link>
-            </Button>
-          </div>
           {members.length > 0 ? (
             <ul className="space-y-4">
-              {members.map((member) => {
-                const isFamilyAdmin = member.roleInFamily === 'admin';
-                return (
-                  <li key={member.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow gap-4 sm:gap-2">
-                    <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint={member.dataAiHint}/>
-                        <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                         <div className="flex items-center gap-2">
-                           <Link href={`/profile/view/${member.id}`} className="font-medium hover:underline">{member.name}</Link>
-                           <Badge variant={isFamilyAdmin ? "default" : "secondary"} className="text-xs capitalize">
-                             {isFamilyAdmin && <ShieldCheck className="mr-1 h-3 w-3" />}
-                             {member.roleInFamily}
-                           </Badge>
-                         </div>
-                         <p className="text-xs text-muted-foreground">{member.email}</p>
-                      </div>
+              {members.map((member) => (
+                <li key={member.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow gap-4 sm:gap-2">
+                  <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint={member.dataAiHint}/>
+                      <AvatarFallback>{member.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="font-medium">{member.name}</p>
+                      <p className="text-xs text-muted-foreground">{member.email}</p>
                     </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                      <Select
-                        value={member.roleInFamily}
-                        onValueChange={(value) => handleAction(value as MemberRoleInFamily, member.id)}
-                        disabled={!isCurrentUserAdmin || member.id === authUser?.uid || isProcessingRole[`promote-${member.id}`] || isProcessingRole[`demote-${member.id}`]}
-                      >
-                        <SelectTrigger className="w-[120px] text-xs sm:text-sm">
-                          {isProcessingRole[`promote-${member.id}`] || isProcessingRole[`demote-${member.id}`] 
-                            ? <Loader2 className="h-4 w-4 animate-spin"/> 
-                            : <SelectValue placeholder="Select role" />
-                          }
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="member">Member</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleAction('remove', member.id)}
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        aria-label={`Remove ${member.name}`}
-                        disabled={!isCurrentUserAdmin || (member.id === authUser?.uid && family.adminIds.length <= 1) || isProcessingRemoval[`remove-${member.id}`]}
-                        title={!isCurrentUserAdmin ? "Only admins can remove members" : (member.id === authUser?.uid && family.adminIds.length <= 1) ? "Cannot remove the last admin" : `Remove ${member.name}`}
-                      >
-                        {isProcessingRemoval[`remove-${member.id}`] 
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                    <Select
+                      value={member.roleInFamily}
+                      onValueChange={(value) => handleAction(value as MemberRoleInFamily, member.id)}
+                      disabled={!isCurrentUserAdmin || member.id === authUser?.uid || isProcessingRole[`promote-${member.id}`] || isProcessingRole[`demote-${member.id}`]}
+                    >
+                      <SelectTrigger className="w-[120px] text-xs sm:text-sm">
+                        {isProcessingRole[`promote-${member.id}`] || isProcessingRole[`demote-${member.id}`] 
                           ? <Loader2 className="h-4 w-4 animate-spin"/> 
-                          : (member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />)
+                          : <SelectValue placeholder="Select role" />
                         }
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleAction('remove', member.id)}
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Remove ${member.name}`}
+                      disabled={!isCurrentUserAdmin || (member.id === authUser?.uid && family.adminIds.length <= 1) || isProcessingRemoval[`remove-${member.id}`]}
+                      title={!isCurrentUserAdmin ? "Only admins can remove members" : (member.id === authUser?.uid && family.adminIds.length <= 1) ? "Cannot remove the last admin" : `Remove ${member.name}`}
+                    >
+                      {isProcessingRemoval[`remove-${member.id}`] 
+                        ? <Loader2 className="h-4 w-4 animate-spin"/> 
+                        : (member.id === authUser?.uid ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />)
+                      }
+                    </Button>
+                  </div>
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="text-muted-foreground text-center py-4">This family has no members yet.</p>
