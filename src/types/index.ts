@@ -10,6 +10,11 @@ export enum UserRole {
   ADMIN = 'admin',
 }
 
+export enum UserStatus {
+  ACTIVE = 'active',
+  INVITED = 'invited',
+}
+
 export enum EventStatus {
   ACTIVE = 'active',
   COMPLETED = 'completed',
@@ -72,6 +77,7 @@ export interface UserProfileData {
   fullName: string;
   email: string;
   role: UserRole;
+  status: UserStatus;
   subscriptionTier: SubscriptionTier;
   avatarUrl?: string;
   dataAiHint?: string;
