@@ -2,7 +2,7 @@
 'use server';
 
 import admin from '@/lib/firebaseAdmin';
-import { FieldValue, Timestamp } from 'firebase/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { UserProfileData, FamilyData, SubscriptionTier, NotificationType } from '@/types';
 import { UserRole, NotificationType as NotificationTypeEnum, UserStatus } from '@/types';
 import { createNotification } from './notificationActions';
@@ -118,7 +118,6 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                 const q = usersRef.where("email", "==", normalizedEmail);
                 const querySnapshot = await q.get();
                 
-                let userDocToAdd;
                 let newMemberId;
                 let userFullName;
                 let successMessage;
@@ -143,7 +142,7 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                         status: UserStatus.INVITED,
                         invitedBy: actingUserId,
                         onboardingComplete: false,
-                        createdAt: FieldValue.serverTimestamp() as any,
+                        createdAt: FieldValue.serverTimestamp(),
                         familyIds: [familyId], // Pre-associate the family
                          // Initialize other fields
                         canDrive: false,
@@ -155,12 +154,11 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                     };
                     
                     batch.set(newPlaceholderRef, newPlaceholderProfile);
-                    userDocToAdd = { ref: newPlaceholderRef, data: () => newPlaceholderProfile };
                     successMessage = `${normalizedEmail} has been invited to MyRydz and added to the family.`;
 
                 } else {
                     // User exists, add them normally
-                    userDocToAdd = querySnapshot.docs[0];
+                    const userDocToAdd = querySnapshot.docs[0];
                     newMemberId = userDocToAdd.id;
                     userFullName = userDocToAdd.data().fullName;
                     

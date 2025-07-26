@@ -26,7 +26,7 @@ export function Logo({ className, iconOnly = false, size, ...props }: LogoProps)
     >
       <Image
         src={`/logo.png?v=${Date.now()}`}
-        alt="MyRydz Logo"
+        alt="myRydz Logo"
         fill
         sizes={size ? `${size}px` : "120px"}
         className={cn(
