@@ -67,7 +67,7 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
             studentId = newStudentRef.id;
             studentFullName = "Invited User"; // Placeholder name
 
-            const newPlaceholderProfile: Omit<UserProfileData, 'uid' | 'subscriptionTier'> = {
+            const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
               fullName: studentFullName,
               email: normalizedEmail,
               role: UserRole.STUDENT,
