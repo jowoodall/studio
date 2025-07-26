@@ -17,6 +17,16 @@ import { useAuth } from "@/context/AuthContext";
 import type { GroupData, UserProfileData, UserRole as GlobalUserRole, NotificationType } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { getGroupManagementDataAction, manageGroupMemberAction } from "@/actions/groupActions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type MemberRoleInGroup = "admin" | "member";
 
@@ -48,6 +58,9 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isProcessingAction, setIsProcessingAction] = useState<Record<string, boolean>>({});
+  
+  const [showInviteConfirmation, setShowInviteConfirmation] = useState(false);
+  const [emailToInvite, setEmailToInvite] = useState("");
 
   const fetchGroupAndMembersData = useCallback(async () => {
     if (!groupId || !authUser) {
@@ -80,7 +93,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
     }
   }, [authLoading, fetchGroupAndMembersData]);
 
-  const handleAction = async (action: 'add' | 'remove' | 'promote' | 'demote', targetMemberId: string, targetMemberEmail?: string) => {
+  const handleAction = async (action: 'add' | 'remove' | 'promote' | 'demote', targetMemberId: string, targetMemberEmail?: string, forceCreate: boolean = false) => {
     if (!authUser || !group) return;
 
     const actionKey = `${action}-${targetMemberId || targetMemberEmail}`;
@@ -94,11 +107,18 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
             action,
             targetMemberId,
             targetMemberEmail,
+            forceCreate,
         });
+
         if (result.success) {
-            toast({ title: "Success", description: result.message });
-            if(action === 'add') setNewMemberEmail("");
-            await fetchGroupAndMembersData(); // Refresh data from server
+            if (result.userExists === false) {
+                setEmailToInvite(targetMemberEmail || "");
+                setShowInviteConfirmation(true);
+            } else {
+                toast({ title: "Success", description: result.message });
+                if(action === 'add') setNewMemberEmail("");
+                await fetchGroupAndMembersData();
+            }
         } else {
             toast({ title: "Action Failed", description: result.message, variant: "destructive" });
         }
@@ -136,6 +156,26 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
 
   return (
     <>
+      <AlertDialog open={showInviteConfirmation} onOpenChange={setShowInviteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite New User?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The user with email <span className="font-semibold">{emailToInvite}</span> does not have a MyRydz account yet. Would you like to invite them? A placeholder account will be created and they will be added to the group.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setEmailToInvite("")}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+                setShowInviteConfirmation(false);
+                handleAction('add', '', emailToInvite, true);
+            }}>
+              Yes, Invite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <PageHeader
         title={`Manage Members: ${group.name}`}
         description={`Add, remove, or change roles for members of "${group.name}".`}
@@ -158,7 +198,7 @@ export default function ManageGroupMembersPage({ params: paramsPromise }: { para
                         disabled={isAddingMember}
                     />
                     <Button 
-                        onClick={() => handleAction('add', '', newMemberEmail)}
+                        onClick={() => handleAction('add', '', newMemberEmail, false)}
                         disabled={isAddingMember || !newMemberEmail.trim()}
                         className="w-full sm:w-auto"
                     >

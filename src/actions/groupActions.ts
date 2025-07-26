@@ -3,8 +3,8 @@
 
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { GroupData, UserProfileData, NotificationType } from '@/types';
-import { NotificationType as NotificationTypeEnum } from '@/types';
+import type { GroupData, UserProfileData, NotificationType, UserRole as GlobalUserRole, UserStatus } from '@/types';
+import { NotificationType as NotificationTypeEnum, UserRole, UserStatus as UserStatusEnum } from '@/types';
 import { createNotification } from './notificationActions';
 
 const db = admin.firestore();
@@ -207,12 +207,13 @@ interface ManageGroupMemberInput {
     action: 'add' | 'remove' | 'promote' | 'demote';
     targetMemberId?: string; 
     targetMemberEmail?: string;
+    forceCreate?: boolean;
 }
 
 export async function manageGroupMemberAction(
     input: ManageGroupMemberInput
-): Promise<{ success: boolean; message: string; }> {
-    const { actingUserId, groupId, action, targetMemberId, targetMemberEmail } = input;
+): Promise<{ success: boolean; message: string; userExists?: boolean; }> {
+    const { actingUserId, groupId, action, targetMemberId, targetMemberEmail, forceCreate = false } = input;
     
     if (!actingUserId || !groupId || !action) {
         return { success: false, message: "Missing required parameters." };
@@ -247,10 +248,50 @@ export async function manageGroupMemberAction(
         switch (action) {
             case 'add':
                 if (!targetMemberEmail) return { success: false, message: "Target member email is required." };
-                const usersSnapshot = await db.collection('users').where("email", "==", targetMemberEmail.trim().toLowerCase()).limit(1).get();
+                
+                const normalizedEmail = targetMemberEmail.trim().toLowerCase();
+                const usersRef = db.collection('users');
+                const usersSnapshot = await usersRef.where("email", "==", normalizedEmail).limit(1).get();
+
                 if (usersSnapshot.empty) {
-                    return { success: false, message: `No user found with email: ${targetMemberEmail}.` };
+                     if (!forceCreate) {
+                        return { 
+                            success: true, 
+                            message: `User with email ${normalizedEmail} does not exist. Please confirm you want to invite them.`,
+                            userExists: false
+                        };
+                    }
+
+                    // Create placeholder user
+                    const newPlaceholderRef = usersRef.doc();
+                    const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
+                        fullName: "Invited User",
+                        email: normalizedEmail,
+                        role: UserRole.STUDENT,
+                        status: UserStatusEnum.INVITED,
+                        invitedBy: actingUserId,
+                        onboardingComplete: false,
+                        createdAt: FieldValue.serverTimestamp() as any,
+                        canDrive: false,
+                        joinedGroupIds: [],
+                        familyIds: [],
+                        approvedDrivers: {},
+                        declinedDriverIds: [],
+                        managedStudentIds: [],
+                        associatedParentIds: [],
+                    };
+                    batch.set(newPlaceholderRef, newPlaceholderProfile);
+                    batch.update(groupDocRef, { memberIds: FieldValue.arrayUnion(newPlaceholderRef.id) });
+                    await createNotification(
+                        newPlaceholderRef.id, `Group Invitation`,
+                        `You have been invited to join the group "${groupData.name}".`,
+                        NotificationTypeEnum.INFO, '/groups'
+                    );
+                    await batch.commit();
+                    return { success: true, message: `${normalizedEmail} has been invited to the group.`, userExists: true };
                 }
+
+                // User exists, add them to group
                 const newMemberDoc = usersSnapshot.docs[0];
                 if (groupData.memberIds.includes(newMemberDoc.id)) {
                     return { success: true, message: `${newMemberDoc.data().fullName} is already in the group.` };
@@ -263,7 +304,7 @@ export async function manageGroupMemberAction(
                     NotificationTypeEnum.INFO, '/groups'
                 );
                 await batch.commit();
-                return { success: true, message: `${newMemberDoc.data().fullName} has been invited to the group.` };
+                return { success: true, message: `${newMemberDoc.data().fullName} has been invited to the group.`, userExists: true };
 
             case 'remove':
                 if (!targetMemberId) return { success: false, message: "Target member ID is required." };
