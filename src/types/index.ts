@@ -74,10 +74,12 @@ export interface FamilyData {
 
 export interface UserProfileData {
   uid: string;
+  placeholderId?: string; // Used to link an invited user to their placeholder doc
   fullName: string;
   email: string;
   role: UserRole;
   status: UserStatus;
+  invitedBy?: string; // UID of the user who invited them
   subscriptionTier: SubscriptionTier;
   avatarUrl?: string;
   dataAiHint?: string;
