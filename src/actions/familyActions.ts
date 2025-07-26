@@ -128,7 +128,7 @@ export async function manageFamilyMemberAction(input: ManageFamilyMemberInput): 
                     newMemberId = newPlaceholderRef.id;
                     userFullName = "Invited User";
                     
-                    const newPlaceholderProfile: Omit<UserProfileData, 'uid' | 'subscriptionTier'> = {
+                    const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
                         fullName: userFullName,
                         email: normalizedEmail,
                         role: UserRole.STUDENT, // Default role for invited users
@@ -291,7 +291,7 @@ export async function getFamilyManagementDataAction(
         const familyDocRef = db.collection('families').doc(familyId);
         const familyDocSnap = await familyDocRef.get();
 
-        if (!familyDocSnap.exists()) {
+        if (!familyDocSnap.exists) {
             return { success: false, message: `Family with ID "${familyId}" not found.` };
         }
 
