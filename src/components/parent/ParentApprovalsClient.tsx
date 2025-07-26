@@ -187,7 +187,7 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
-    const studentEmailToAdd = emailToInvite || studentEmailInput.trim().toLowerCase();
+    const studentEmailToAdd = studentEmailInput.trim().toLowerCase();
     if (studentEmailToAdd === "") {
       toast({ title: "Input Required", description: "Please enter the student's email address.", variant: "destructive" });
       return;
@@ -202,20 +202,20 @@ export function ParentApprovalsClient({ initialData }: ParentApprovalsClientProp
       const result = await associateStudentWithParentAction({
         parentUid: authUser.uid,
         studentEmail: studentEmailToAdd,
-        forceCreate,
+        forceCreate: forceCreate,
       });
 
-      if (!result.success) {
-        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
-      } else if (result.userExists === false) {
-        // User does not exist, show confirmation dialog
-        setEmailToInvite(studentEmailToAdd);
-        setShowInviteConfirmation(true);
+      if (result.success) {
+        if (result.userExists === false) {
+          setEmailToInvite(studentEmailToAdd);
+          setShowInviteConfirmation(true);
+        } else {
+          toast({ title: "Student Associated", description: result.message });
+          setStudentEmailInput("");
+          refreshAllData();
+        }
       } else {
-        // User exists and was added successfully
-        toast({ title: "Student Associated", description: result.message });
-        setStudentEmailInput("");
-        refreshAllData();
+        toast({ title: "Association Failed", description: result.message, variant: "destructive" });
       }
     } catch (error: any) {
       toast({ title: "Association Failed", description: error.message || "Could not associate student.", variant: "destructive" });
