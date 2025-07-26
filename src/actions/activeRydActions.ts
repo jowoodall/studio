@@ -591,7 +591,7 @@ export async function fulfillRequestWithExistingRydAction(
     if (activeRydData.associatedEventId) {
         const eventDocRef = db.collection('events').doc(activeRydData.associatedEventId);
         const eventDocSnap = await eventDocRef.get();
-        if (eventDocSnap.exists) {  //removed exists()
+        if (eventDocSnap.exists) {
             eventNameForManifest = (eventDocSnap.data() as EventData).name;
         }
     } else if (activeRydData.finalDestinationAddress) {

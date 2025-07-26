@@ -295,7 +295,7 @@ export async function getVisibleEventsAction(userId: string): Promise<{ success:
     try {
         const userDocRef = db.collection('users').doc(userId);
         const userDocSnap = await userDocRef.get();
-        if (!userDocSnap.exists) { // Corrected from .exists()
+        if (!userDocSnap.exists) {
             return { success: false, message: "User profile not found." };
         }
         const userProfile = userDocSnap.data() as UserProfileData;
