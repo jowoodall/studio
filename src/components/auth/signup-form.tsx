@@ -8,8 +8,7 @@ import Link from "next/link";
 import React, { useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // Import serverTimestamp
-
+import { doc, setDoc, serverTimestamp, getDocs, query, where, writeBatch, collection, getDoc, updateDoc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -29,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { UserRole, SubscriptionTier, UserStatus } from "@/types";
+import { UserRole, SubscriptionTier, UserStatus, type UserProfileData } from "@/types";
 import { Loader2, Check, X } from "lucide-react";
 
 import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
@@ -123,25 +122,61 @@ export function SignupForm() {
           setIsLoading(false);
           return;
       }
-
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       
-      if (userCredential.user) {
-        await updateProfile(userCredential.user, {
-          displayName: data.fullName,
-        });
+      const normalizedEmail = data.email.trim().toLowerCase();
 
-        const userRef = doc(db, "users", userCredential.user.uid);
-        const userProfileData = {
-          uid: userCredential.user.uid,
+      // Check for an existing placeholder user
+      const usersRef = collection(db, "users");
+      const placeholderQuery = query(usersRef, where("email", "==", normalizedEmail), where("status", "==", "invited"));
+      const placeholderSnapshot = await getDocs(placeholderQuery);
+      
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      const user = userCredential.user;
+      
+      await updateProfile(user, { displayName: data.fullName });
+      
+      if (!placeholderSnapshot.empty) {
+        // --- Claim Placeholder Flow ---
+        const placeholderDoc = placeholderSnapshot.docs[0];
+        console.log(`[Signup] Claiming placeholder account ${placeholderDoc.id} for new user ${user.uid}.`);
+        
+        // We will move the placeholder doc to a new doc with the correct Auth UID
+        const batch = writeBatch(db);
+        
+        // 1. Get placeholder data
+        const placeholderData = placeholderDoc.data() as UserProfileData;
+        
+        // 2. Create the new user document with the real Auth UID, merging in placeholder data
+        const realUserRef = doc(db, "users", user.uid);
+        const finalProfileData: UserProfileData = {
+          ...placeholderData,
+          uid: user.uid,
+          fullName: data.fullName, // Use the name from the form
+          role: data.role, // Use the role from the form
+          status: UserStatus.ACTIVE, // Set status to active
+          onboardingComplete: false,
+          createdAt: placeholderData.createdAt || serverTimestamp(), // Keep original invite timestamp if it exists
+        };
+        batch.set(realUserRef, finalProfileData, { merge: true });
+
+        // 3. Delete the old placeholder document
+        batch.delete(placeholderDoc.ref);
+        
+        await batch.commit();
+
+      } else {
+        // --- Standard Signup Flow ---
+        const userRef = doc(db, "users", user.uid);
+        const userProfileData: UserProfileData = {
+          uid: user.uid,
           fullName: data.fullName,
-          email: data.email.trim().toLowerCase(), // Normalized email
+          email: normalizedEmail,
           role: data.role,
           status: UserStatus.ACTIVE,
           subscriptionTier: SubscriptionTier.FREE,
-          onboardingComplete: false, // Start the onboarding flow
-          createdAt: serverTimestamp(),
-          avatarUrl: userCredential.user.photoURL || "",
+          onboardingComplete: false,
+          createdAt: serverTimestamp() as any,
+          avatarUrl: user.photoURL || "",
           dataAiHint: "",
           canDrive: false,
           bio: "",
@@ -154,18 +189,8 @@ export function SignupForm() {
               chatMessages: { email: true, text: false },
             },
           },
-          address: {
-            street: "",
-            city: "",
-            state: "",
-            zip: "",
-          },
-          driverDetails: {
-            ageRange: "",
-            drivingExperience: "",
-            primaryVehicle: "",
-            passengerCapacity: "",
-          },
+          address: { street: "", city: "", state: "", zip: "" },
+          driverDetails: { ageRange: "", drivingExperience: "", primaryVehicle: "", passengerCapacity: "" },
           managedStudentIds: [],
           associatedParentIds: [],
           approvedDrivers: {},
@@ -173,7 +198,6 @@ export function SignupForm() {
           joinedGroupIds: [],
           familyIds: [],
         };
-        
         await setDoc(userRef, userProfileData);
       }
 
@@ -181,20 +205,16 @@ export function SignupForm() {
         title: "Account Created!",
         description: "Let's get your profile set up.",
       });
-      router.push("/onboarding/welcome"); 
+      router.push("/onboarding/welcome");
+
     } catch (error: any) {
       console.error("Signup error:", error);
       let errorMessage = "An unexpected error occurred. Please try again.";
       if (error.code === "auth/email-already-in-use") {
-        errorMessage = "This email address is already in use.";
+        errorMessage = "This email address is already registered as an active user.";
       } else if (error.code === "auth/weak-password") {
         errorMessage = "The password is too weak. Please ensure it meets all requirements.";
-      } else if (error.code === 'permission-denied' || (error.message && error.message.toLowerCase().includes('permission denied')) || (error.message && error.message.toLowerCase().includes('missing or insufficient permissions'))) {
-        errorMessage = "Could not save profile information due to a permissions issue. Please check Firestore security rules to ensure all fields being written are allowed and have correct types. Detailed error: " + error.message;
-      } else if (error.code && error.code.startsWith('firestore/')) {
-        errorMessage = `Firestore error: ${error.message}`;
       }
-
       toast({
         title: "Signup Failed",
         description: errorMessage,

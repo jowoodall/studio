@@ -4,7 +4,7 @@
 import admin from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { UserProfileData } from '@/types';
-import { UserRole } from '@/types';
+import { UserRole, UserStatus, SubscriptionTier } from '@/types';
 
 const db = admin.firestore();
 
@@ -32,51 +32,75 @@ export async function associateStudentWithParentAction(input: AssociateStudentIn
         return { success: false, message: "Parent and student email are required." };
     }
 
+    const normalizedEmail = studentEmail.trim().toLowerCase();
+
     try {
-        // Verify parent is actually a parent
         const parentDoc = await db.collection('users').doc(parentUid).get();
         if (!parentDoc.exists || parentDoc.data()?.role !== UserRole.PARENT) {
             return { success: false, message: "The requesting user is not a valid parent." };
         }
 
-        // Find student by email
         const usersRef = db.collection('users');
-        const studentQuery = usersRef.where("email", "==", studentEmail.trim().toLowerCase());
+        const studentQuery = usersRef.where("email", "==", normalizedEmail).limit(1);
         const studentQuerySnapshot = await studentQuery.get();
         
+        let studentId: string;
+        let studentFullName: string;
+
         if (studentQuerySnapshot.empty) {
-            return { success: false, message: `No user found with the email: ${studentEmail}.` };
+            // User does not exist, create a placeholder/invited user
+            const newStudentRef = usersRef.doc(); // Let Firestore generate a new ID
+            studentId = newStudentRef.id;
+            studentFullName = "Invited User"; // Placeholder name
+
+            const newPlaceholderProfile: Omit<UserProfileData, 'uid'> = {
+              fullName: studentFullName,
+              email: normalizedEmail,
+              role: UserRole.STUDENT,
+              status: UserStatus.INVITED, // Set status to invited
+              invitedBy: parentUid,
+              onboardingComplete: false,
+              subscriptionTier: SubscriptionTier.FREE,
+              createdAt: FieldValue.serverTimestamp() as any,
+              associatedParentIds: [parentUid], // Pre-associate the parent
+              // Initialize other fields to be empty/default
+              canDrive: false,
+              joinedGroupIds: [],
+              familyIds: [],
+              approvedDrivers: {},
+              declinedDriverIds: [],
+              managedStudentIds: [],
+            };
+            
+            await newStudentRef.set(newPlaceholderProfile);
+            console.log(`[Action: associateStudentWithParent] Created placeholder for ${normalizedEmail} with ID ${studentId}.`);
+
+        } else {
+            // User exists, proceed as before
+            const studentDoc = studentQuerySnapshot.docs[0];
+            studentId = studentDoc.id;
+            const studentData = studentDoc.data() as UserProfileData;
+            studentFullName = studentData.fullName;
+
+            if (studentData.role !== UserRole.STUDENT) {
+                return { success: false, message: `${normalizedEmail} is not registered as a student.` };
+            }
+            if(parentDoc.data()?.managedStudentIds?.includes(studentId)){
+                return { success: false, message: `${studentFullName} is already in your managed students list.` };
+            }
+
+            const studentDocRef = db.collection('users').doc(studentId);
+            await studentDocRef.update({ associatedParentIds: FieldValue.arrayUnion(parentUid) });
         }
         
-        const studentDoc = studentQuerySnapshot.docs[0];
-        const studentId = studentDoc.id;
-        const studentData = studentDoc.data() as UserProfileData;
-
-        if (studentData.role !== UserRole.STUDENT) {
-            return { success: false, message: `${studentEmail} is not registered as a student.` };
-        }
-
-        if(parentDoc.data()?.managedStudentIds?.includes(studentId)){
-            return { success: false, message: `${studentData.fullName} is already in your managed students list.` };
-        }
-        
-        const batch = db.batch();
-
-        // Update parent doc
+        // Update parent doc in both cases (new placeholder or existing user)
         const parentDocRef = db.collection('users').doc(parentUid);
-        batch.update(parentDocRef, { 
+        await parentDocRef.update({ 
             managedStudentIds: FieldValue.arrayUnion(studentId),
-            // Parent adding student should auto-approve themselves to drive that student
             [`approvedDrivers.${parentUid}`]: FieldValue.arrayUnion(studentId)
         });
-
-        // Update student doc
-        const studentDocRef = db.collection('users').doc(studentId);
-        batch.update(studentDocRef, { associatedParentIds: FieldValue.arrayUnion(parentUid) });
-
-        await batch.commit();
         
-        return { success: true, message: `${studentData.fullName} has been successfully linked. You may need to refresh to see the change.` };
+        return { success: true, message: `${studentFullName} has been successfully linked. You may need to refresh to see the change.` };
 
     } catch (error) {
         return handleActionError(error, "associateStudentWithParentAction");
